@@ -5,13 +5,13 @@
 // or FITNESS FOR A PARTICULAR PURPOSE.
 pragma solidity >=0.8.27;
 
-import { E3 } from "@enclave-e3/contracts/contracts/interfaces/IE3.sol";
-import { IEnclave } from "@enclave-e3/contracts/contracts/interfaces/IEnclave.sol";
-import { IE3Program } from "@enclave-e3/contracts/contracts/interfaces/IE3Program.sol";
-import { IDecryptionVerifier } from "@enclave-e3/contracts/contracts/interfaces/IDecryptionVerifier.sol";
-import { IPkVerifier } from "@enclave-e3/contracts/contracts/interfaces/IPkVerifier.sol";
+import { E3 } from "@interfold/contracts/contracts/interfaces/IE3.sol";
+import { IInterfold } from "@interfold/contracts/contracts/interfaces/IInterfold.sol";
+import { IE3Program } from "@interfold/contracts/contracts/interfaces/IE3Program.sol";
+import { IDecryptionVerifier } from "@interfold/contracts/contracts/interfaces/IDecryptionVerifier.sol";
+import { IPkVerifier } from "@interfold/contracts/contracts/interfaces/IPkVerifier.sol";
 
-contract MockEnclave {
+contract MockInterfold {
   bytes public plaintextOutput;
   bytes32 public committeePublicKey;
 
@@ -22,7 +22,7 @@ contract MockEnclave {
   function request(address program) external {
     e3s[nextE3Id] = E3({
       seed: 0,
-      committeeSize: IEnclave.CommitteeSize.Micro,
+      committeeSize: IInterfold.CommitteeSize.Micro,
       requestBlock: 0,
       inputWindow: [uint256(0), uint256(0)],
       encryptionSchemeId: bytes32(0),
@@ -51,15 +51,15 @@ contract MockEnclave {
     committeePublicKey = publicKeyHash;
   }
 
-  function getE3Stage(uint256) external view returns (IEnclave.E3Stage) {
-    return IEnclave.E3Stage.KeyPublished;
+  function getE3Stage(uint256) external view returns (IInterfold.E3Stage) {
+    return IInterfold.E3Stage.KeyPublished;
   }
 
   function getE3(uint256) external view returns (E3 memory) {
     return
       E3({
         seed: 0,
-        committeeSize: IEnclave.CommitteeSize.Micro,
+        committeeSize: IInterfold.CommitteeSize.Micro,
         requestBlock: 0,
         inputWindow: [uint256(0), block.timestamp + 100],
         encryptionSchemeId: bytes32(0),
