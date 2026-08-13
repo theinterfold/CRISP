@@ -41,8 +41,8 @@ pub async fn register_e3_requested(
     indexer
         .add_event_handler(move |event: E3Requested, ctx| {
             let store = ctx.store();
-            let e3_id = event.e3Id.to::<u64>();
-            let mut repo = CrispE3Repository::new(store.clone(), e3_id);
+            let e3_id = event.e3Id.to_string();
+            let mut repo = CrispE3Repository::new(store.clone(), &e3_id);
 
             let contract = ctx.contract();
 
@@ -187,6 +187,10 @@ pub async fn register_e3_requested(
                 repo.set_token_holder_hashes(token_holder_hashes.clone())
                     .await?;
 
+                CurrentRoundRepository::new(store.clone())
+                    .record_round(&e3_id)
+                    .await?;
+
                 let tree =
                     build_tree(token_holder_hashes).with_context(|| "Failed to build tree")?;
                 let merkle_root = tree
@@ -200,8 +204,8 @@ pub async fn register_e3_requested(
                     .with_context(|| format!("[e3_id={}] Merkle root is not valid hex", e3_id))?;
                 let merkle_root_u256 = U256::from_be_slice(&merkle_root_bytes);
 
-                // Convert e3Id from u64 to U256
-                let e3_id_u256 = U256::from(e3_id);
+                let e3_id_u256 = U256::from_str_radix(&e3_id, 10)
+                    .with_context(|| format!("[e3_id={}] Invalid E3 ID", e3_id))?;
 
                 info!(
                     "[e3_id={}] Calling setMerkleRoot with root: {}",
@@ -238,10 +242,10 @@ pub async fn register_e3_requested(
 }
 
 async fn handle_e3_input_deadline_expiration(
-    e3_id: u64,
+    e3_id: String,
     store: SharedStore<impl DataStore>,
 ) -> eyre::Result<()> {
-    let mut repo = CrispE3Repository::new(store.clone(), e3_id);
+    let mut repo = CrispE3Repository::new(store.clone(), &e3_id);
     let e3: e3_sdk::indexer::models::E3 = repo.get_e3().await?;
 
     repo.update_status("Expired").await?;
@@ -270,7 +274,7 @@ async fn handle_e3_input_deadline_expiration(
         repo.update_status("Computing").await?;
 
         let (id, status) = run_compute(
-            e3_id,
+            &e3_id,
             e3.chain_id,
             e3.interfold_address,
             e3.encryption_scheme_id,
@@ -322,8 +326,8 @@ pub async fn register_ciphertext_output_published(
     indexer
         .add_event_handler(move |event: CiphertextOutputPublished, ctx| {
             let store = ctx.store();
-            let e3_id = event.e3Id.to::<u64>();
-            let mut repo = CrispE3Repository::new(store, e3_id);
+            let e3_id = event.e3Id.to_string();
+            let mut repo = CrispE3Repository::new(store, &e3_id);
             async move {
                 info!("[e3_id={}] Handling CiphertextOutputPublished", e3_id);
                 repo.update_status("CiphertextPublished").await?;
@@ -341,8 +345,8 @@ pub async fn register_plaintext_output_published(
     indexer
         .add_event_handler(move |event: PlaintextOutputPublished, ctx| {
             let store = ctx.store();
-            let e3_id = event.e3Id.to::<u64>();
-            let mut repo = CrispE3Repository::new(store, e3_id);
+            let e3_id = event.e3Id.to_string();
+            let mut repo = CrispE3Repository::new(store, &e3_id);
             async move {
                 info!("[e3_id={}] Handling PlaintextOutputPublished", e3_id);
 
@@ -373,8 +377,8 @@ pub async fn register_committee_published(
         .add_event_handler(move |event: CommitteePublished, ctx| {
             async move {
                 let store = ctx.store();
-                let e3_id = event.e3Id.to::<u64>();
-                let mut repo = CrispE3Repository::new(store.clone(), e3_id);
+                let e3_id = event.e3Id.to_string();
+                let mut repo = CrispE3Repository::new(store.clone(), &e3_id);
                 let mut current_round_repo = CurrentRoundRepository::new(store);
                 info!("[e3_id={}] Handling CommitteePublished", e3_id);
                 // Get current time
@@ -384,14 +388,14 @@ pub async fn register_committee_published(
                 repo.start_round().await?;
 
                 current_round_repo
-                    .set_current_round(CurrentRound { id: e3_id })
+                    .set_current_round(CurrentRound { id: e3_id.clone() })
                     .await?;
 
                 let expiration = repo.get_input_deadline().await?;
 
                 info!("[e3_id={}] Registering hook for {}", e3_id, expiration);
                 ctx.do_later(expiration, move |_, ctx| {
-                    handle_e3_input_deadline_expiration(e3_id, ctx.store())
+                    handle_e3_input_deadline_expiration(e3_id.clone(), ctx.store())
                 });
 
                 Ok(())
@@ -416,9 +420,9 @@ pub async fn register_input_published(
 ) -> Result<InterfoldIndexer<impl DataStore, ReadWrite>> {
     indexer
         .add_event_handler(move |event: InputPublished, ctx| {
-            let e3_id = event.e3Id.to::<u64>();
+            let e3_id = event.e3Id.to_string();
             let store = ctx.store();
-            let mut repo = CrispE3Repository::new(store.clone(), e3_id);
+            let mut repo = CrispE3Repository::new(store.clone(), &e3_id);
             async move {
                 println!(
                     "InputPublished: e3_id={}, index={}, data=0x{}...",

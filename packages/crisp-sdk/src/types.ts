@@ -143,7 +143,7 @@ export type MaskVoteProofInputs = {
 }
 
 export type MaskVoteProofRequest = {
-  e3Id: number
+  e3Id: bigint
   publicKey: Uint8Array
   balance: bigint
   slotAddress: string
@@ -163,7 +163,7 @@ export type VoteProofInputs = {
 }
 
 export type VoteProofRequest = {
-  e3Id: number
+  e3Id: bigint
   merkleLeaves: string[] | bigint[]
   publicKey: Uint8Array
   balance: bigint
@@ -177,14 +177,14 @@ export type VoteProofRequest = {
  * Type representing the current round returned by the CRISP server (`rounds/current`)
  */
 export type CurrentRoundResponse = {
-  id: number
+  id: string
 }
 
 /**
  * Type representing the lite state of a round returned by the CRISP server (`state/lite`)
  */
 export type E3StateLiteResponse = {
-  id: number
+  id: string
   chain_id: number
   interfold_address: string
   status: string
@@ -223,7 +223,7 @@ export type NewRoundRequest = {
  * Type representing a request to broadcast an encrypted vote (`voting/broadcast`)
  */
 export type BroadcastVoteRequest = {
-  e3Id: number
+  e3Id: bigint
   encodedProof: string
   address: string
 }
@@ -247,7 +247,7 @@ export type BroadcastVoteResponse = {
  * Type representing the vote status of an address in a round (`voting/status`)
  */
 export type VoteStatusResponse = {
-  round_id: number
+  round_id: string
   address: string
   has_voted: boolean
   round_status: string | null
@@ -257,7 +257,7 @@ export type VoteStatusResponse = {
  * Type representing the result of a round (`state/result` and `state/all`)
  */
 export type WebResultResponse = {
-  round_id: number
+  round_id: string
   tally: string[]
   option_1_emoji: string
   option_2_emoji: string
