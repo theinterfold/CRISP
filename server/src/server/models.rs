@@ -347,6 +347,7 @@ impl TryFrom<u64> for CreditMode {
         }
     }
 }
+
 #[cfg(test)]
 mod persisted_round_tests {
     use super::{CensusMode, CreditMode, E3Crisp};

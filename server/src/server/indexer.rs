@@ -189,7 +189,7 @@ pub async fn register_e3_requested(
                     );
 
                     let census =
-                        try_fetch_requester_census(e3.requester, e3_id, &CONFIG.http_rpc_url)
+                        try_fetch_requester_census(e3.requester, &e3_id, &CONFIG.http_rpc_url)
                             .await
                             .ok_or_else(|| {
                                 eyre::eyre!(
