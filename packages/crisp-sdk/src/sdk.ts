@@ -32,6 +32,7 @@ import type {
   PreparedBallot,
   ProofData,
   RoundDetails,
+  SlotHead,
   TokenDetails,
   TokenHolder,
   VoteStatusResponse,
@@ -72,12 +73,12 @@ export class CrispSDK {
    * @returns A promise that resolves to the prepared ballot.
    */
   async prepareBallot(request: PrepareBallotRequest): Promise<PreparedBallot> {
-    const previousCiphertext = await getPreviousCiphertext(this.serverUrl, request.e3Id, request.slotAddress)
+    const head = await getPreviousCiphertext(this.serverUrl, request.e3Id, request.slotAddress)
 
-    return prepareBallot({
-      ...request,
-      previousCiphertext,
-    })
+    // Branched rather than spread conditionally. The two halves of a slot head only mean anything
+    // together and the type models them as a pair, which a conditional spread widens back into two
+    // independent optional fields — the exact shape the pair exists to rule out.
+    return head ? prepareBallot({ ...request, previousCiphertext: head.ciphertext, previousIndex: head.index }) : prepareBallot(request)
   }
 
   /**
@@ -234,9 +235,9 @@ export class CrispSDK {
    * Get the previous ciphertext input for a slot address in a given round.
    * @param e3Id - The e3Id of the round
    * @param address - The address of the slot
-   * @returns The previous ciphertext, or undefined if the slot is empty
+   * @returns The slot head and its tree index, or undefined if the slot holds nothing usable
    */
-  async getPreviousCiphertext(e3Id: bigint, address: string): Promise<Uint8Array | undefined> {
+  async getPreviousCiphertext(e3Id: bigint, address: string): Promise<SlotHead | undefined> {
     return getPreviousCiphertext(this.serverUrl, e3Id, address)
   }
 }

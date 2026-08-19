@@ -4,13 +4,14 @@
 // without even the implied warranty of MERCHANTABILITY
 // or FITNESS FOR A PARTICULAR PURPOSE.
 
+use crate::server::models::e3_id_to_u256;
 use crate::server::token_holders::{
     get_mock_token_holders, try_fetch_requester_census, EtherscanClient,
 };
 use crate::server::{
     models::{CensusMode, CreditMode, CurrentRound, CustomParams, TokenHolder},
-    program_server_request::run_compute,
-    repo::{CrispE3Repository, CurrentRoundRepository},
+    program_server_request::{run_compute, RoundInputs},
+    repo::{CrispE3Repository, CurrentRoundRepository, InputSnapshot},
     token_holders::{build_tree, compute_token_holder_hashes},
     CONFIG,
 };
@@ -18,6 +19,7 @@ use alloy::providers::{Provider, ProviderBuilder};
 use alloy::sol_types::{sol_data, SolType};
 use alloy_primitives::{Address, U256};
 use crisp_utils::decode_tally;
+use e3_fhe_params::decode_bfv_params_arc;
 use e3_sdk::{
     evm_helpers::{
         contracts::{InterfoldRead, ReadWrite},
@@ -33,6 +35,8 @@ use eyre::Context;
 use log::{info, warn};
 use num_bigint::BigUint;
 use std::error::Error;
+use std::time::Duration;
+use tokio::time::sleep;
 
 type Result<T> = std::result::Result<T, Box<dyn Error + Send + Sync>>;
 
@@ -406,6 +410,67 @@ pub async fn register_e3_requested(
     Ok(indexer)
 }
 
+/// What the indexer holds for a round, measured against what `CRISPProgram` accepted.
+enum IndexedInputs {
+    /// The indexer holds every input, and this is the snapshot it holds them in.
+    Complete(InputSnapshot),
+    /// It does not, and never did within the wait.
+    Short { indexed: usize, published: usize },
+}
+
+/// The round's inputs, once the indexer holds every one `CRISPProgram` accepted.
+///
+/// Polls rather than reading once: the deadline callback and the last `InputPublished` handler race,
+/// and the gap is the few seconds it takes one log to be delivered and stored.
+///
+/// Both counts are re-read on every attempt. Re-reading only the chain would compare a moving number
+/// against a fixed one, so the loop could never converge — it would wait out every attempt and then
+/// report the same shortfall it started with, in exactly the race it exists to absorb.
+///
+/// Returns the snapshot the two counts agree on, or the last pair when they never do, so the caller
+/// reports the shortfall rather than looping forever.
+async fn wait_for_indexed_inputs<S: DataStore>(
+    e3_id: &str,
+    repo: &CrispE3Repository<S>,
+) -> eyre::Result<IndexedInputs> {
+    const ATTEMPTS: u32 = 10;
+    const INTERVAL: Duration = Duration::from_secs(3);
+
+    let e3_id_u256 = e3_id_to_u256(e3_id).map_err(|e| eyre::eyre!("{e}"))?;
+    let contract =
+        CRISPContractFactory::create_read(&CONFIG.http_rpc_url, &CONFIG.e3_program_address).await?;
+
+    for attempt in 0..=ATTEMPTS {
+        let published = contract.get_published_input_count(e3_id_u256).await? as usize;
+        let snapshot = repo.get_input_snapshot().await?;
+        let indexed = snapshot.ciphertexts.len();
+
+        if indexed >= published {
+            return Ok(IndexedInputs::Complete(snapshot));
+        }
+
+        if attempt == ATTEMPTS {
+            return Ok(IndexedInputs::Short { indexed, published });
+        }
+
+        info!(
+            "[e3_id={}] waiting for the indexer: {} of {} input(s) stored",
+            e3_id, indexed, published
+        );
+        sleep(INTERVAL).await;
+    }
+
+    unreachable!("the loop returns on its final attempt")
+}
+
+/// When the deadline handler runs again after a round it could not compute.
+///
+/// Each offset is a separate `do_later` registration made when the round starts, rather than the
+/// handler re-arming itself: `do_later` drops a callback once it has run, and a handler that failed
+/// has no way back into the schedule. The offsets are wider than the indexer wait inside the
+/// handler, so two passes do not overlap.
+const DEADLINE_RETRY_OFFSETS: [u64; 3] = [60, 180, 420];
+
 async fn handle_e3_input_deadline_expiration(
     e3_id: String,
     store: SharedStore<impl DataStore>,
@@ -413,10 +478,47 @@ async fn handle_e3_input_deadline_expiration(
     let mut repo = CrispE3Repository::new(store.clone(), &e3_id);
     let e3: e3_sdk::indexer::models::E3 = repo.get_e3().await?;
 
+    // A cheap skip for a retry pass over a round that already moved on, so it does not sit through
+    // the indexer wait below. Not the safety barrier — `try_claim_computing` is, further down.
+    let status = repo.get_status().await?;
+    if status == "Computing" || status == "Finished" {
+        return Ok(());
+    }
+
     repo.update_status("Expired").await?;
 
     let voter_count = repo.get_vote_count().await?;
-    let votes = repo.get_ciphertext_inputs().await?;
+
+    // The contract is the authority on how many inputs there are, and this callback can run before
+    // the last of them is indexed: `publishInput` still accepts one while
+    // `block.timestamp == inputWindow[1]`. Computation is one-shot, so starting short would tally a
+    // subset and derive a root the contract rejects — a failure with no other symptom.
+    //
+    // The snapshot comes back from the same call, read once. Assembling the request from separate
+    // reads lets an `InputPublished` event land between them, which pairs a ciphertext with another
+    // input's commitment and derives a root `CRISPProgram` rejects.
+    let snapshot = match wait_for_indexed_inputs(&e3_id, &repo).await? {
+        IndexedInputs::Complete(snapshot) => snapshot,
+        IndexedInputs::Short { indexed, published } => {
+            // Left "Expired" and unfinished on purpose, so a later pass can still compute it. The
+            // retries registered at `DEADLINE_RETRY_OFFSETS` are what come back to it; marking the
+            // round "Finished" here would tally nothing and close it for good.
+            return Err(eyre::eyre!(
+                "[e3_id={}] the indexer holds {} input(s) but CRISPProgram accepted {}; \
+                 refusing to compute over a subset. A retry pass runs at +{}s from the input \
+                 deadline; if every pass reports this, the indexer is behind and needs attention.",
+                e3_id,
+                indexed,
+                published,
+                DEADLINE_RETRY_OFFSETS
+                    .iter()
+                    .map(|offset| offset.to_string())
+                    .collect::<Vec<_>>()
+                    .join("s, +")
+            ));
+        }
+    };
+    let votes = snapshot.ciphertexts.clone();
 
     if voter_count > 0 && votes.is_empty() {
         warn!(
@@ -436,7 +538,20 @@ async fn handle_e3_input_deadline_expiration(
             votes.len(),
             voter_count
         );
-        repo.update_status("Computing").await?;
+        // The barrier. Two passes can be inside the indexer wait at once, and `run_compute` is
+        // one-shot, so the transition to "Computing" has to be the thing that decides which one
+        // proceeds — in a single store operation, not a read followed by a write.
+        //
+        // Claimed here rather than before the wait: a pass that gives up on a short index leaves
+        // the round "Expired" so a later pass can still take it, and claiming earlier would pin it
+        // to "Computing" and strand it.
+        if !repo.try_claim_computing().await? {
+            info!(
+                "[e3_id={}] another pass is already computing this round; nothing to do",
+                e3_id
+            );
+            return Ok(());
+        }
 
         let (id, status) = run_compute(
             &e3_id,
@@ -445,7 +560,12 @@ async fn handle_e3_input_deadline_expiration(
             e3.encryption_scheme_id,
             e3.committee_public_key_hash,
             e3.e3_params,
-            votes,
+            RoundInputs {
+                ciphertexts: snapshot.ciphertexts,
+                commitments: snapshot.commitments,
+                slots: snapshot.slots,
+                parents: snapshot.parents,
+            },
             format!(
                 "{}/state/add-result",
                 CONFIG.interfold_server_url_for_clients()
@@ -559,9 +679,20 @@ pub async fn register_committee_published(
                 let expiration = repo.get_input_deadline().await?;
 
                 info!("[e3_id={}] Registering hook for {}", e3_id, expiration);
-                ctx.do_later(expiration, move |_, ctx| {
-                    handle_e3_input_deadline_expiration(e3_id.clone(), ctx.store())
-                });
+                // Registered once per offset, up front. A pass that finds the indexer behind
+                // returns without computing, and `do_later` has already dropped that callback, so
+                // the round would otherwise stay "Expired" for good. Every pass after the first
+                // returns immediately once the round is computing or finished.
+                for at in std::iter::once(expiration).chain(
+                    DEADLINE_RETRY_OFFSETS
+                        .iter()
+                        .map(|offset| expiration + offset),
+                ) {
+                    let e3_id = e3_id.clone();
+                    ctx.do_later(at, move |_, ctx| {
+                        handle_e3_input_deadline_expiration(e3_id.clone(), ctx.store())
+                    });
+                }
 
                 Ok(())
             }
@@ -596,8 +727,20 @@ pub async fn register_input_published(
                     hex::encode(&event.encryptedVote[..8.min(event.encryptedVote.len())])
                 );
 
-                repo.insert_ciphertext_input(event.encryptedVote.to_vec(), event.index.to::<u64>())
-                    .await?;
+                // Read here so the usability of these bytes is decided once, on the write path,
+                // instead of on every `state/previous-ciphertext` call.
+                let e3 = repo.get_e3().await?;
+                let params = decode_bfv_params_arc(&e3.e3_params)?;
+
+                repo.insert_ciphertext_input(
+                    event.encryptedVote.to_vec(),
+                    event.index.to::<u64>(),
+                    event.encryptedVoteCommitment.into(),
+                    event.slotAddress.into(),
+                    event.parentIndexPlusOne.to::<u64>(),
+                    &params,
+                )
+                .await?;
                 Ok(())
             }
         })

@@ -133,6 +133,8 @@ pub struct PreviousCiphertextRequest {
 #[derive(Serialize)]
 pub struct PreviousCiphertextResponse {
     pub ciphertext: Vec<u8>,
+    /// The tree index of that entry, which a client names as the parent of the input it builds.
+    pub index: u64,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -258,6 +260,38 @@ pub struct E3Crisp {
     pub token_address: String,
     pub balance_threshold: String,
     pub ciphertext_inputs: Vec<(Vec<u8>, u64)>,
+    /// The commitment the contract stored for each input, keyed by the same on-chain index.
+    ///
+    /// The Secure Process needs it to check that the published bytes are the ciphertext that was
+    /// actually proven. Defaulted so rounds recorded before the event carried it still load.
+    #[serde(default)]
+    pub input_commitments: Vec<(u64, [u8; 32])>,
+    /// The slot each input was published to, keyed by the same on-chain index. The tree is
+    /// append-only, so the Secure Process groups entries by slot.
+    #[serde(default)]
+    pub input_slots: Vec<(u64, [u8; 20])>,
+    /// Whether each input's published bytes reproduce the commitment stored with it, keyed by the
+    /// same on-chain index.
+    ///
+    /// Recomputing this costs a BFV commitment — about 5ms per entry — and the answer never changes,
+    /// because the tree is append-only and an entry's bytes are fixed once published. Deciding it
+    /// once here keeps it off the read path, where `state/previous-ciphertext` is called by every
+    /// voter before every ballot.
+    ///
+    /// A hint, not an authority. The Secure Process recomputes it from the ciphertexts it consumed
+    /// and never reads this, so a wrong value here can only send a client to the wrong parent — the
+    /// same outcome as a stale read, and the guest drops such an input either way.
+    #[serde(default)]
+    pub input_usable: Vec<(u64, bool)>,
+    /// The entry each input names as the one it extends, plus one, keyed by the same on-chain
+    /// index. Zero means it extends nothing.
+    ///
+    /// The Secure Process walks each slot's chain by this, taking an entry only when the one it
+    /// names is the slot's current head. That is what keeps a slot writable after someone publishes
+    /// bytes nobody can open: such an entry is never the head, so it is never a valid parent, and
+    /// the next honest input names the same parent it did.
+    #[serde(default)]
+    pub input_parents: Vec<(u64, u64)>,
     pub requester: String,
     pub num_options: String,
     pub credit_mode: CreditMode,
@@ -389,7 +423,11 @@ mod persisted_round_tests {
 
     #[test]
     fn every_census_mode_round_trips_through_storage() {
-        for mode in [CensusMode::Token, CensusMode::ByRequester, CensusMode::Onchain] {
+        for mode in [
+            CensusMode::Token,
+            CensusMode::ByRequester,
+            CensusMode::Onchain,
+        ] {
             let mut round: E3Crisp = serde_json::from_str(LEGACY_ROUND).unwrap();
             round.census_mode = mode;
 
