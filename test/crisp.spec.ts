@@ -23,6 +23,7 @@ const RANDOMNESS_ACCEPTANCE_WAIT = 30_000
 const DKG_READY_GRACE = 90_000
 const VOTE_PUBLICATION_WAIT = 180_000
 const E3_COMPLETION_WAIT = 180_000
+const CRISP_APP_URL = 'http://localhost:3000/'
 const E3_STAGE_COMPLETE = 5n
 const E3_STAGE_FAILED = 6n
 const REGISTRY_READ_ABI = [
@@ -203,7 +204,10 @@ const test = testWithSynpress(metaMaskFixtures(basicSetup))
 const { expect } = test
 
 async function ensureHomePageLoaded(page: Page) {
-  return await expect(page.getByText('Coercion-Resistant Impartial Selection Protocol')).toBeVisible()
+  await page.goto(CRISP_APP_URL, { waitUntil: 'domcontentloaded' })
+  await page.waitForLoadState('load')
+  log(`opened CRISP at ${page.url()}`)
+  await expect(page.getByText('Coercion-Resistant Impartial Selection Protocol')).toBeVisible({ timeout: 30_000 })
 }
 
 function log(msg: string) {
@@ -292,9 +296,16 @@ async function connectWalletWithRetry(page: Page, maxAttempts = 3) {
   }
 }
 
-test('CRISP smoke test', async ({ context, page, metamaskPage, extensionId }) => {
+test('CRISP smoke test', async ({ context, metamaskPage, extensionId }) => {
+  // The persistent browser's first page belongs to MetaMask. Create a separate
+  // page so extension navigation cannot replace the CRISP application under test.
+  const page = await context.newPage()
+
   page.on('console', (msg: ConsoleMessage) => {
     console.log(msg.text())
+  })
+  page.on('pageerror', (error) => {
+    console.error(`[browser page error] ${error.stack || error.message}`)
   })
 
   log('============================================')
@@ -309,9 +320,6 @@ test('CRISP smoke test', async ({ context, page, metamaskPage, extensionId }) =>
   const e3id = await runCliInit()
   log(`Got e3 id: ${e3id}`)
   await waitForRandomnessAcceptance(e3id)
-
-  await page.goto('/', { waitUntil: 'domcontentloaded' })
-  await page.waitForLoadState('load')
 
   log(`ensureHomePageLoaded...`)
   await ensureHomePageLoaded(page)
