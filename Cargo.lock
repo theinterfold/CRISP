@@ -2934,6 +2934,8 @@ dependencies = [
  "light-poseidon 0.2.0",
  "num-bigint 0.4.6",
  "num-traits",
+ "openvm-keccak256",
+ "rayon",
  "serde",
  "sha2 0.10.9",
  "sha3",
@@ -3008,6 +3010,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "e3-openvm-host"
+version = "0.19.0-test.2"
+dependencies = [
+ "anyhow",
+ "e3-compute-provider",
+ "e3-openvm-types",
+ "libc",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "e3-openvm-types"
+version = "0.19.0-test.2"
+dependencies = [
+ "bincode",
+ "e3-compute-provider",
+ "serde",
+]
+
+[[package]]
 name = "e3-parity-matrix"
 version = "0.19.0-test.2"
 dependencies = [
@@ -3039,6 +3062,7 @@ dependencies = [
  "e3-bfv-client",
  "e3-compute-provider",
  "e3-fhe-params",
+ "futures-util",
  "hex",
  "reqwest",
  "serde",
@@ -3053,7 +3077,6 @@ dependencies = [
  "ark-bn254 0.5.0",
  "ark-ff 0.5.0",
  "hex",
- "risc0-bigint2",
  "sha3",
  "taceo-poseidon2",
 ]
@@ -3080,16 +3103,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "e3-support-scripts-openvm"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "e3-openvm-host",
+ "e3-program-server",
+ "e3-user-program",
+ "tokio",
+]
+
+[[package]]
 name = "e3-user-program"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "e3-bfv-client",
  "e3-compute-provider",
  "e3-fhe-params",
+ "e3-openvm-types",
  "fhe",
  "fhe-traits",
  "hex",
  "num-bigint 0.5.1",
+ "openvm-sha2",
  "rand 0.9.5",
  "serde_json",
  "sha2 0.10.9",
@@ -3394,7 +3431,7 @@ dependencies = [
 [[package]]
 name = "fhe"
 version = "0.4.1"
-source = "git+https://github.com/gnosisguild/fhe.rs?tag=v0.4.1#7a357b60e33820c27ddf4e43a3ebf2615f330836"
+source = "git+https://github.com/gnosisguild/fhe.rs?tag=v0.4.2#873dc69c07eae251f88c4b5cacf6c4453e2c365a"
 dependencies = [
  "bincode",
  "doc-comment",
@@ -3420,7 +3457,7 @@ dependencies = [
 [[package]]
 name = "fhe-math"
 version = "0.4.1"
-source = "git+https://github.com/gnosisguild/fhe.rs?tag=v0.4.1#7a357b60e33820c27ddf4e43a3ebf2615f330836"
+source = "git+https://github.com/gnosisguild/fhe.rs?tag=v0.4.2#873dc69c07eae251f88c4b5cacf6c4453e2c365a"
 dependencies = [
  "ethnum",
  "fhe-traits",
@@ -3444,7 +3481,7 @@ dependencies = [
 [[package]]
 name = "fhe-traits"
 version = "0.4.1"
-source = "git+https://github.com/gnosisguild/fhe.rs?tag=v0.4.1#7a357b60e33820c27ddf4e43a3ebf2615f330836"
+source = "git+https://github.com/gnosisguild/fhe.rs?tag=v0.4.2#873dc69c07eae251f88c4b5cacf6c4453e2c365a"
 dependencies = [
  "rand 0.9.5",
 ]
@@ -3452,7 +3489,7 @@ dependencies = [
 [[package]]
 name = "fhe-util"
 version = "0.4.1"
-source = "git+https://github.com/gnosisguild/fhe.rs?tag=v0.4.1#7a357b60e33820c27ddf4e43a3ebf2615f330836"
+source = "git+https://github.com/gnosisguild/fhe.rs?tag=v0.4.2#873dc69c07eae251f88c4b5cacf6c4453e2c365a"
 dependencies = [
  "num-bigint-dig",
  "num-traits",
@@ -4288,12 +4325,6 @@ dependencies = [
  "quote",
  "syn 2.0.117",
 ]
-
-[[package]]
-name = "include_bytes_aligned"
-version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ee796ad498c8d9a1d68e477df8f754ed784ef875de1414ebdaf169f70a6a784"
 
 [[package]]
 name = "indenter"
@@ -5222,6 +5253,69 @@ dependencies = [
 ]
 
 [[package]]
+name = "openvm-custom-insn"
+version = "2.0.2"
+source = "git+https://github.com/openvm-org/openvm.git?tag=v2.0.2#59a69b8b0cbee7011ac978e4cc07707ee3681944"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "openvm-keccak256"
+version = "2.0.2"
+source = "git+https://github.com/openvm-org/openvm.git?tag=v2.0.2#59a69b8b0cbee7011ac978e4cc07707ee3681944"
+dependencies = [
+ "openvm-keccak256-guest",
+ "spin 0.10.1",
+ "tiny-keccak",
+]
+
+[[package]]
+name = "openvm-keccak256-guest"
+version = "2.0.2"
+source = "git+https://github.com/openvm-org/openvm.git?tag=v2.0.2#59a69b8b0cbee7011ac978e4cc07707ee3681944"
+dependencies = [
+ "openvm-platform",
+]
+
+[[package]]
+name = "openvm-platform"
+version = "2.0.2"
+source = "git+https://github.com/openvm-org/openvm.git?tag=v2.0.2#59a69b8b0cbee7011ac978e4cc07707ee3681944"
+dependencies = [
+ "openvm-custom-insn",
+ "openvm-rv32im-guest",
+]
+
+[[package]]
+name = "openvm-rv32im-guest"
+version = "2.0.2"
+source = "git+https://github.com/openvm-org/openvm.git?tag=v2.0.2#59a69b8b0cbee7011ac978e4cc07707ee3681944"
+dependencies = [
+ "openvm-custom-insn",
+ "strum_macros 0.26.4",
+]
+
+[[package]]
+name = "openvm-sha2"
+version = "2.0.2"
+source = "git+https://github.com/openvm-org/openvm.git?tag=v2.0.2#59a69b8b0cbee7011ac978e4cc07707ee3681944"
+dependencies = [
+ "openvm-sha2-guest",
+ "sha2 0.10.9",
+]
+
+[[package]]
+name = "openvm-sha2-guest"
+version = "2.0.2"
+source = "git+https://github.com/openvm-org/openvm.git?tag=v2.0.2#59a69b8b0cbee7011ac978e4cc07707ee3681944"
+dependencies = [
+ "openvm-platform",
+]
+
+[[package]]
 name = "ordered-multimap"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6090,16 +6184,6 @@ dependencies = [
  "libc",
  "untrusted",
  "windows-sys 0.52.0",
-]
-
-[[package]]
-name = "risc0-bigint2"
-version = "1.4.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b87f5f7494a2242cead2750b7ce2b8522c1be83dee268479f1c12ed521eaf595"
-dependencies = [
- "include_bytes_aligned",
- "stability",
 ]
 
 [[package]]
@@ -7070,6 +7154,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3763264f6b73151db08c50ff20d7d8a0b8796e021cdea7ceedad07b80155fa0e"
 
 [[package]]
+name = "spin"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "023a211cb3138dbc438680b32560ad89f699977624c9f8dbb95a47d5b4c07dd3"
+
+[[package]]
 name = "spki"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7077,16 +7167,6 @@ checksum = "d91ed6c858b01f942cd56b37a94b3e0a1798290327d1236e4d9cf4eaca44d29d"
 dependencies = [
  "base64ct",
  "der",
-]
-
-[[package]]
-name = "stability"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d904e7009df136af5297832a3ace3370cd14ff1546a232f4f185036c2736fcac"
-dependencies = [
- "quote",
- "syn 2.0.117",
 ]
 
 [[package]]
@@ -7123,7 +7203,20 @@ version = "0.27.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af23d6f6c1a224baef9d3f61e287d2761385a5b88fdab4eb4c6f11aeb54c4bcf"
 dependencies = [
- "strum_macros",
+ "strum_macros 0.27.2",
+]
+
+[[package]]
+name = "strum_macros"
+version = "0.26.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4c6bee85a5a24955dc440386795aa378cd9cf82acd5f764469152d2270e581be"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "rustversion",
+ "syn 2.0.117",
 ]
 
 [[package]]
@@ -7363,15 +7456,15 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 
 [[package]]
 name = "tempfile"
-version = "3.27.0"
+version = "3.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
+checksum = "e8a64e3985349f2441a1a9ef0b853f869006c3855f2cda6862a94d26ebb9d6a1"
 dependencies = [
  "fastrand",
- "getrandom 0.4.2",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -8079,7 +8172,7 @@ dependencies = [
  "num-derive",
  "num-traits",
  "smallvec",
- "spin",
+ "spin 0.9.9",
  "wasmi_collections",
  "wasmi_core",
  "wasmparser-nostd",
