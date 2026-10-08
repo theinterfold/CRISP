@@ -5,6 +5,7 @@
 // or FITNESS FOR A PARTICULAR PURPOSE.
 
 use alloy::{
+    eips::{BlockId, BlockNumberOrTag},
     network::{Ethereum, EthereumWallet},
     primitives::{Address, Bytes, B256, I256, U256},
     providers::{
@@ -12,7 +13,7 @@ use alloy::{
             BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller,
             WalletFiller,
         },
-        Identity, ProviderBuilder, RootProvider, WalletProvider,
+        Identity, Provider, ProviderBuilder, RootProvider, WalletProvider,
     },
     rpc::types::TransactionReceipt,
     signers::local::PrivateKeySigner,
@@ -83,11 +84,11 @@ sol! {
         function pendingInputCount(uint256 e3Id) external view returns (uint40);
         function inputCommitmentDeadline(uint256 e3Id) external view returns (uint256);
         /// The divisor `CRISPProgram` resolved and stored when the round was requested.
-        /// Zero for a round that is not ONCHAIN, and for a round it never initialized.
+        /// Non-zero for every CUSTOM-credit round, zero for a CONSTANT-credit round and for a
+        /// round it never initialized.
         function votingPowerDivisorOf(uint256 e3Id) external view returns (uint256);
-        /// The census mode recorded at validation. Declared as a uint8 because that is how
-        /// Solidity encodes the enum, so no enum declaration has to be mirrored here.
-        function censusModeOf(uint256 e3Id) external view returns (uint8);
+        /// The timepoint, in the token's clock units, the divisor was sized at.
+        function snapshotOf(uint256 e3Id) external view returns (uint48);
         function verify(
             uint256 e3Id,
             bytes32 ciphertextOutputHash,
@@ -132,12 +133,6 @@ sol! {
         uint40 parentIndexPlusOne
     );
 }
-
-/// The `CensusMode.ONCHAIN` discriminant, as `CRISPProgram` declares the enum.
-///
-/// The third variant, after `TOKEN` and `BY_REQUESTER`. A round of any other mode holds no
-/// voting-power divisor.
-const CENSUS_MODE_ONCHAIN: u8 = 2;
 
 /// Why a `publishInput` dry run failed.
 ///
@@ -659,32 +654,32 @@ impl CRISPContract<CRISPReadProvider> {
         Ok(contract.pendingInputCount(e3_id).call().await?.to::<u64>())
     }
 
-    /// The voting-power divisor `CRISPProgram` stored for an ONCHAIN round.
-    ///
-    /// The authority on the divisor. The contract resolves it once, in the transaction that
-    /// requests the E3, and every input is then scaled by exactly this value. Reading it removes
-    /// the whole off-chain derivation, so the coordinator cannot disagree with the chain over an
-    /// optional `decimals()` call or over the width of an intermediate value.
-    ///
-    /// `Ok(None)` when the round is not ONCHAIN, or when the contract holds no divisor for it.
-    /// Both are legitimate answers rather than failures, and neither one is authoritative.
-    pub async fn onchain_voting_power_divisor(&self, e3_id: U256) -> Result<Option<U256>> {
+    /// The voting-power divisor and snapshot `CRISPProgram` stored for a CUSTOM-credit round at
+    /// request time. A census must scale every voter by exactly this divisor and read every voter at
+    /// exactly this snapshot. `validate` writes both in one transaction, and both reads name one
+    /// block by its hash, so a non-zero divisor vouches for the snapshot beside it. `Ok(None)` when
+    /// the divisor is zero: a CONSTANT-credit round, a round it never initialized, or a node that
+    /// lacks the request block.
+    pub async fn stored_voting_power_scale(&self, e3_id: U256) -> Result<Option<(U256, u64)>> {
         let contract = CRISPProgram::new(self.contract_address, self.provider.as_ref());
-
-        // The mode is checked first. The contract records a divisor for ONCHAIN rounds only, and
-        // applying one to a Merkle round would scale the census by a factor the tally does not
-        // read back.
-        let census_mode = contract.censusModeOf(e3_id).call().await?;
-        if census_mode != CENSUS_MODE_ONCHAIN {
-            return Ok(None);
-        }
-
-        let divisor = contract.votingPowerDivisorOf(e3_id).call().await?;
+        // Nodes behind one endpoint can hold different blocks at one height. A hash names one
+        // block, and a node without that block fails the call.
+        let head = self
+            .provider
+            .get_block_by_number(BlockNumberOrTag::Latest)
+            .await?
+            .ok_or_else(|| eyre::eyre!("The node returned no latest block"))?;
+        let block = BlockId::hash(head.header.hash);
+        let divisor = contract
+            .votingPowerDivisorOf(e3_id)
+            .block(block)
+            .call()
+            .await?;
         if divisor.is_zero() {
             return Ok(None);
         }
-
-        Ok(Some(divisor))
+        let snapshot = contract.snapshotOf(e3_id).block(block).call().await?;
+        Ok(Some((divisor, snapshot.to::<u64>())))
     }
 }
 

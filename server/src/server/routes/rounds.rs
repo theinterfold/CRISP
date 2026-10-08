@@ -536,10 +536,8 @@ pub async fn initialize_crisp_round(
     let credit_mode = U256::from(0); // Constant
     let credits = U256::from(1);
     let census_mode = U256::from(census_mode);
-    // Seventh field: the ONCHAIN voting-power divisor. Zero is the "derive from the token's
-    // decimals" sentinel — for a token without `decimals()`, such as `SelfRegistry`, that derives
-    // to 1. Required regardless — `_initRound` decodes exactly seven fields, so a shorter
-    // encoding reverts the request with empty data.
+    // Seventh field: the requested voting-power divisor, which constant credits ignore. Required:
+    // `_initRound` decodes exactly seven fields and reverts a shorter encoding.
     let voting_power_divisor = U256::from(0);
     let custom_params_bytes = Bytes::from(
         (

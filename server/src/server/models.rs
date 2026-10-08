@@ -221,10 +221,10 @@ pub struct CustomParams {
     pub credit_mode: CreditMode,
     pub credits: Option<String>,
     pub census_mode: CensusMode,
-    /// Divides raw token power into ballot units for a `CensusMode::Onchain` round. `"0"` means
-    /// the contract derives it from the token's decimals. Recorded because a round may name its
-    /// own: scaling by the decimals then puts every served balance in different units from the
-    /// ones `publishInput` will enforce.
+    /// The divisor requested for a `CreditMode::Custom` round, of either census mode; `"0"` asks
+    /// for the smallest one that keeps every option total below the plaintext modulus. The
+    /// contract stores the value it uses (`votingPowerDivisorOf`). A `CreditMode::Constant` round
+    /// ignores it.
     pub voting_power_divisor: String,
 }
 
@@ -390,15 +390,21 @@ pub struct E3Crisp {
     /// were: `Onchain` did not exist when they were written.
     #[serde(default)]
     pub census_mode: CensusMode,
-    /// True while holder discovery for an on-chain round is owed and not yet done.
+    /// True while holder discovery for a round is owed and not yet done.
     ///
     /// Set when the round was registered without a census because the stored voting-power
-    /// divisor could not be read. Registration never waits on the divisor, so the round is
-    /// votable from the start, but clients have no mask targets until discovery runs. A retry
-    /// pass reads the divisor again and clears this on success. Durable, so a restart retries
-    /// rather than forgets: the `E3Requested` event is not replayed once the cursor passes it.
+    /// divisor could not be read. An on-chain round is votable meanwhile but has no mask targets,
+    /// and a Merkle round takes no ballot until the retry pass posts its root. That pass reads the
+    /// divisor again and clears this on success. Durable, so a restart retries rather than
+    /// forgets: the `E3Requested` event is not replayed once the cursor passes it.
     #[serde(default)]
     pub discovery_pending: bool,
+    /// The program that requested the round. Each `CRISPProgram` deployment fixes the ballot
+    /// layout of its rounds, so the server decodes a tally only for rounds of its configured
+    /// program. Empty when the stored record has no program, and then the round's layout is
+    /// unknown.
+    #[serde(default)]
+    pub e3_program: String,
 }
 
 impl From<E3> for WebResultRequest {
