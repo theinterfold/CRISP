@@ -1,0 +1,48 @@
+name: Cache Rust dependencies
+description: Cache Rust dependencies (cargo registry/git + target)
+
+inputs:
+  rust-target-path:
+    description: Rust target directories to cache, one per line
+    required: false
+    default: target/
+
+outputs:
+  cache-hit:
+    description: Whether an entry with the exact key was restored
+    value: ${{ steps.cache.outputs.cache-hit }}
+
+runs:
+  using: composite
+  steps:
+    - name: Compute cache scope
+      id: cache-key
+      shell: bash
+      env:
+        TARGET_PATHS: ${{ inputs.rust-target-path }}
+      run: |
+        if command -v sha256sum >/dev/null 2>&1; then
+          scope="$(printf '%s' "$TARGET_PATHS" | sha256sum | cut -d' ' -f1)"
+        else
+          scope="$(printf '%s' "$TARGET_PATHS" | shasum -a 256 | cut -d' ' -f1)"
+        fi
+
+        echo "scope=$scope" >> "$GITHUB_OUTPUT"
+
+        # Artifacts built by another compiler or with other debug-information settings are useless, so
+        # the key and the restore prefix both name them.
+        toolchain="${RUST_TOOLCHAIN:?Set RUST_TOOLCHAIN to the toolchain that builds the target}"
+        echo "policy=rustc-${toolchain}-dev-${CARGO_PROFILE_DEV_DEBUG:-default}-test-${CARGO_PROFILE_TEST_DEBUG:-default}" >> "$GITHUB_OUTPUT"
+
+    # The key names the lockfile of CRISP and the lockfile of the OpenVM guest, and the lockfile of the interfold submodule, which the
+    # interfold tools in the submodule build against.
+    - name: Cache Rust dependencies
+      id: cache
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          ${{ inputs.rust-target-path }}
+        key: rust-deps-${{ steps.cache-key.outputs.scope }}-${{ steps.cache-key.outputs.policy }}-${{ hashFiles('Cargo.lock', 'guest/Cargo.lock', 'interfold/Cargo.lock') }}
+        restore-keys: rust-deps-${{ steps.cache-key.outputs.scope }}-${{ steps.cache-key.outputs.policy }}-

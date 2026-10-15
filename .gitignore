@@ -50,3 +50,5 @@ playwright-report/
 # Deployment-local generated files are not program source.
 .interfold/generated/
 cache_hardhat/
+# Retained by older checkouts that installed Solidity libraries with forge.
+packages/crisp-contracts/lib/

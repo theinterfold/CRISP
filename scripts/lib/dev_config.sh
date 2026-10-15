@@ -7,7 +7,12 @@ _crisp_dev_config_root() {
 
 load_crisp_dev_config() {
   CRISP_ROOT="$(_crisp_dev_config_root)"
-  REPO_ROOT="$(cd "${CRISP_ROOT}/../.." && pwd)"
+  # The interfold submodule supplies the CLI, the interfold contracts, and the circuit sources.
+  INTERFOLD_ROOT="${CRISP_ROOT}/interfold"
+  if [[ ! -f "${INTERFOLD_ROOT}/Cargo.toml" ]]; then
+    echo "The interfold submodule is missing. Run: git submodule update --init --recursive" >&2
+    return 1
+  fi
 
   local cfg="${CRISP_ROOT}/crisp.dev.env"
   if [[ ! -f "$cfg" ]]; then
@@ -67,7 +72,7 @@ load_crisp_dev_config() {
     export E3_PROGRAM__DEV=true
   fi
 
-  export CRISP_BFV_PRESET CRISP_E3_PARAM_SET CRISP_SKIP_PROOF_AGGREGATION CRISP_ROOT REPO_ROOT CRISP_REAL_PROOFS
+  export CRISP_BFV_PRESET CRISP_E3_PARAM_SET CRISP_SKIP_PROOF_AGGREGATION CRISP_ROOT INTERFOLD_ROOT CRISP_REAL_PROOFS
 }
 
 apply_crisp_dev_config_to_server_env() {
@@ -93,7 +98,7 @@ build_interfold_circuits_at_setup() {
   local committee="${CRISP_COMMITTEE:-minimum}"
   echo "Building interfold circuits (preset=${CRISP_BFV_PRESET}, committee=${committee})..."
   (
-    cd "${REPO_ROOT}" &&
+    cd "${INTERFOLD_ROOT}" &&
       pnpm build:circuits \
         --preset "${CRISP_BFV_PRESET}" \
         --committee "${committee}" \
@@ -103,7 +108,7 @@ build_interfold_circuits_at_setup() {
 
 sync_interfold_circuit_artifacts() {
   local committee="${CRISP_COMMITTEE:-minimum}"
-  local src="${REPO_ROOT}/dist/circuits/${CRISP_BFV_PRESET}/${committee}"
+  local src="${INTERFOLD_ROOT}/dist/circuits/${CRISP_BFV_PRESET}/${committee}"
   local dst="${CRISP_ROOT}/.interfold/noir/circuits/${CRISP_BFV_PRESET}/${committee}"
 
   if [[ ! -f "${src}/recursive/dkg/pk/pk.json" ]]; then

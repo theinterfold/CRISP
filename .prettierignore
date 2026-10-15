@@ -1,0 +1,43 @@
+# The interfold submodule has its own formatting rules.
+interfold
+
+# directories
+node_modules
+dist
+build
+cache
+coverage
+target
+artifacts
+types
+deployments
+.cargo
+.next
+.cache-synpress
+.interfold
+packages/crisp-contracts/lib
+
+# files
+*.env
+*.log
+.DS_Store
+.pnp.*
+coverage.json
+interfold.config.yaml
+
+# lock files
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+Cargo.lock
+
+# generated files
+deployed_contracts.json
+*.last-run.json
+
+# test results
+test-results/
+playwright-report/
+
+# secrets files
+**/*.secrets.json

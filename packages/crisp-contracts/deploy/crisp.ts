@@ -355,8 +355,8 @@ export const deployVerifier = async (connectedEthers?: any): Promise<string> => 
     storeDeploymentArgs({ address, blockNumber: await ethers.provider.getBlockNumber() }, 'MockOpenVmReceiptVerifier', chain)
     return address
   }
-  // The identity `interfold program compile` wrote for examples/CRISP, unless OPENVM_* settings name
-  // one.
+  // The identity `interfold program compile` wrote for the CRISP repository root, unless OPENVM_*
+  // settings name one.
   const crispRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
   const {
     receipt: verifier,

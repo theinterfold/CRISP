@@ -1,0 +1,20 @@
+packages:
+  - .
+  - client
+  - packages/crisp-sdk
+  - packages/crisp-contracts
+  - packages/crisp-zk-inputs
+linkWorkspacePackages: true
+# Keep in sync with "pnpm.overrides" in package.json; pnpm versions differ in which one they read.
+overrides:
+  # Local development builds against the interfold submodule. Published packages keep the npm
+  # version that their package.json names.
+  '@interfold/config': link:./interfold/packages/interfold-config
+  '@interfold/contracts': link:./interfold/packages/interfold-contracts
+  # The interfold workspace pins.
+  '@nomicfoundation/hardhat-keystore': 3.0.3
+  '@types/node': 22.7.5
+  tsup: 8.5.0
+  typescript: 5.8.3
+  undici-types: 6.19.8
+  viem: 2.38.6

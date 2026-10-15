@@ -9,8 +9,8 @@
 set -euo pipefail
 
 CRISP="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-REPO="$(cd "$CRISP/../.." && pwd)"
-T="$REPO/circuits/bin/threshold/target"
+INTERFOLD="$CRISP/interfold"
+T="$INTERFOLD/circuits/bin/threshold/target"
 
 for name in crisp crisp_onchain; do
   VK=(
@@ -20,8 +20,8 @@ for name in crisp crisp_onchain; do
     "$T/user_data_encryption_ct1.vk_recursive_hash"
   )
   for f in "${VK[@]}"; do
-    [[ -f "$f" ]] || { echo "missing $f (run pnpm compile:circuits in examples/CRISP)" >&2; exit 1; }
+    [[ -f "$f" ]] || { echo "missing $f (run pnpm compile:circuits in the CRISP root)" >&2; exit 1; }
   done
   printf '%s: ' "$name"
-  (cd "$REPO" && cargo run --quiet --locked --release -p e3-zk-artifacts --bin zk-artifacts -- vk-hash "${VK[@]}")
+  (cd "$INTERFOLD" && cargo run --quiet --locked --release -p e3-zk-artifacts --bin zk-artifacts -- vk-hash "${VK[@]}")
 done

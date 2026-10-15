@@ -32,7 +32,7 @@ fn format_request_e3_revert(err: impl std::fmt::Display) -> eyre::Report {
         return eyre!(
             "request_e3 reverted: InsufficientCiphernodes — CommitteeSize::{label} (e3_committee_size={size}) \
              requires at least {n} active operators (bondingRegistry.numActiveOperators() is too low). \
-             Register ciphernodes before init: run full `pnpm dev:up`, or from examples/CRISP run \
+             Register ciphernodes before init: run full `pnpm dev:up`, or from the CRISP root run \
              `pnpm ciphernode:add --ciphernode-address <addr> --network localhost` until at least {n} \
              nodes are active. Default dev config uses Minimum (N=3, cn1–cn3 in interfold.config.yaml).",
             size = CONFIG.e3_committee_size,

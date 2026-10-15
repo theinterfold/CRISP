@@ -13,7 +13,7 @@ import { readDeploymentArgs } from '@interfold/contracts/scripts'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
-/** examples/CRISP */
+/** The CRISP repository root. */
 const CRISP_ROOT = path.join(__dirname, '..', '..', '..')
 
 function ensureEnvFile(envPath: string, examplePath: string): void {

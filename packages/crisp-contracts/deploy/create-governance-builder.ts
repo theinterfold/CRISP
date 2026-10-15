@@ -45,8 +45,8 @@ type SafeTransaction = {
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const crispContractsDir = resolve(scriptDir, '..')
-const repoRoot = resolve(crispContractsDir, '../../../..')
-const protocolDir = resolve(repoRoot, 'packages/interfold-contracts/deploy/protocol')
+const interfoldRoot = resolve(crispContractsDir, '../../interfold')
+const protocolDir = resolve(interfoldRoot, 'packages/interfold-contracts/deploy/protocol')
 
 function envPath(name: string, fallback: string): string {
   const value = process.env[name]

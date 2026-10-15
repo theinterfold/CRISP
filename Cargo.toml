@@ -16,7 +16,7 @@ version = "0.1.0"
 edition = "2021"
 license = "LGPL-3.0-only"
 description = "CRISP — Voting Application on Interfold"
-repository = "https://github.com/theinterfold/interfold"
+repository = "https://github.com/theinterfold/CRISP"
 
 [workspace.dependencies]
 e3-user-program = { path = "./program" }
@@ -34,18 +34,20 @@ actix-web = "=4.11.0"
 bincode = { version = "=1.3.3" }
 bytemuck = { version = "=1.23.1" }
 derivative = "=2.2.0"
-e3-compute-provider = { path = "../../crates/compute-provider" }
-e3-openvm-host = { path = "../../crates/openvm-host" }
-e3-openvm-types = { path = "../../crates/openvm-types" }
-e3-data-availability = { path = "../../crates/data-availability" }
-e3-program-server = { path = "../../crates/program-server" }
-e3-bfv-client = { path = "../../crates/bfv-client" }
-e3-zk-helpers = { path = "../../crates/zk-helpers" }
-e3-fhe-params = { path = "../../crates/fhe-params" }
-e3-evm-helpers = { path = "../../crates/evm-helpers" }
-e3-sdk = { path = "../../crates/sdk", default-features = false }
-e3-polynomial = { path = "../../crates/polynomial" }
-e3-polynomial-fhe = { path = "../../crates/polynomial/fhe-adapter" }
+# Interfold crates track the interfold `main` branch. `Cargo.lock` pins the resolved commit; run
+# `cargo update` to move it.
+e3-compute-provider = { git = "https://github.com/theinterfold/interfold", branch = "main" }
+e3-openvm-host = { git = "https://github.com/theinterfold/interfold", branch = "main" }
+e3-openvm-types = { git = "https://github.com/theinterfold/interfold", branch = "main" }
+e3-data-availability = { git = "https://github.com/theinterfold/interfold", branch = "main" }
+e3-program-server = { git = "https://github.com/theinterfold/interfold", branch = "main" }
+e3-bfv-client = { git = "https://github.com/theinterfold/interfold", branch = "main" }
+e3-zk-helpers = { git = "https://github.com/theinterfold/interfold", branch = "main" }
+e3-fhe-params = { git = "https://github.com/theinterfold/interfold", branch = "main" }
+e3-evm-helpers = { git = "https://github.com/theinterfold/interfold", branch = "main" }
+e3-sdk = { git = "https://github.com/theinterfold/interfold", branch = "main", default-features = false }
+e3-polynomial = { git = "https://github.com/theinterfold/interfold", branch = "main" }
+e3-polynomial-fhe = { git = "https://github.com/theinterfold/interfold", branch = "main" }
 eyre = "=0.6.12"
 env_logger = "=0.11.8"
 hex = { version = "=0.4.3" }

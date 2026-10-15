@@ -2,7 +2,7 @@
 
 ## Configuration (`crisp.dev.env`)
 
-**Source of truth for local dev:** `examples/CRISP/crisp.dev.env` (from `crisp.dev.env.example`).
+**Source of truth for local dev:** `crisp.dev.env` in the repository root (from `crisp.dev.env.example`).
 
 | Variable                       | Default        | Effect                                                |
 | ------------------------------ | -------------- | ----------------------------------------------------- |
@@ -46,7 +46,7 @@ CRISP_SKIP_PROOF_AGGREGATION=true
 ### Steps
 
 ```bash
-# From examples/CRISP
+# From the repository root
 pnpm dev:setup   # once — skips recursive aggregation circuit build
 pnpm dev:up
 ```
@@ -87,7 +87,7 @@ CRISP `requestE3` reads `E3_PARAM_SET` from `server/.env`. Keep it aligned with 
 ### Steps
 
 ```bash
-cd examples/CRISP
+# From the repository root
 # Edit crisp.dev.env (or crisp.dev.env.example → crisp.dev.env) as above
 pnpm dev:setup    # builds DKG circuits
 rm -rf .interfold/data   # required when switching from Mode A

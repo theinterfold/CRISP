@@ -1,0 +1,608 @@
+name: ci
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  workflow_call:
+    inputs:
+      release_candidate:
+        description: Run every CI job for the exact release candidate.
+        required: false
+        type: boolean
+        default: false
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+      - dev
+env:
+  NODE_VERSION: 22
+  RUST_TOOLCHAIN: 1.91.1
+  NOIR_TOOLCHAIN: v1.0.0-beta.26
+  BB_VERSION: 5.2.0
+  HARDHAT_VAR_MNEMONIC: 'test test test test test test test test test test test junk'
+  HARDHAT_VAR_INFURA_API_KEY: 'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz'
+  PRIVATE_KEY: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
+  RUST_BACKTRACE: 1
+  # Debug and test builds keep only the line tables, which backtraces need, not the full debug
+  # information that only a debugger reads. .github/actions/cache-dependencies puts both values in
+  # the cache key.
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  CARGO_PROFILE_TEST_DEBUG: line-tables-only
+  # Every job rebuilds the workspace crates from scratch after its checkout, so incremental data
+  # only costs time.
+  CARGO_INCREMENTAL: 0
+
+permissions:
+  contents: read
+
+# Every checkout initializes the `interfold` submodule. It supplies the interfold CLI, the interfold
+# contracts, the circuit sources that CRISP's circuits depend on, and the support-scripts crates
+# that two members of the CRISP Cargo workspace link to.
+jobs:
+  detect_changes:
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    outputs:
+      crisp_e2e: ${{ steps.jobs.outputs.crisp_e2e }}
+      build_crisp_sdk: ${{ steps.jobs.outputs.build_crisp_sdk }}
+      build_interfold_cli: ${{ steps.jobs.outputs.build_interfold_cli }}
+      crisp_unit_circuits: ${{ steps.jobs.outputs.crisp_unit_circuits }}
+      crisp_unit_rust: ${{ steps.jobs.outputs.crisp_unit_rust }}
+      crisp_unit_sdk: ${{ steps.jobs.outputs.crisp_unit_sdk }}
+      crisp_unit_contracts: ${{ steps.jobs.outputs.crisp_unit_contracts }}
+      crisp_openvm_guest: ${{ steps.jobs.outputs.crisp_openvm_guest }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        if: ${{ !inputs.release_candidate }}
+        id: filter
+        with:
+          # Required for the '!' exclusions below. The default 'some' quantifier
+          # IGNORES negated patterns — worse, a bare '!**/*.md' rule under 'some'
+          # matches every non-markdown file, turning every filter always-true.
+          predicate-quantifier: 'some-with-excludes'
+          filters: |
+            # Documentation never changes what a build or test produces, so every
+            # filter excludes it.
+            # What the e2e reads: everything except the unit test directories
+            # (`test/`, singular, holds the Playwright spec and stays in) and the CI files, which
+            # the `ci` filter covers.
+            crisp_e2e:
+              - '**'
+              - '!**/tests/**'
+              - '!.github/**'
+              - '!**/*.md'
+              - '!**/*.mdx'
+            # Each filter below lists the paths that one CRISP layer reads. The unit jobs
+            # use them, so a change runs only the unit tests that it can affect. For example, a
+            # server change does not run the SDK or contract tests.
+            crisp_rust:
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain.toml'
+              # Symlinks to members of the CRISP cargo workspace.
+              - '.interfold/support/dev'
+              - '.interfold/support/openvm'
+              - 'crates/**'
+              - 'program/**'
+              - 'server/**'
+              # The server and the program tests embed these files with include_str!.
+              - 'packages/crisp-contracts/deployed_contracts.json'
+              - 'packages/crisp-contracts/tests/fixtures/**'
+              - '!**/*.md'
+              - '!**/*.mdx'
+            crisp_circuits:
+              - 'circuits/**'
+              - '!**/*.md'
+              - '!**/*.mdx'
+            # `pnpm build:sdk` reads these paths: the SDK, the zk-inputs WASM crate and
+            # its cargo workspace, and the scripts that compile and stage the circuits.
+            # The SDK and contract jobs run the pnpm scripts in package.json.
+            crisp_sdk:
+              - 'package.json'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain.toml'
+              - 'crates/zk-inputs/**'
+              - 'crates/zk-inputs-wasm/**'
+              - 'packages/crisp-sdk/**'
+              - 'packages/crisp-zk-inputs/**'
+              - 'scripts/build-presets.mjs'
+              - 'scripts/check-staged-preset.mjs'
+              - 'scripts/circuit-sources.mjs'
+              - 'scripts/compile_circuits.sh'
+              - 'scripts/stage-preset-artifacts.mjs'
+              - '!packages/crisp-sdk/tests/**'
+              - '!**/*.md'
+              - '!**/*.mdx'
+            # The contract tests use the built SDK, not the SDK tests, so a change to
+            # the SDK tests does not run the contract tests.
+            crisp_sdk_tests:
+              - 'packages/crisp-sdk/tests/**'
+              # tests/client-*.test.ts import these client modules.
+              - 'client/src/utils/circuits.ts'
+              - 'client/src/utils/directVote.ts'
+              - '!**/*.md'
+              - '!**/*.mdx'
+            crisp_contracts:
+              - 'packages/crisp-contracts/**'
+              - '!**/*.md'
+              - '!**/*.mdx'
+            # What the OpenVM guest compiles, and the script that builds and runs it.
+            crisp_openvm:
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'guest/**'
+              - 'program/**'
+              - 'scripts/openvm.sh'
+              - '!**/*.md'
+              - '!**/*.mdx'
+            # A new submodule commit changes the interfold CLI, contracts, circuits and
+            # support-scripts crates that every job uses.
+            interfold:
+              - 'interfold'
+              - '.gitmodules'
+            # Only the workflow and the local actions that it runs. The Docker workflow
+            # and its path filters do not change what these jobs produce.
+            ci:
+              - '.github/workflows/ci.yml'
+              - '.github/actions/**'
+            # Root manifests define the workspace and every `pnpm <script>` a job
+            # runs. A change here can retarget or remove a test command, so it
+            # must reach every job that installs from the lockfile.
+            tooling:
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+      - name: Compute job filters
+        id: jobs
+        run: |
+          CRISP_E2E="${{ steps.filter.outputs.crisp_e2e }}"
+          CRISP_RUST="${{ steps.filter.outputs.crisp_rust }}"
+          CRISP_CIRCUITS="${{ steps.filter.outputs.crisp_circuits }}"
+          CRISP_SDK="${{ steps.filter.outputs.crisp_sdk }}"
+          CRISP_SDK_TESTS="${{ steps.filter.outputs.crisp_sdk_tests }}"
+          CRISP_CONTRACTS="${{ steps.filter.outputs.crisp_contracts }}"
+          CRISP_OPENVM="${{ steps.filter.outputs.crisp_openvm }}"
+          INTERFOLD="${{ steps.filter.outputs.interfold }}"
+          CI="${{ steps.filter.outputs.ci }}"
+          TOOLING="${{ steps.filter.outputs.tooling }}"
+          FORCE="${{ github.event_name == 'workflow_dispatch' || inputs.release_candidate }}"
+
+          any() { for v in "$@"; do [ "$v" = "true" ] && echo "true" && return; done; echo "false"; }
+
+          CRISP_E2E_JOB=$(any $FORCE $CRISP_E2E $INTERFOLD $CI $TOOLING)
+          # cargo and nargo do not read the pnpm workspace, so a tooling change
+          # does not run the rust and circuit jobs.
+          echo "crisp_unit_rust=$(any $FORCE $CRISP_RUST $INTERFOLD $CI)" >> $GITHUB_OUTPUT
+          echo "crisp_unit_circuits=$(any $FORCE $CRISP_CIRCUITS $INTERFOLD $CI)" >> $GITHUB_OUTPUT
+          echo "crisp_openvm_guest=$(any $FORCE $CRISP_OPENVM $INTERFOLD $CI)" >> $GITHUB_OUTPUT
+          # The SDK proves with the circuits, and the contract tests use the built SDK.
+          CRISP_UNIT_SDK=$(any $FORCE $CRISP_SDK $CRISP_SDK_TESTS $CRISP_CIRCUITS $INTERFOLD $CI $TOOLING)
+          CRISP_UNIT_CONTRACTS=$(any $FORCE $CRISP_CONTRACTS $CRISP_SDK $CRISP_CIRCUITS $INTERFOLD $CI $TOOLING)
+          echo "crisp_e2e=$CRISP_E2E_JOB" >> $GITHUB_OUTPUT
+          echo "crisp_unit_sdk=$CRISP_UNIT_SDK" >> $GITHUB_OUTPUT
+          echo "crisp_unit_contracts=$CRISP_UNIT_CONTRACTS" >> $GITHUB_OUTPUT
+          # build_crisp_sdk feeds crisp_e2e and the SDK and contract jobs, so it runs when any of
+          # them runs.
+          echo "build_crisp_sdk=$(any $CRISP_E2E_JOB $CRISP_UNIT_SDK $CRISP_UNIT_CONTRACTS)" >> $GITHUB_OUTPUT
+          # Only crisp_e2e runs the interfold CLI.
+          echo "build_interfold_cli=$CRISP_E2E_JOB" >> $GITHUB_OUTPUT
+
+  build_interfold_cli:
+    needs: [detect_changes]
+    if: needs.detect_changes.outputs.build_interfold_cli == 'true'
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          # Keeps the token out of .git/config, where install and build scripts could read it and use
+          # this job's actions: write. The cancel step gets the token on its own.
+          persist-credentials: false
+          submodules: recursive
+
+      # `cargo install` builds in `interfold/target`, so that the cache holds the build.
+      - name: Cache Rust dependencies
+        uses: ./.github/actions/cache-dependencies
+        with:
+          rust-target-path: interfold/target/
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Install solc
+        uses: ./.github/actions/install-solc
+
+      - name: Build interfold CLI
+        working-directory: interfold
+        run: cargo install --locked --path crates/cli --bin interfold --features test-only-skip-proof-aggregation --target-dir target
+
+      - name: Upload interfold binary
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: interfold-binary
+          path: ~/.cargo/bin/interfold
+          retention-days: 1
+
+      - name: Cancel workflow on failure
+        if: failure()
+        run: gh run cancel ${{ github.run_id }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  crisp_unit_circuits:
+    needs: [detect_changes]
+    if: needs.detect_changes.outputs.crisp_unit_circuits == 'true'
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          submodules: recursive
+
+      - name: Install Nargo
+        uses: noir-lang/noirup@7dbe69ccc78877f0200ffa5a40836c953d2cfd8f # v0.1.4
+        with:
+          toolchain: ${{ env.NOIR_TOOLCHAIN }}
+
+      - name: Run circuit tests
+        working-directory: ./circuits/lib
+        run: nargo test
+
+  crisp_unit_rust:
+    needs: [detect_changes]
+    if: needs.detect_changes.outputs.crisp_unit_rust == 'true'
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          submodules: recursive
+
+      - name: Cache Rust dependencies
+        uses: ./.github/actions/cache-dependencies
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1
+
+      - name: Install solc
+        uses: ./.github/actions/install-solc
+
+      - name: Run cargo test
+        run: cargo test
+
+  crisp_unit_sdk:
+    needs: [detect_changes, build_crisp_sdk]
+    if: needs.detect_changes.outputs.crisp_unit_sdk == 'true'
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        uses: ./.github/actions/install-node-deps
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Download Crisp SDK artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: crisp-sdk-artifacts
+          path: .
+
+      # One test proves a ballot. The contract suite proves every other ballot kind through this SDK.
+      - name: Run SDK tests
+        run: pnpm test:sdk
+
+  crisp_unit_contracts:
+    needs: [detect_changes, build_crisp_sdk]
+    if: needs.detect_changes.outputs.crisp_unit_contracts == 'true'
+    # Use a timeout for each leg because the workloads differ. Tests that generate a ballot prove
+    # five Noir circuits and can take several minutes. Other tests complete in seconds.
+    timeout-minutes: ${{ matrix.timeout }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          # The contract suite is split by proving cost, not by subject. Run whole it took 27m54s
+          # against a 30m cap and started dying to ordinary runner variance, and it grows by minutes
+          # with every ballot a new test needs. Split, the critical path is the largest single leg
+          # rather than the sum, and the checks that prove nothing report in seconds instead of
+          # queueing behind twenty minutes of proving.
+          #
+          # `pnpm test:contracts` still runs all of it in one go for local use, and
+          # `check:test-legs` fails if a test file ever belongs to no leg.
+          #
+          # input-tree: the poisoned-parent case proves three ballots and runs alone. The canonical
+          # group's negative match keeps every new test in it.
+          - test-suite: test:contracts:input-tree:poisoned-parent
+            timeout: 30
+          - test-suite: test:contracts:input-tree:canonical
+            timeout: 30
+          # ballots: crisp.contracts.test.ts and onchain-census.test.ts each prove two ballots.
+          - test-suite: test:contracts:ballots:program
+            timeout: 30
+          - test-suite: test:contracts:ballots:census
+            timeout: 30
+          - test-suite: test:contracts:unit
+            timeout: 15
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          submodules: recursive
+
+      # `hardhat.config.ts` imports `@interfold/contracts/tasks/*`, which resolves only after the
+      # interfold contracts compile.
+      - name: Install dependencies
+        uses: ./.github/actions/install-node-deps
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          compile-interfold-contracts: 'true'
+
+      # Each leg has at least one test that imports `@crisp-e3/sdk`.
+      - name: Download Crisp SDK artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: crisp-sdk-artifacts
+          path: .
+
+      - name: Run ${{ matrix.test-suite }}
+        run: pnpm ${{ matrix.test-suite }}
+
+  # Builds CRISP's OpenVM guest, then runs it on a fresh fixture without proving and compares the
+  # digest it reveals with the native journal.
+  crisp_openvm_guest:
+    needs: [detect_changes]
+    if: needs.detect_changes.outputs.crisp_openvm_guest == 'true'
+    timeout-minutes: 75
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          submodules: recursive
+      - name: Cache Rust dependencies
+        uses: ./.github/actions/cache-dependencies
+        with:
+          rust-target-path: target/openvm/
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - name: Install protoc
+        uses: ./.github/actions/install-protoc
+      - name: Install the OpenVM guest toolchain
+        run: rustup toolchain install nightly-2026-01-18 --component rust-src
+      # The published binary of the pinned release, checked against its SHA-256. Building it from
+      # source took 7-9 minutes whenever its cache missed.
+      - name: Install cargo-openvm
+        run: |
+          archive="${RUNNER_TEMP}/cargo-openvm.tar.gz"
+          curl --proto '=https' --tlsv1.2 -fsSL --retry 5 --retry-all-errors --connect-timeout 20 --max-time 300 --retry-max-time 600 \
+            https://github.com/openvm-org/openvm/releases/download/v2.0.2/cargo-openvm-v2.0.2-x86_64-unknown-linux-gnu.tar.gz \
+            -o "${archive}"
+          echo "c2a1d63a96c093a4969c799f3021fb991b0c51f56b53f26e3468d2d13676de2f  ${archive}" | sha256sum --check
+          tar -xzf "${archive}" -C ~/.cargo/bin cargo-openvm
+          cargo openvm --version
+      # The guest replaces hashing, packing and commitments with accelerated versions that the host
+      # does not run. The secure fixture covers their secure-8192 widths.
+      - name: Run the CRISP guest against the native journal
+        run: |
+          bash scripts/openvm.sh fixture 3 "$RUNNER_TEMP/crisp-fixture" --insecure
+          bash scripts/openvm.sh guest-parity "$RUNNER_TEMP/crisp-fixture"
+          bash scripts/openvm.sh fixture 2 "$RUNNER_TEMP/crisp-fixture-secure"
+          bash scripts/openvm.sh guest-parity "$RUNNER_TEMP/crisp-fixture-secure"
+
+  build_crisp_sdk:
+    needs: [detect_changes]
+    if: needs.detect_changes.outputs.build_crisp_sdk == 'true'
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          submodules: recursive
+
+      - name: Install Nargo
+        uses: noir-lang/noirup@7dbe69ccc78877f0200ffa5a40836c953d2cfd8f # v0.1.4
+        with:
+          toolchain: ${{ env.NOIR_TOOLCHAIN }}
+
+      # The preset build runs the interfold circuit tools (`interfold/scripts/build-circuits.ts`),
+      # which build in `interfold/target`.
+      - name: Cache Rust dependencies
+        uses: ./.github/actions/cache-dependencies
+        with:
+          rust-target-path: |
+            target/
+            interfold/target/
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: wasm32-unknown-unknown
+
+      - name: Install protoc
+        uses: ./.github/actions/install-protoc
+
+      - name: Install dependencies
+        uses: ./.github/actions/install-node-deps
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Build the sdk
+        run: pnpm build:sdk
+
+      - name: Install Chrome for WASM browser smoke tests
+        uses: browser-actions/setup-chrome@19ae4b339ee18925ab85cf12c1041150ea4a44c8 # v1
+
+      # `pnpm build:sdk` already built crisp-zk-inputs through `build:wasm`.
+      - name: WASM browser smoke test (crisp-zk-inputs)
+        run: pnpm -C packages/crisp-zk-inputs test:browser
+
+      - name: Upload SDK artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: crisp-sdk-artifacts
+          path: |
+            packages/crisp-sdk/dist
+            packages/crisp-zk-inputs/dist
+            circuits/bin/crisp/target
+            circuits/bin/crisp_onchain/target
+            circuits/bin/fold/target
+            circuits/bin/fold_onchain/target
+            interfold/circuits/bin/threshold/target
+            interfold/circuits/bin/recursive_aggregation/*/target
+          retention-days: 1
+          if-no-files-found: warn
+
+  crisp_e2e:
+    needs: [detect_changes, build_interfold_cli, build_crisp_sdk]
+    if: needs.detect_changes.outputs.crisp_e2e == 'true'
+    timeout-minutes: 45
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          submodules: recursive
+
+      - name: Cache Rust dependencies
+        uses: ./.github/actions/cache-dependencies
+        with:
+          rust-target-path: |
+            target/
+            interfold/target/
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Prepare test environment
+        run: |
+          mkdir -p $GITHUB_WORKSPACE/test-results
+          sudo chmod -R 777 $GITHUB_WORKSPACE/test-results
+          mkdir -p $GITHUB_WORKSPACE/playwright-report
+          sudo chmod -R 777 $GITHUB_WORKSPACE/playwright-report
+          mkdir -p $GITHUB_WORKSPACE/.cache-synpress
+          sudo chown -R "$(id -u):$(id -g)" $GITHUB_WORKSPACE/.cache-synpress
+          sudo chmod -R 777 $GITHUB_WORKSPACE/.cache-synpress
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1
+
+      - name: Install solc
+        uses: ./.github/actions/install-solc
+
+      - name: Install yq
+        run: |
+          archive="${RUNNER_TEMP}/yq.tar.gz"
+          curl --proto '=https' --tlsv1.2 -fsSL --retry 5 --retry-all-errors --connect-timeout 20 --max-time 120 \
+            --retry-max-time 300 https://github.com/mikefarah/yq/releases/download/v4.45.1/yq_linux_amd64.tar.gz -o "$archive"
+          sudo tar xzf "$archive" -C /usr/local/bin --transform='s|yq_linux_amd64|yq|' --no-same-owner
+
+      # The interfold contracts compile in the submodule, which writes the `dist` directory that
+      # CRISP's `@interfold/contracts` link points at.
+      - name: Install dependencies
+        uses: ./.github/actions/install-node-deps
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          compile-interfold-contracts: 'true'
+
+      - name: Compile Crisp contracts
+        run: pnpm compile:contracts
+
+      - name: Copy environment variables
+        run: |
+          cp server/.env.example server/.env
+          cp client/.env.example client/.env
+          cp .env.example .env
+
+      - name: Build Crisp server and CLI binaries
+        working-directory: ./server
+        run: |
+          cargo build --locked --bin cli
+          cargo build --locked --bin server
+
+      - name: Download Crisp SDK artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: crisp-sdk-artifacts
+          path: .
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install chromium
+
+      - name: Download interfold binary
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: interfold-binary
+          path: ~/.cargo/bin/
+
+      - name: Make binaries executable
+        run: |
+          chmod +x ~/.cargo/bin/interfold
+
+      - name: Install Nargo
+        uses: noir-lang/noirup@7dbe69ccc78877f0200ffa5a40836c953d2cfd8f # v0.1.4
+        with:
+          toolchain: ${{ env.NOIR_TOOLCHAIN }}
+
+      - name: Cache Barretenberg binary
+        id: cache-bb
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: /usr/local/bin/bb
+          key: bb-bin-${{ env.BB_VERSION }}-amd64-linux
+
+      - name: Install Barretenberg (bb)
+        if: steps.cache-bb.outputs.cache-hit != 'true'
+        run: |
+          curl --proto '=https' --tlsv1.2 -fsSL --retry 5 --retry-all-errors --connect-timeout 20 --max-time 300 --retry-max-time 600 \
+            "https://github.com/AztecProtocol/aztec-packages/releases/download/v${{ env.BB_VERSION }}/barretenberg-amd64-linux.tar.gz" -o bb.tar.gz
+          mkdir -p bb_extract && tar -xzf bb.tar.gz -C bb_extract
+          BB_BIN=$(find bb_extract -name bb -type f | head -n 1)
+          sudo mv "$BB_BIN" /usr/local/bin/bb
+          chmod +x /usr/local/bin/bb
+
+      - name: Build interfold circuits
+        working-directory: interfold
+        run: pnpm build:circuits --preset insecure-512 --committee minimum --skip-if-built
+
+      - name: Install and verify candidate circuits
+        run: |
+          tar -C "$GITHUB_WORKSPACE/interfold/dist" -czf "$RUNNER_TEMP/circuits-candidate.tar.gz" circuits/
+          interfold noir setup --circuits-archive "$RUNNER_TEMP/circuits-candidate.tar.gz" \
+            --circuits-configuration insecure-512/minimum --allow-unpinned-archive
+          interfold noir setup
+
+      - name: Run Playwright tests
+        env:
+          PLAYWRIGHT_WORKERS: 4
+          METAMASK_VERSION: 11.8.2
+        run: pnpm test:e2e
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: playwright-report
+          path: ./playwright-report/
+          retention-days: 30

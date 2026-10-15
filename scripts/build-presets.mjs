@@ -20,7 +20,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const CRISP = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const REPO = resolve(CRISP, '..', '..')
+const INTERFOLD = join(CRISP, 'interfold')
 const ALL_PRESETS = ['secure-8192', 'insecure-512']
 
 const usage = () => {
@@ -62,7 +62,7 @@ for (const preset of PRESETS) {
   // and ActiveCryptoConfig.sol, which a bare `nargo compile` would leave describing the old one.
   // `--skip-vk`: compile_circuits.sh writes every key that CRISP uses. The `bb` that the SDK's
   // scripts find is @aztec/bb.js's, which reports a nightly version that the builder refuses.
-  run('pnpm', ['tsx', 'scripts/build-circuits.ts', '--preset', preset, '--group', 'threshold', '--skip-vk'], REPO)
+  run('pnpm', ['tsx', 'scripts/build-circuits.ts', '--preset', preset, '--group', 'threshold', '--skip-vk'], INTERFOLD)
 
   // Compiles the CRISP circuits and writes the generated Solidity verifiers into
   // packages/crisp-contracts/contracts/verifiers/<preset>/. It recompiles the threshold circuits on

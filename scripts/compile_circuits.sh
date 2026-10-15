@@ -2,8 +2,8 @@
 
 set -euo pipefail
 
-# Script runs from examples/CRISP. Interfold circuits are at ../../circuits.
-INTERFOLD_CIRCUITS="../../circuits"
+# Script runs from the CRISP repository root. Interfold circuits are in the interfold submodule.
+INTERFOLD_CIRCUITS="interfold/circuits"
 CRISP_CIRCUITS="circuits"
 
 # The generated verifiers are NOT preset-specific. They are written from the fold circuit's

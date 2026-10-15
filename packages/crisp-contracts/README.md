@@ -8,7 +8,7 @@ directory.
 
 ## Running Tests
 
-To run contract tests from the CRISP example root (`examples/CRISP/`):
+To run contract tests from the repository root:
 
 ```bash
 pnpm test:contracts
@@ -54,7 +54,7 @@ It exposes three main functions:
   tree leaf and index immediately. `finalizeInput` later verifies the VectorX receipt for the exact
   ciphertext hash without requiring the voter to remain online. The proof establishes that the
   ciphertext was encrypted correctly under the committee public key
-  (`examples/CRISP/packages/crisp-contracts/contracts/CRISPProgram.sol:493-554`, paths from the
+  (`packages/crisp-contracts/contracts/CRISPProgram.sol:493-554`, paths from the
   repository root). The verifier is the one the round's census selects: `CRISPVerifier.sol` for a
   census posted as a Merkle root, `CRISPOnchainVerifier.sol` for one read from token balances on
   chain. Both files declare a contract named `HonkVerifier`, which is why they are named by file.

@@ -21,7 +21,7 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const CRISP = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const REPO = resolve(CRISP, '..', '..')
+const INTERFOLD = join(CRISP, 'interfold')
 
 /**
  * The circuits every staged artifact is compiled from, with the libraries they import.
@@ -33,9 +33,9 @@ const SOURCE_DIRS = [
   join(CRISP, 'circuits/bin/crisp'),
   join(CRISP, 'circuits/bin/crisp_onchain'),
   join(CRISP, 'circuits/lib'),
-  join(REPO, 'circuits/bin/threshold/user_data_encryption_ct0'),
-  join(REPO, 'circuits/bin/threshold/user_data_encryption_ct1'),
-  join(REPO, 'circuits/lib'),
+  join(INTERFOLD, 'circuits/bin/threshold/user_data_encryption_ct0'),
+  join(INTERFOLD, 'circuits/bin/threshold/user_data_encryption_ct1'),
+  join(INTERFOLD, 'circuits/lib'),
 ]
 
 /** A compile reads these. Everything else in those directories is output or editor noise. */
@@ -56,7 +56,7 @@ const SKIP_DIRS = new Set(['target', 'node_modules'])
  * preset an archive holds is established three other ways: the directory it sits in, `preset` in
  * its manifest, and the ABI degree that stage-preset-artifacts.mjs checks per artifact.
  */
-const GENERATED = new Set([join(REPO, 'circuits/lib/src/configs/default/mod.nr')])
+const GENERATED = new Set([join(INTERFOLD, 'circuits/lib/src/configs/default/mod.nr')])
 
 const walk = (dir, found) => {
   if (!existsSync(dir)) return found
@@ -83,7 +83,7 @@ export const circuitSourcesDigest = () => {
   const files = SOURCE_DIRS.flatMap((dir) => walk(dir, [])).sort()
 
   for (const file of files) {
-    hash.update(relative(REPO, file))
+    hash.update(relative(CRISP, file))
     hash.update('\0')
     hash.update(readFileSync(file))
     hash.update('\0')

@@ -1,0 +1,4 @@
+[submodule "interfold"]
+	path = interfold
+	url = https://github.com/theinterfold/interfold.git
+	branch = main

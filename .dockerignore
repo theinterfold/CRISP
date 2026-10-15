@@ -1,0 +1,28 @@
+# The server image (server/Dockerfile) builds from the repository root. Allow only what its stages
+# COPY, so that the context does not carry node_modules, build output, or the interfold submodule.
+*
+
+!Cargo.toml
+!Cargo.lock
+!server/**
+!program/**
+!crates/**
+!.interfold/**
+# `.interfold/support/dev` and `.interfold/support/openvm/service` are symlinks into this directory.
+!interfold/crates/support-scripts/**
+# The server embeds this file with include_str!.
+!packages/crisp-contracts/deployed_contracts.json
+
+# Build artifacts
+**/target
+**/node_modules
+**/.git
+**/.DS_Store
+**/tests/tmp/
+**/*.log
+
+# Never send local secrets to an image. These rules come last so that no allow rule above can bring
+# a .env file back.
+**/.env
+**/.env.*
+!**/.env.example

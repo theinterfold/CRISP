@@ -86,15 +86,15 @@ that `stage-preset-artifacts.mjs` records at staging time.
 The default SDK build is intentionally the lightweight testing build. It builds and ships only the
 real `insecure-512` bundle, plus resolver stubs for off-channel presets, so pull-request CI does not
 compile or bundle the large secure preset. Use the production channel, or
-`pnpm -C examples/CRISP/packages/crisp-sdk build:prod`, when the output must include real
+`pnpm -C packages/crisp-sdk build:prod`, when the output must include real
 `insecure-512` and `secure-8192` bundles.
 
 ```sh
 # testing — insecure-512 under the `testing` tag, leaves the client alone
-pnpm -C examples/CRISP publish:packages --channel testing 0.19.0-insecure.0
+pnpm publish:packages --channel testing 0.19.0-insecure.0
 
 # production — both presets under the `latest` tag, and moves the client
-pnpm -C examples/CRISP publish:packages --channel prod 0.20.0
+pnpm publish:packages --channel prod 0.20.0
 ```
 
 Add `--dry-run` to print the exact steps for a channel without changing anything. The script bumps
@@ -110,7 +110,7 @@ npm publication is not transactional. If npm accepts one or more packages before
 confirm that the working tree was restored, then resume the same version:
 
 ```sh
-pnpm -C examples/CRISP publish:packages --channel prod --resume 0.20.0
+pnpm publish:packages --channel prod --resume 0.20.0
 ```
 
 `--resume` skips exact versions that npm already serves. Use it only for the same release attempt.
@@ -140,19 +140,21 @@ from the E3's on-chain `paramSet`. Pair a `testing` SDK only with `insecure-512`
 
 For the v0.19 mainnet cutover, pause requests and release every ended committee first. Deploy the
 OpenVM CRISP program from the qualified release source. Record the new program and verifiers in
-`examples/CRISP/packages/crisp-contracts/deployed_contracts.json`.
+`packages/crisp-contracts/deployed_contracts.json`.
 
-Prepare the core activation batch with:
+The protocol commands run in the interfold contracts package of the `interfold/` submodule. Prepare
+the core activation batch from the CRISP repository root with:
 
 ```sh
-pnpm --dir packages/interfold-contracts upgrade:v19 -- --network mainnet \
+pnpm --dir interfold/packages/interfold-contracts upgrade:v19 -- --network mainnet \
+  --crisp-deployments "$PWD/packages/crisp-contracts/deployed_contracts.json" \
   --openvm-identity <checked-cutover-identity.json> \
   --input-availability-signer <production-signer-address>
 ```
 
 The identity file contains `appExeCommit`, `appVmCommit` and `halo2RuntimeCodeHash`. Verify these
-values against the compiled guest and the deployed Halo2 verifier. Use `--config`, `--deployment`
-and `--crisp-deployments` when the operation uses separate deployment records.
+values against the compiled guest and the deployed Halo2 verifier. Use `--config` and
+`--deployment` when the operation uses separate protocol deployment records.
 
 The script requires no active E3s or unreleased committees. It deploys the new Interfold
 implementation, all three secure BFV routes and both routers. The unsigned batch installs the v5
@@ -169,7 +171,7 @@ operators with `upgrade:v19:refresh -- --network mainnet`, then wait for a later
 least 19 distinct eligible bond owners and healthy stable-release nodes before preparing resume:
 
 ```sh
-pnpm --dir packages/interfold-contracts upgrade:v19:resume -- \
+pnpm --dir interfold/packages/interfold-contracts upgrade:v19:resume -- \
   --network mainnet --ciphernodes-restarted
 ```
 

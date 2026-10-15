@@ -11,14 +11,16 @@ source "${SCRIPT_DIR}/lib/dev_config.sh"
 load_crisp_dev_config
 
 echo "SETUP..."
-echo "pnpm install"
-(cd "${REPO_ROOT}" && pnpm install --frozen-lockfile)
-(cd "${REPO_ROOT}" && pnpm build:ts)
+echo "pnpm install (interfold)"
+(cd "${INTERFOLD_ROOT}" && pnpm install --frozen-lockfile)
+(cd "${INTERFOLD_ROOT}" && pnpm build:ts)
+echo "pnpm install (crisp)"
+(cd "${CRISP_ROOT}" && pnpm install --frozen-lockfile)
 echo "sdk"
 (pnpm build:sdk)
 build_interfold_circuits_at_setup
 echo "evm"
-(cd "${REPO_ROOT}/packages/interfold-contracts" && pnpm compile:contracts)
+(cd "${INTERFOLD_ROOT}/packages/interfold-contracts" && pnpm compile:contracts)
 (pnpm compile:contracts)
 echo "server"
 (cd ./server && [[ ! -f .env ]] && cp .env.example .env; cargo build --locked --bin cli && cargo build --locked --bin server)
@@ -36,10 +38,9 @@ fi
 echo "Building and installing interfold CLI (${INTERFOLD_FEATURES:-no extra features})..."
 # Always reinstall: `-f` makes `cargo install` replace in place unconditionally, so a stale binary
 # from an earlier checkout (or an earlier profile) cannot silently survive. `--bin interfold`
-# matches ci.yml and deploy/local/start.sh, and keeps this pinned to one binary if crates/cli
-# ever grows a second.
+# matches ci.yml, and keeps this pinned to one binary if crates/cli ever grows a second.
 # shellcheck disable=SC2086
-(cd "${REPO_ROOT}" && cargo install --locked --path crates/cli --bin interfold -f $INTERFOLD_FEATURES)
+(cd "${INTERFOLD_ROOT}" && cargo install --locked --path crates/cli --bin interfold -f $INTERFOLD_FEATURES)
 
 # Real proofs need the OpenVM guest, its keys and receipt identity before the deployment reads them.
 if [[ "$CRISP_REAL_PROOFS" == "1" ]]; then

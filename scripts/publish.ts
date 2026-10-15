@@ -93,7 +93,7 @@ class CRISPPublisher {
       ...PACKAGE_DIRS.map((dir) => join(this.crispDir, dir, 'package.json')),
       join(this.crispDir, 'client/package.json'),
       join(this.crispDir, 'client/pnpm-lock.yaml'),
-      resolve(this.crispDir, '..', '..', 'pnpm-lock.yaml'),
+      join(this.crispDir, 'pnpm-lock.yaml'),
     ]
 
     this.snapshot = new Map(paths.filter((path) => existsSync(path)).map((path) => [path, readFileSync(path, 'utf-8')]))
@@ -433,12 +433,11 @@ class CRISPPublisher {
     console.log('\n📝 Performing git operations...')
 
     try {
-      // Run prettier from root before committing to avoid hook failures
-      console.log('   Running prettier from root...')
-      const rootDir = resolve(this.crispDir, '../..')
+      // Run prettier before committing to avoid hook failures
+      console.log('   Running prettier...')
       try {
         execSync('pnpm prettier --write .', {
-          cwd: rootDir,
+          cwd: this.crispDir,
           stdio: 'pipe',
         })
         console.log('   ✓ Prettier formatting complete')
@@ -447,19 +446,19 @@ class CRISPPublisher {
         console.warn('   ⚠️  Prettier failed, continuing anyway')
       }
 
-      // Add the exact files this script owns, including the root workspace lockfile.
+      // Add the exact files this script owns, including the workspace lockfile.
       console.log('   Adding changes...')
       execSync(
         [
           'git add',
-          'examples/CRISP/packages/crisp-sdk/package.json',
-          'examples/CRISP/packages/crisp-contracts/package.json',
-          'examples/CRISP/packages/crisp-zk-inputs/package.json',
-          'examples/CRISP/client/package.json',
-          'examples/CRISP/client/pnpm-lock.yaml',
+          'packages/crisp-sdk/package.json',
+          'packages/crisp-contracts/package.json',
+          'packages/crisp-zk-inputs/package.json',
+          'client/package.json',
+          'client/pnpm-lock.yaml',
           'pnpm-lock.yaml',
         ].join(' '),
-        { cwd: rootDir },
+        { cwd: this.crispDir },
       )
 
       // Create commit message

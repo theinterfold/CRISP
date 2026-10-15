@@ -7,8 +7,8 @@
 use bb_proof_verification::{UltraHonkProof, UltraHonkVerificationKey, verify_honk_proof_non_zk};
 use interfold_lib::math::commitments::compute_vk_hash;
 
-/// Binds the four inner `vk_hash` witnesses. Regenerate with `pnpm compute:vk-hash` in
-/// `examples/CRISP` after changing ct0 / ct1 / user_data_encryption / crisp_onchain (or the lib
+/// Binds the four inner `vk_hash` witnesses. Regenerate with `pnpm compute:vk-hash` in the
+/// repository root after changing ct0 / ct1 / user_data_encryption / crisp_onchain (or the lib
 /// preset). Insecure: `lib::configs::default` uses `insecure::*`; secure: uses `secure::*`.
 pub global CRISP_ONCHAIN_FOLD_EXPECTED_KEY_HASH_INSECURE: Field =
     0x090d43b8bbd50e0840fd14a5918216321b0fc5dc5696da80da7cca2b22614696;

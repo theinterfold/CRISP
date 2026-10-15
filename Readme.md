@@ -29,8 +29,33 @@ CRISP/
 ├── crates/                  # Rust libraries used by the server
 ├── circuits/                # Noir zero-knowledge circuits
 ├── scripts/                 # Development scripts for running, testing, and deployment
+├── interfold/              # Interfold submodule (branch main): CLI, contracts, circuits
 ├── interfold.config.yaml      # Local ciphernode network config
 └── docker-compose.yaml      # Optional multi-node deployment
+```
+
+### Interfold dependency
+
+CRISP builds against the `main` branch of the [Interfold](https://github.com/theinterfold/interfold)
+repository:
+
+- The Rust crates (`e3-*`) are Cargo git dependencies in `Cargo.toml` and `guest/Cargo.toml`. The
+  `Cargo.lock` files pin the commit.
+- The `interfold/` submodule supplies the Noir library (`interfold_lib`), the
+  `user_data_encryption` circuits, the interfold contracts, the CLI, and the OpenVM support scripts
+  (`.interfold/support` links into it). The submodule commit pins them.
+
+Keep the two pins on the same interfold commit. To move both to the current `main`:
+
+```bash
+git submodule update --remote interfold
+cargo update -p e3-sdk
+(cd guest && cargo update -p e3-safe)
+pnpm install
+```
+
+Each `cargo update -p` command updates all crates from the interfold repository, because they
+share one git source.
 ```
 
 You can have an extended explanation of the single folders in the dedicated
@@ -52,12 +77,12 @@ Before getting started, ensure you have installed:
   [`bb`](https://barretenberg.aztec.network/docs/getting_started). Install the versions CI pins,
   since other versions may not compile the circuits:
   - `nargo`: `noirup -v v1.0.0-beta.26` (`NOIR_TOOLCHAIN` in `.github/workflows/ci.yml`)
-  - `bb`: version and per-platform checksums live in `crates/zk-prover/versions.json`
+  - `bb`: version and per-platform checksums live in `interfold/crates/zk-prover/versions.json`
 
 Local development runs the unproved development runner unless `CRISP_REAL_PROOFS=1` (see
 `crisp.dev.env.example`). Real proofs use OpenVM: build the workers, configure `program.openvm` in
 `interfold.config.yaml`, and run `interfold program compile`. Follow
-[`crates/openvm-prover/README.md`](../../crates/openvm-prover/README.md). A machine with a working
+[`crates/openvm-prover/README.md`](https://github.com/theinterfold/interfold/blob/main/crates/openvm-prover/README.md). A machine with a working
 CUDA GPU proves on it when the CUDA worker is configured; any other machine proves on the CPU.
 
 The CRISP deployment reads the receipt identity `interfold program compile` wrote, unless
@@ -75,8 +100,10 @@ OpenVM service.
 The simplest way to run CRISP is:
 
 ```bash
-# From the repository root
-cd examples/CRISP
+# Clone with the interfold submodule
+git clone --recurse-submodules https://github.com/theinterfold/CRISP.git
+cd crisp
+# In an existing clone: git submodule update --init --recursive
 
 # Optional: choose local profile (copied to crisp.dev.env on first setup)
 cp crisp.dev.env.example crisp.dev.env
@@ -151,9 +178,9 @@ sets `program.dev: false`. The local scripts override that with `E3_PROGRAM__DEV
 
 ### OpenVM configuration
 
-The real-proof compute service uses OpenVM. CRISP's guest is `examples/CRISP/guest`, and its service
+The real-proof compute service uses OpenVM. CRISP's guest is `guest/`, and its service
 is `.interfold/support/openvm`; both link `program/`, the processor and policy the contract agrees
-with. Follow the [OpenVM guide](../../crates/openvm-prover/README.md) to build the workers, then run
+with. Follow the [OpenVM guide](https://github.com/theinterfold/interfold/blob/main/crates/openvm-prover/README.md) to build the workers, then run
 `interfold program compile` for the guest, keys, identity and service.
 
 Set `program.dev: false` and supply deployment-local `program.openvm.prover_bin` and, on a GPU
@@ -300,15 +327,15 @@ sync, and troubleshooting (`VkHashMismatch`, etc.).
 
 ### Vercel (CRISP client)
 
-Deploy from **`examples/CRISP/client`**. The build uses the published **`@crisp-e3/sdk`** package on
-npm (`pnpm install --ignore-workspace`), not the monorepo workspace. The published SDK package
+Deploy from **`client`**. The build uses the published **`@crisp-e3/sdk`** package on
+npm (`pnpm install --ignore-workspace`), not the workspace. The published SDK package
 already contains the staged preset circuits, so Vercel does not compile Noir circuits.
 
-- **Project root directory:** `examples/CRISP/client`
-- **`vercel build` in CI:** run from the **repository root** (not `cd examples/CRISP/client` first)
+- **Project root directory:** `client`
+- **`vercel build` in CI:** run from the **repository root** (not `cd client` first)
 - Optional Vercel env: `ENABLE_EXPERIMENTAL_COREPACK=1`
 
-Commit `examples/CRISP/client/pnpm-lock.yaml` after dependency bumps
+Commit `client/pnpm-lock.yaml` after dependency bumps
 (`pnpm install --ignore-workspace` in that directory) for reproducible installs.
 
 ## Publishing packages to npm

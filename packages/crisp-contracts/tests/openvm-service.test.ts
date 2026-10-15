@@ -29,13 +29,13 @@ if (enabled) {
   this.timeout(4 * 60 * 60 * 1000)
 
   it('dispatches indexed ballots over HTTP and automatically publishes a newly generated proof', async () => {
-    const { connection, ethers, networkHelpers } = await import('../../../../../packages/interfold-contracts/test/fixtures/connection')
+    const { connection, ethers, networkHelpers } = await import('../../../interfold/packages/interfold-contracts/test/fixtures/connection')
     expect(connection.networkConfig.type).to.equal('http')
     expect((await ethers.provider.getNetwork()).chainId).to.equal(31337n)
-    const { deployInterfoldSystem } = await import('../../../../../packages/interfold-contracts/test/fixtures/system')
-    const { buildMockDkgAttestationFixtureData } = await import('../../../../../packages/interfold-contracts/test/fixtures/dkgAttestation')
+    const { deployInterfoldSystem } = await import('../../../interfold/packages/interfold-contracts/test/fixtures/system')
+    const { buildMockDkgAttestationFixtureData } = await import('../../../interfold/packages/interfold-contracts/test/fixtures/dkgAttestation')
     const { BFV_PARAMS_SECURE, PRODUCTION_CRYPTO_CONFIG_ID, ENCRYPTION_SCHEME_ID } = await import(
-      '../../../../../packages/interfold-contracts/test/fixtures/constants'
+      '../../../interfold/packages/interfold-contracts/test/fixtures/constants'
     )
     const { time } = networkHelpers
     // `ActiveCryptoConfig.SECURE_PARAM_SET`: index 1 is historical and not accepted for new rounds.

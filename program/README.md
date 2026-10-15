@@ -22,13 +22,13 @@ reference. Both the protocol and application verifier must pass before the E3 re
 
 ## Build and run
 
-Follow [the OpenVM instructions](../../../crates/openvm-prover/README.md). Configure
-`program.openvm` with the worker paths, then run `interfold program compile` in `examples/CRISP`.
-The guest in `examples/CRISP/guest` and the service in `.interfold/support/openvm` both link this
+Follow [the OpenVM instructions](https://github.com/theinterfold/interfold/blob/main/crates/openvm-prover/README.md). Configure
+`program.openvm` with the worker paths, then run `interfold program compile` in the repository root.
+The guest in `guest/` and the service in `.interfold/support/openvm` both link this
 crate.
 
 For a local round with real proofs, set `CRISP_REAL_PROOFS=1` in `crisp.dev.env`, then from
-`examples/CRISP` run:
+the repository root run:
 
 ```sh
 pnpm dev:setup   # also runs `interfold program compile`
