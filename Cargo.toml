@@ -1,8 +1,7 @@
 [workspace]
 members = [
   "server",
-  ".interfold/support/dev",
-  ".interfold/support/openvm/service",
+  "runner",
   "program",
   "crates/zk-inputs",
   "crates/zk-inputs-wasm",
@@ -37,10 +36,9 @@ derivative = "=2.2.0"
 # Interfold crates track the interfold `main` branch. `Cargo.lock` pins the resolved commit; run
 # `cargo update` to move it.
 e3-compute-provider = { git = "https://github.com/theinterfold/interfold", branch = "main" }
-e3-openvm-host = { git = "https://github.com/theinterfold/interfold", branch = "main" }
 e3-openvm-types = { git = "https://github.com/theinterfold/interfold", branch = "main" }
 e3-data-availability = { git = "https://github.com/theinterfold/interfold", branch = "main" }
-e3-program-server = { git = "https://github.com/theinterfold/interfold", branch = "main" }
+e3-program-runner = { git = "https://github.com/theinterfold/interfold", branch = "main" }
 e3-bfv-client = { git = "https://github.com/theinterfold/interfold", branch = "main" }
 e3-zk-helpers = { git = "https://github.com/theinterfold/interfold", branch = "main" }
 e3-fhe-params = { git = "https://github.com/theinterfold/interfold", branch = "main" }

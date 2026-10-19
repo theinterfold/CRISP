@@ -92,8 +92,8 @@ Outside `CRISP_UNPROVED_TEST=1`, it never selects a mock compute verifier. `CRIS
 deploys `MockOpenVmReceiptVerifier`, which accepts every receipt. It works on the local chain (chain
 ID 31337), and on Sepolia (chain ID 11155111) only with `ALLOW_SEPOLIA_UNPROVED_COMPUTE=true`. Every
 other chain, mainnet included, refuses it. A Sepolia deployment with this verifier does not verify
-compute proofs. It runs `e3-support-scripts-dev`, the unproved development runner, instead of the
-OpenVM service.
+compute proofs. It runs `program-runner dev`, the unproved development runner, instead of the OpenVM
+service.
 
 ## Quick Start
 
@@ -178,9 +178,10 @@ sets `program.dev: false`. The local scripts override that with `E3_PROGRAM__DEV
 
 ### OpenVM configuration
 
-The real-proof compute service uses OpenVM. CRISP's guest is `guest/`, and its service
-is `.interfold/support/openvm`; both link `program/`, the processor and policy the contract agrees
-with. Follow the [OpenVM guide](https://github.com/theinterfold/interfold/blob/main/crates/openvm-prover/README.md) to build the workers, then run
+The real-proof compute service uses OpenVM. CRISP's guest is `guest/`, and its service is the
+`program-runner` binary of `runner/`; the guest and the runner both link `program/`, the processor
+and policy the contract agrees with. Follow the
+[OpenVM guide](https://github.com/theinterfold/interfold/blob/main/crates/openvm-prover/README.md) to build the workers, then run
 `interfold program compile` for the guest, keys, identity and service.
 
 Set `program.dev: false` and supply deployment-local `program.openvm.prover_bin` and, on a GPU

@@ -1,15 +1,15 @@
-# The server image (server/Dockerfile) builds from the repository root. Allow only what its stages
-# COPY, so that the context does not carry node_modules, build output, or the interfold submodule.
+# The server image (server/Dockerfile) and the program runner image (runner/Dockerfile) build from
+# the repository root. Allow only what their stages COPY, so that the context does not carry
+# node_modules, build output, or the interfold submodule.
 *
 
 !Cargo.toml
 !Cargo.lock
+!rust-toolchain.toml
+!runner/**
 !server/**
 !program/**
 !crates/**
-!.interfold/**
-# `.interfold/support/dev` and `.interfold/support/openvm/service` are symlinks into this directory.
-!interfold/crates/support-scripts/**
 # The server embeds this file with include_str!.
 !packages/crisp-contracts/deployed_contracts.json
 
