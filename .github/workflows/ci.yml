@@ -506,7 +506,11 @@ jobs:
     needs: [detect_changes, build_crisp_sdk]
     if: needs.detect_changes.outputs.crisp_e2e == 'true'
     timeout-minutes: 45
-    runs-on: ubuntu-latest
+    # A ciphernode keeps 4 GiB and starts only when 13 GiB more fit one prover job, so it does not
+    # start on a 16 GB ubuntu-latest runner.
+    runs-on:
+      group: enclave-ci
+      labels: [enclave-ci-runner]
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
