@@ -21,6 +21,9 @@ pnpm clean:deployments --network localhost
 
 if [[ "$CRISP_SKIP_PROOF_AGGREGATION" == "false" ]]; then
   export ENABLE_ZK_VERIFICATION=true
+  # The verifiers pin the BFV aggregation VK hashes of the pinned Interfold release.
+  node "${CRISP_ROOT}/scripts/interfold-release.mjs" circuits >/dev/null
+  export INTERFOLD_CIRCUITS_DIR="${CRISP_ROOT}/circuits/interfold/release"
   echo "Deploy: ENABLE_ZK_VERIFICATION=true (BfvPkVerifier + fold attestation)"
 else
   unset ENABLE_ZK_VERIFICATION

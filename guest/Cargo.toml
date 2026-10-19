@@ -14,9 +14,9 @@ openvm = { git = "https://github.com/openvm-org/openvm.git", tag = "v2.0.2", fea
 openvm-algebra-guest = { git = "https://github.com/openvm-org/openvm.git", tag = "v2.0.2" }
 openvm-sha2 = { git = "https://github.com/openvm-org/openvm.git", tag = "v2.0.2" }
 e3-user-program = { path = "../program", features = ["openvm-hashes"] }
-e3-compute-provider = { git = "https://github.com/theinterfold/interfold", tag = "v0.20.0-dev.1" }
-e3-openvm-types = { git = "https://github.com/theinterfold/interfold", tag = "v0.20.0-dev.1" }
-e3-safe = { git = "https://github.com/theinterfold/interfold", tag = "v0.20.0-dev.1", features = ["openvm"] }
+e3-compute-provider = { git = "https://github.com/theinterfold/interfold", tag = "v0.20.0-dev.2" }
+e3-openvm-types = { git = "https://github.com/theinterfold/interfold", tag = "v0.20.0-dev.2" }
+e3-safe = { git = "https://github.com/theinterfold/interfold", tag = "v0.20.0-dev.2", features = ["openvm"] }
 sha2 = "=0.10.9"
 
 [profile.release]

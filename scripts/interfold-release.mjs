@@ -12,7 +12,7 @@
 // builds against.
 //
 //   node scripts/interfold-release.mjs asset <name>  Download one asset and print its path.
-//   node scripts/interfold-release.mjs circuits      Extract the user_data_encryption circuits.
+//   node scripts/interfold-release.mjs circuits      Extract the circuit artifacts that CRISP uses.
 //
 // `circuits` writes circuits/interfold/:
 //
@@ -20,6 +20,9 @@
 //   user_data_encryption.vk_recursive_hash
 //   <preset>/user_data_encryption_ct{0,1}.json  shaped by the BFV degree, so one per preset
 //   <preset>/user_data_encryption_ct{0,1}.vk_recursive_hash
+//   release/<preset>/minimum/default/...        the BFV aggregation VK anchors, in the release
+//                                               layout that INTERFOLD_CIRCUITS_DIR names for a
+//                                               deploy with ZK verification
 //
 // Each `vk_recursive_hash` is the `noir-recursive-no-zk` key hash that the fold circuits bind.
 
@@ -50,6 +53,17 @@ export const RELEASE = JSON.parse(readFileSync(join(CRISP, 'interfold-release.js
 
 /** The directory that `circuits` writes. */
 export const CIRCUITS_DIR = join(CRISP, 'circuits/interfold')
+
+/** Release-layout subdirectory of CIRCUITS_DIR that a ZK deploy reads as INTERFOLD_CIRCUITS_DIR. */
+export const RELEASE_CIRCUITS_DIR = join(CIRCUITS_DIR, 'release')
+
+/** The BFV aggregation VK anchors that the deploy pins in BfvPkVerifier and BfvDecryptionVerifier. */
+const BFV_VK_ANCHORS = [
+  'recursive_aggregation/nodes_fold/nodes_fold.vk_tree_hash',
+  'threshold/pk_aggregation/pk_aggregation.vk_hash',
+  'recursive_aggregation/c6_fold/c6_fold.vk_tree_hash',
+  'threshold/decrypted_shares_aggregation/decrypted_shares_aggregation.vk_hash',
+]
 
 const PRESETS = ['insecure-64', 'secure-8192']
 
@@ -98,14 +112,9 @@ export const fetchAsset = async (name) => {
   return path
 }
 
-/** Extract the user_data_encryption circuits of the pinned release into CIRCUITS_DIR. */
+/** Extract the circuit artifacts of the pinned release that CRISP uses into CIRCUITS_DIR. */
 export const extractCircuits = async () => {
   const name = `circuits-${RELEASE.version}.tar.gz`
-  const stamp = join(CIRCUITS_DIR, 'release.json')
-  const wanted = JSON.stringify({ version: RELEASE.version, sha256: RELEASE.sha256[name] })
-  if (existsSync(stamp) && readFileSync(stamp, 'utf8') === wanted) return CIRCUITS_DIR
-
-  const archive = await fetchAsset(name)
   // The archive holds circuits/<preset>/<committee>/<variant>/<group>/<circuit>/<circuit>.<ext>.
   // The `default` variant carries the compiled circuit and its noir-recursive-no-zk key hash.
   const member = (preset, circuit, extension) => `circuits/${preset}/${COMMITTEE}/default/threshold/${circuit}/${circuit}.${extension}`
@@ -118,7 +127,25 @@ export const extractCircuits = async () => {
         [member(preset, circuit, 'vk_hash'), `${preset}/${circuit}.vk_recursive_hash`],
       ]),
     ),
+    ...PRESETS.flatMap((preset) =>
+      BFV_VK_ANCHORS.map((anchor) => {
+        const from = `circuits/${preset}/${COMMITTEE}/default/${anchor}`
+        return [from, `release/${from.slice('circuits/'.length)}`]
+      }),
+    ),
   ]
+
+  // The stamp names the release and the extracted files, so a new release or a new file list
+  // extracts again.
+  const stamp = join(CIRCUITS_DIR, 'release.json')
+  const wanted = JSON.stringify({
+    version: RELEASE.version,
+    sha256: RELEASE.sha256[name],
+    files: members.map(([, to]) => to),
+  })
+  if (existsSync(stamp) && readFileSync(stamp, 'utf8') === wanted) return CIRCUITS_DIR
+
+  const archive = await fetchAsset(name)
 
   const scratch = mkdtempSync(join(tmpdir(), 'crisp-interfold-circuits-'))
   try {

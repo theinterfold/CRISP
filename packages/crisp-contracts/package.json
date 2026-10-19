@@ -51,7 +51,7 @@
     "prepublishOnly": "pnpm check:presets"
   },
   "dependencies": {
-    "@interfold/contracts": "0.20.0-dev.1",
+    "@interfold/contracts": "0.20.0-dev.2",
     "@excubiae/contracts": "^0.4.0",
     "@zk-kit/lazy-imt.sol": "2.0.0-beta.12",
     "poseidon-solidity": "^0.0.5",

@@ -25,7 +25,7 @@ case "$command" in
   service-start)
     cd "$CRISP"
     export OPENVM_PROVER_CONFIG="${OPENVM_PROVER_CONFIG:-$CRISP/.interfold/caches/openvm/prover.json}"
-    exec cargo run --release --bin program-runner -- openvm
+    exec cargo run --locked --release --bin program-runner -- openvm
     ;;
   # Builds CRISP's guest and runs it, without proving, on a fixture made by `fixture`, then checks
   # that it reveals the SHA-256 digest of the journal the native host computed.

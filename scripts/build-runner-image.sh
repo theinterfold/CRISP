@@ -3,6 +3,8 @@
 #
 # Builds the e3-support image, CRISP's program runner (runner/Dockerfile), from the repository root.
 # `--push` also pushes it. Other arguments go to `docker build`.
+set -euo pipefail
+
 PKG="${E3_SUPPORT_IMAGE_REPOSITORY:-ghcr.io/theinterfold/e3-support}"
 GIT_SHA=$(git rev-parse --short=9 HEAD)
 
@@ -20,7 +22,8 @@ done
 
 # Build with any additional arguments
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-docker build -t "$PKG:$GIT_SHA" -f "$ROOT/runner/Dockerfile" "${BUILD_ARGS[@]}" "$ROOT"
+# `${BUILD_ARGS[@]+...}` keeps an empty array valid under `set -u` in bash before 4.4 (macOS ships 3.2).
+docker build -t "$PKG:$GIT_SHA" -f "$ROOT/runner/Dockerfile" ${BUILD_ARGS[@]+"${BUILD_ARGS[@]}"} "$ROOT"
 
 # Push if --push was specified
 if [ "$PUSH" = true ]; then

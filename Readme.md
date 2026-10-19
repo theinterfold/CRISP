@@ -67,8 +67,9 @@ To move to release `<version>`:
    Each `cargo update -p` command updates all crates from the interfold repository, because they
    share one git source.
 
-5. Run `pnpm compute:vk-hash insecure-64` and `pnpm compute:vk-hash secure-8192`. When a printed
-   hash differs from the `*_EXPECTED_KEY_HASH_*` constant in `circuits/bin/fold/src/main.nr` or
+5. Run `pnpm compute:vk-hash secure-8192`, then `pnpm compute:vk-hash insecure-64`, so that
+   `circuits/lib/src/preset.nr` ends on the committed `insecure-64` preset. When a printed hash
+   differs from the `*_EXPECTED_KEY_HASH_*` constant in `circuits/bin/fold/src/main.nr` or
    `circuits/bin/fold_onchain/src/main.nr`, replace the constant.
 
 You can have an extended explanation of the single folders in the dedicated
@@ -91,7 +92,7 @@ Before getting started, ensure you have installed:
   since other versions may not compile the circuits:
   - `nargo`: `noirup -v v1.0.0-beta.26` (`NOIR_TOOLCHAIN` in `.github/workflows/ci.yml`)
   - `bb`: version and per-platform checksums live in Interfold's
-    [`crates/zk/prover/versions.json`](https://github.com/theinterfold/interfold/blob/v0.20.0-dev.1/crates/zk/prover/versions.json)
+    [`crates/zk/prover/versions.json`](https://github.com/theinterfold/interfold/blob/v0.20.0-dev.2/crates/zk/prover/versions.json)
 
 Local development runs the unproved development runner unless `CRISP_REAL_PROOFS=1` (see
 `crisp.dev.env.example`). Real proofs use OpenVM: build the workers, configure `program.openvm` in

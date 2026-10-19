@@ -35,18 +35,18 @@ bytemuck = { version = "=1.23.1" }
 derivative = "=2.2.0"
 # Interfold crates are pinned to one Interfold release tag. Move every `tag` here and in
 # guest/Cargo.toml together.
-e3-compute-provider = { git = "https://github.com/theinterfold/interfold", tag = "v0.20.0-dev.1" }
-e3-openvm-types = { git = "https://github.com/theinterfold/interfold", tag = "v0.20.0-dev.1" }
-e3-data-availability = { git = "https://github.com/theinterfold/interfold", tag = "v0.20.0-dev.1" }
-e3-program-runner = { git = "https://github.com/theinterfold/interfold", tag = "v0.20.0-dev.1" }
-e3-bfv-client = { git = "https://github.com/theinterfold/interfold", tag = "v0.20.0-dev.1" }
-e3-zk-config = { git = "https://github.com/theinterfold/interfold", tag = "v0.20.0-dev.1" }
-e3-zk-witness = { git = "https://github.com/theinterfold/interfold", tag = "v0.20.0-dev.1" }
-e3-fhe-params = { git = "https://github.com/theinterfold/interfold", tag = "v0.20.0-dev.1" }
-e3-evm-helpers = { git = "https://github.com/theinterfold/interfold", tag = "v0.20.0-dev.1" }
-e3-sdk = { git = "https://github.com/theinterfold/interfold", tag = "v0.20.0-dev.1", default-features = false }
-e3-polynomial = { git = "https://github.com/theinterfold/interfold", tag = "v0.20.0-dev.1" }
-e3-polynomial-fhe = { git = "https://github.com/theinterfold/interfold", tag = "v0.20.0-dev.1" }
+e3-compute-provider = { git = "https://github.com/theinterfold/interfold", tag = "v0.20.0-dev.2" }
+e3-openvm-types = { git = "https://github.com/theinterfold/interfold", tag = "v0.20.0-dev.2" }
+e3-data-availability = { git = "https://github.com/theinterfold/interfold", tag = "v0.20.0-dev.2" }
+e3-program-runner = { git = "https://github.com/theinterfold/interfold", tag = "v0.20.0-dev.2" }
+e3-bfv-client = { git = "https://github.com/theinterfold/interfold", tag = "v0.20.0-dev.2" }
+e3-zk-config = { git = "https://github.com/theinterfold/interfold", tag = "v0.20.0-dev.2" }
+e3-zk-witness = { git = "https://github.com/theinterfold/interfold", tag = "v0.20.0-dev.2" }
+e3-fhe-params = { git = "https://github.com/theinterfold/interfold", tag = "v0.20.0-dev.2" }
+e3-evm-helpers = { git = "https://github.com/theinterfold/interfold", tag = "v0.20.0-dev.2" }
+e3-sdk = { git = "https://github.com/theinterfold/interfold", tag = "v0.20.0-dev.2", default-features = false }
+e3-polynomial = { git = "https://github.com/theinterfold/interfold", tag = "v0.20.0-dev.2" }
+e3-polynomial-fhe = { git = "https://github.com/theinterfold/interfold", tag = "v0.20.0-dev.2" }
 eyre = "=0.6.12"
 env_logger = "=0.11.8"
 hex = { version = "=0.4.3" }

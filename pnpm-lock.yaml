@@ -5,7 +5,6 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@interfold/contracts>@openzeppelin/contracts-upgradeable': 5.0.2
   '@nomicfoundation/hardhat-keystore': 3.0.3
   '@types/node': 22.7.5
   tsup: 8.5.0
@@ -18,8 +17,8 @@ importers:
   .:
     devDependencies:
       '@interfold/config':
-        specifier: 0.20.0-dev.1
-        version: 0.20.0-dev.1(eslint@9.39.1(jiti@1.21.7))(tsup@8.5.0(@microsoft/api-extractor@7.58.12(@types/node@22.7.5))(@swc/core@1.15.46)(jiti@1.21.7)(postcss@8.5.25)(tsx@4.20.6)(typescript@5.8.3)(yaml@2.8.2))(typescript@5.8.3)
+        specifier: 0.20.0-dev.2
+        version: 0.20.0-dev.2(eslint@9.39.1(jiti@1.21.7))(tsup@8.5.0(@microsoft/api-extractor@7.58.12(@types/node@22.7.5))(@swc/core@1.15.46)(jiti@1.21.7)(postcss@8.5.25)(tsx@4.20.6)(typescript@5.8.3)(yaml@2.8.2))(typescript@5.8.3)
       '@playwright/test':
         specifier: 1.52.0
         version: 1.52.0
@@ -166,8 +165,8 @@ importers:
         specifier: ^0.4.0
         version: 0.4.0
       '@interfold/contracts':
-        specifier: 0.20.0-dev.1
-        version: 0.20.0-dev.1(@openzeppelin/contracts@5.3.0)(@swc/core@1.15.46)(@swc/wasm@1.15.46)(@types/node@22.7.5)(bufferutil@4.1.0)(ethers@6.17.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))(typescript@5.8.3)(utf-8-validate@5.0.10)(zod@3.25.76)
+        specifier: 0.20.0-dev.2
+        version: 0.20.0-dev.2(@swc/core@1.15.46)(@swc/wasm@1.15.46)(@types/node@22.7.5)(bufferutil@4.1.0)(ethers@6.17.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))(typescript@5.8.3)(utf-8-validate@5.0.10)(zod@3.25.76)
       '@zk-kit/lazy-imt.sol':
         specifier: 2.0.0-beta.12
         version: 2.0.0-beta.12
@@ -1802,14 +1801,14 @@ packages:
       '@types/node':
         optional: true
 
-  '@interfold/config@0.20.0-dev.1':
-    resolution: {integrity: sha512-CYLwKcSmKH+MdocW64HT088BlGahAGHMMF6Kozcut5GC4UbesMvUS78XrYF8Zqd+FKTr/tHU1m230+lyJBY8jw==}
+  '@interfold/config@0.20.0-dev.2':
+    resolution: {integrity: sha512-a4oQ1TQt3vmol/SSE5JT4Wcsb+3JoUPYfNOMkMhvDPVM/iEWcLj/Sklel7ud1W8NyTMjJcxYAj2moPKiNSXH9Q==}
     peerDependencies:
       eslint: ^9.0.0
       tsup: 8.5.0
 
-  '@interfold/contracts@0.20.0-dev.1':
-    resolution: {integrity: sha512-0zkyQiG/IDqjDvQ1bbmuw959KFVkjfBL7RnbxS+Y5uXi2fF8RDNlOr/EmB2HKc+FZZjSeX2KF0OnuY/sXo/vvw==}
+  '@interfold/contracts@0.20.0-dev.2':
+    resolution: {integrity: sha512-B+aMq00XuPW/b1kAI8PojxmXr5dhe6kOTYtlaDxrSjWrPdie7Ya0dLydOOtN5q+RFC1Pm72Ucy+dlybeXLAhkA==}
 
   '@isaacs/balanced-match@4.0.1':
     resolution: {integrity: sha512-yzMTt9lEb8Gv7zRioUilSglI0c0smZ9k5D65677DLWLtWJaXIS3CqcGyUFByYKlnUj6TkjLVs54fBl6+TiGQDQ==}
@@ -10068,7 +10067,7 @@ snapshots:
     optionalDependencies:
       '@types/node': 22.7.5
 
-  '@interfold/config@0.20.0-dev.1(eslint@9.39.1(jiti@1.21.7))(tsup@8.5.0(@microsoft/api-extractor@7.58.12(@types/node@22.7.5))(@swc/core@1.15.46)(jiti@1.21.7)(postcss@8.5.25)(tsx@4.20.6)(typescript@5.8.3)(yaml@2.8.2))(typescript@5.8.3)':
+  '@interfold/config@0.20.0-dev.2(eslint@9.39.1(jiti@1.21.7))(tsup@8.5.0(@microsoft/api-extractor@7.58.12(@types/node@22.7.5))(@swc/core@1.15.46)(jiti@1.21.7)(postcss@8.5.25)(tsx@4.20.6)(typescript@5.8.3)(yaml@2.8.2))(typescript@5.8.3)':
     dependencies:
       '@eslint/eslintrc': 3.3.1
       '@eslint/js': 9.39.1
@@ -10084,9 +10083,10 @@ snapshots:
       - supports-color
       - typescript
 
-  '@interfold/contracts@0.20.0-dev.1(@openzeppelin/contracts@5.3.0)(@swc/core@1.15.46)(@swc/wasm@1.15.46)(@types/node@22.7.5)(bufferutil@4.1.0)(ethers@6.17.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))(typescript@5.8.3)(utf-8-validate@5.0.10)(zod@3.25.76)':
+  '@interfold/contracts@0.20.0-dev.2(@swc/core@1.15.46)(@swc/wasm@1.15.46)(@types/node@22.7.5)(bufferutil@4.1.0)(ethers@6.17.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))(typescript@5.8.3)(utf-8-validate@5.0.10)(zod@3.25.76)':
     dependencies:
       '@chainlink/contracts': 1.5.0(@types/node@22.7.5)(bufferutil@4.1.0)(ethers@6.17.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))(utf-8-validate@5.0.10)
+      '@openzeppelin/contracts': 5.3.0
       '@openzeppelin/contracts-upgradeable': 5.0.2(@openzeppelin/contracts@5.3.0)
       '@predicate/contracts': 2.2.3(@swc/core@1.15.46)(@swc/wasm@1.15.46)(@types/node@22.7.5)(bufferutil@4.1.0)(utf-8-validate@5.0.10)
       '@safe-global/api-kit': 5.0.4(bufferutil@4.1.0)(typescript@5.8.3)(utf-8-validate@5.0.10)(zod@3.25.76)
@@ -10096,7 +10096,6 @@ snapshots:
       js-yaml: 4.1.1
       poseidon-solidity: 0.0.5
     transitivePeerDependencies:
-      - '@openzeppelin/contracts'
       - '@swc/core'
       - '@swc/wasm'
       - '@types/node'
