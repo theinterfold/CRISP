@@ -26,7 +26,7 @@ import { Barretenberg, BackendType, UltraHonkBackend } from '@aztec/bb.js'
 // The BFV-shaped circuits arrive through `setCircuits()` — see ./circuits.
 import foldCircuit from '../../../circuits/bin/fold/target/crisp_fold.json'
 import foldOnchainCircuit from '../../../circuits/bin/fold_onchain/target/crisp_onchain_fold.json'
-import userDataEncryptionCircuit from '../../../interfold/circuits/bin/threshold/target/user_data_encryption.json'
+import userDataEncryptionCircuit from '../../../circuits/interfold/user_data_encryption.json'
 import { requireCircuits } from './circuits'
 
 // Cached Barretenberg API instance — avoids re-initialising WASM + SRS on every proof.

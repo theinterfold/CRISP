@@ -4,10 +4,10 @@
 // without even the implied warranty of MERCHANTABILITY
 // or FITNESS FOR A PARTICULAR PURPOSE.
 
-use interfold_lib::configs::default::MAX_MSG_NON_ZERO_COEFFS;
-use interfold_lib::configs::default::threshold::{
+use crate::preset::threshold::{
     PLAINTEXT_MODULUS, Q_INVERSE_MOD_T, Q_MOD_T, USER_DATA_ENCRYPTION_BIT_K,
 };
+use interfold_lib::configs::default::MAX_MSG_NON_ZERO_COEFFS;
 use interfold_lib::math::helpers::assert_in_range;
 use interfold_lib::math::modulo::unconstrained_U128::__compute_mod_reduction;
 use interfold_lib::math::polynomial::Polynomial;

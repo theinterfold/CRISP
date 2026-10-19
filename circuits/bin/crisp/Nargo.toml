@@ -5,5 +5,5 @@ version = "0.1.0"
 authors = ["Gnosis Guild / Interfold"]
 
 [dependencies]
-interfold_lib = { path = "../../../interfold/circuits/lib" }
+interfold_lib = { git = "https://github.com/theinterfold/interfold", tag = "v0.20.0-dev.1", directory = "circuits/lib" }
 crisp_lib = { path = "../../lib" }

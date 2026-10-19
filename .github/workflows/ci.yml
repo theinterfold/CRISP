@@ -27,7 +27,6 @@ env:
   NODE_VERSION: 22
   RUST_TOOLCHAIN: 1.91.1
   NOIR_TOOLCHAIN: v1.0.0-beta.26
-  BB_VERSION: 5.2.0
   HARDHAT_VAR_MNEMONIC: 'test test test test test test test test test test test junk'
   HARDHAT_VAR_INFURA_API_KEY: 'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz'
   PRIVATE_KEY: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
@@ -48,9 +47,9 @@ env:
 permissions:
   contents: read
 
-# Every checkout initializes the `interfold` submodule. It supplies the interfold CLI, the interfold
-# contracts, and the circuit sources that CRISP's circuits depend on. The Rust crates come from
-# interfold as Cargo git dependencies pinned to the same commit.
+# CRISP builds against one Interfold release, which interfold-release.json pins. The interfold CLI
+# and the user_data_encryption circuits download from that release, the interfold contracts come
+# from npm, and the Rust crates and the Noir library are git dependencies on its tag.
 jobs:
   detect_changes:
     timeout-minutes: 5
@@ -58,7 +57,6 @@ jobs:
     outputs:
       crisp_e2e: ${{ steps.jobs.outputs.crisp_e2e }}
       build_crisp_sdk: ${{ steps.jobs.outputs.build_crisp_sdk }}
-      build_interfold_cli: ${{ steps.jobs.outputs.build_interfold_cli }}
       crisp_unit_circuits: ${{ steps.jobs.outputs.crisp_unit_circuits }}
       crisp_unit_rust: ${{ steps.jobs.outputs.crisp_unit_rust }}
       crisp_unit_sdk: ${{ steps.jobs.outputs.crisp_unit_sdk }}
@@ -123,6 +121,7 @@ jobs:
               - 'scripts/check-staged-preset.mjs'
               - 'scripts/circuit-sources.mjs'
               - 'scripts/compile_circuits.sh'
+              - 'scripts/interfold-release.mjs'
               - 'scripts/stage-preset-artifacts.mjs'
               - '!packages/crisp-sdk/tests/**'
               - '!**/*.md'
@@ -153,11 +152,10 @@ jobs:
             runner_image:
               - 'runner/Dockerfile'
               - '.dockerignore'
-            # A new submodule commit changes the interfold CLI, contracts and circuits that every
+            # A new Interfold release changes the CLI, contracts, crates and circuits that every
             # job uses.
             interfold:
-              - 'interfold'
-              - '.gitmodules'
+              - 'interfold-release.json'
             # Only the workflow and the local actions that it runs. The Docker workflow
             # and its path filters do not change what these jobs produce.
             ci:
@@ -204,55 +202,6 @@ jobs:
           # build_crisp_sdk feeds crisp_e2e and the SDK and contract jobs, so it runs when any of
           # them runs.
           echo "build_crisp_sdk=$(any $CRISP_E2E_JOB $CRISP_UNIT_SDK $CRISP_UNIT_CONTRACTS)" >> $GITHUB_OUTPUT
-          # Only crisp_e2e runs the interfold CLI.
-          echo "build_interfold_cli=$CRISP_E2E_JOB" >> $GITHUB_OUTPUT
-
-  build_interfold_cli:
-    needs: [detect_changes]
-    if: needs.detect_changes.outputs.build_interfold_cli == 'true'
-    timeout-minutes: 30
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: write
-    steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-        with:
-          # Keeps the token out of .git/config, where install and build scripts could read it and use
-          # this job's actions: write. The cancel step gets the token on its own.
-          persist-credentials: false
-          submodules: recursive
-
-      # `cargo install` builds in `interfold/target`, so that the cache holds the build.
-      - name: Cache Rust dependencies
-        uses: ./.github/actions/cache-dependencies
-        with:
-          rust-target-path: interfold/target/
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-        with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
-
-      - name: Install solc
-        uses: ./.github/actions/install-solc
-
-      - name: Build interfold CLI
-        working-directory: interfold
-        run: cargo install --locked --path crates/cli --bin interfold --features test-only-skip-proof-aggregation --target-dir target
-
-      - name: Upload interfold binary
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: interfold-binary
-          path: ~/.cargo/bin/interfold
-          retention-days: 1
-
-      - name: Cancel workflow on failure
-        if: failure()
-        run: gh run cancel ${{ github.run_id }}
-        env:
-          GH_TOKEN: ${{ github.token }}
 
   crisp_unit_circuits:
     needs: [detect_changes]
@@ -261,8 +210,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-        with:
-          submodules: recursive
 
       - name: Install Nargo
         uses: noir-lang/noirup@7dbe69ccc78877f0200ffa5a40836c953d2cfd8f # v0.1.4
@@ -280,8 +227,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-        with:
-          submodules: recursive
 
       - name: Cache Rust dependencies
         uses: ./.github/actions/cache-dependencies
@@ -307,8 +252,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-        with:
-          submodules: recursive
 
       - name: Install dependencies
         uses: ./.github/actions/install-node-deps
@@ -360,16 +303,12 @@ jobs:
       fail-fast: false
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-        with:
-          submodules: recursive
 
-      # `hardhat.config.ts` imports `@interfold/contracts/tasks/*`, which resolves only after the
-      # interfold contracts compile.
+      # `hardhat.config.ts` imports `@interfold/contracts/tasks/*` from the published package.
       - name: Install dependencies
         uses: ./.github/actions/install-node-deps
         with:
           node-version: ${{ env.NODE_VERSION }}
-          compile-interfold-contracts: 'true'
 
       # Each leg has at least one test that imports `@crisp-e3/sdk`.
       - name: Download Crisp SDK artifacts
@@ -390,8 +329,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-        with:
-          submodules: recursive
       - name: Cache Rust dependencies
         uses: ./.github/actions/cache-dependencies
         with:
@@ -517,22 +454,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-        with:
-          submodules: recursive
 
       - name: Install Nargo
         uses: noir-lang/noirup@7dbe69ccc78877f0200ffa5a40836c953d2cfd8f # v0.1.4
         with:
           toolchain: ${{ env.NOIR_TOOLCHAIN }}
 
-      # The preset build runs the interfold circuit tools (`interfold/scripts/build-circuits.ts`),
-      # which build in `interfold/target`.
       - name: Cache Rust dependencies
         uses: ./.github/actions/cache-dependencies
-        with:
-          rust-target-path: |
-            target/
-            interfold/target/
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
@@ -569,27 +498,20 @@ jobs:
             circuits/bin/crisp_onchain/target
             circuits/bin/fold/target
             circuits/bin/fold_onchain/target
-            interfold/circuits/bin/threshold/target
-            interfold/circuits/bin/recursive_aggregation/*/target
+            circuits/interfold
           retention-days: 1
           if-no-files-found: warn
 
   crisp_e2e:
-    needs: [detect_changes, build_interfold_cli, build_crisp_sdk]
+    needs: [detect_changes, build_crisp_sdk]
     if: needs.detect_changes.outputs.crisp_e2e == 'true'
     timeout-minutes: 45
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-        with:
-          submodules: recursive
 
       - name: Cache Rust dependencies
         uses: ./.github/actions/cache-dependencies
-        with:
-          rust-target-path: |
-            target/
-            interfold/target/
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
@@ -619,13 +541,10 @@ jobs:
             --retry-max-time 300 https://github.com/mikefarah/yq/releases/download/v4.45.1/yq_linux_amd64.tar.gz -o "$archive"
           sudo tar xzf "$archive" -C /usr/local/bin --transform='s|yq_linux_amd64|yq|' --no-same-owner
 
-      # The interfold contracts compile in the submodule, which writes the `dist` directory that
-      # CRISP's `@interfold/contracts` link points at.
       - name: Install dependencies
         uses: ./.github/actions/install-node-deps
         with:
           node-version: ${{ env.NODE_VERSION }}
-          compile-interfold-contracts: 'true'
 
       - name: Compile Crisp contracts
         run: pnpm compile:contracts
@@ -651,48 +570,17 @@ jobs:
       - name: Install Playwright browsers
         run: pnpm exec playwright install chromium
 
-      - name: Download interfold binary
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: interfold-binary
-          path: ~/.cargo/bin/
-
-      - name: Make binaries executable
+      # The test-only build of the pinned release honours the SKIP_PROOF_AGGREGATION setting that
+      # the e2e dev profile gives each ciphernode.
+      - name: Install the interfold CLI
         run: |
-          chmod +x ~/.cargo/bin/interfold
+          archive="$(node scripts/interfold-release.mjs asset interfold-test-only-skip-proof-aggregation-linux-x86_64.tar.gz)"
+          tar -xzf "$archive" -C ~/.cargo/bin interfold
 
-      - name: Install Nargo
-        uses: noir-lang/noirup@7dbe69ccc78877f0200ffa5a40836c953d2cfd8f # v0.1.4
-        with:
-          toolchain: ${{ env.NOIR_TOOLCHAIN }}
-
-      - name: Cache Barretenberg binary
-        id: cache-bb
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: /usr/local/bin/bb
-          key: bb-bin-${{ env.BB_VERSION }}-amd64-linux
-
-      - name: Install Barretenberg (bb)
-        if: steps.cache-bb.outputs.cache-hit != 'true'
-        run: |
-          curl --proto '=https' --tlsv1.2 -fsSL --retry 5 --retry-all-errors --connect-timeout 20 --max-time 300 --retry-max-time 600 \
-            "https://github.com/AztecProtocol/aztec-packages/releases/download/v${{ env.BB_VERSION }}/barretenberg-amd64-linux.tar.gz" -o bb.tar.gz
-          mkdir -p bb_extract && tar -xzf bb.tar.gz -C bb_extract
-          BB_BIN=$(find bb_extract -name bb -type f | head -n 1)
-          sudo mv "$BB_BIN" /usr/local/bin/bb
-          chmod +x /usr/local/bin/bb
-
-      - name: Build interfold circuits
-        working-directory: interfold
-        run: pnpm build:circuits --preset insecure-64 --committee minimum --skip-if-built
-
-      - name: Install and verify candidate circuits
-        run: |
-          tar -C "$GITHUB_WORKSPACE/interfold/dist" -czf "$RUNNER_TEMP/circuits-candidate.tar.gz" circuits/
-          interfold noir setup --circuits-archive "$RUNNER_TEMP/circuits-candidate.tar.gz" \
-            --circuits-configuration insecure-64/minimum --allow-unpinned-archive
-          interfold noir setup
+      # Installs Barretenberg and the release circuits, each checked against the pin that the CLI
+      # carries.
+      - name: Install the circuits
+        run: interfold noir setup
 
       - name: Run Playwright tests
         env:

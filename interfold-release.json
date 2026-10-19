@@ -1,0 +1,9 @@
+{
+  "version": "0.20.0-dev.1",
+  "sha256": {
+    "circuits-0.20.0-dev.1.tar.gz": "00f0beb516c23463389df7be65e419eee74eac03ec059dfdc6ae7739acc91673",
+    "interfold-linux-x86_64.tar.gz": "b15ac5a4fa0b6a3b713e040cf8fec88b788095e9d05465b7679d3ca8ee620402",
+    "interfold-macos-aarch64.tar.gz": "046f7beae2ff70fce36dcb0173f07f12f2e00d7edef9c497e0fa21bef5c59333",
+    "interfold-test-only-skip-proof-aggregation-linux-x86_64.tar.gz": "767d1d59c573199631c7c5a7fe743f7aaae30d98560dd5b80d7c5b1fef405702"
+  }
+}

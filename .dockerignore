@@ -1,6 +1,6 @@
 # The server image (server/Dockerfile) and the program runner image (runner/Dockerfile) build from
 # the repository root. Allow only what their stages COPY, so that the context does not carry
-# node_modules, build output, or the interfold submodule.
+# node_modules or build output.
 *
 
 !Cargo.toml

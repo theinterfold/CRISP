@@ -8,7 +8,7 @@ import { expect } from 'chai'
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { network } from 'hardhat'
-import { deployOpenVmReceiptVerifier } from '../../../interfold/packages/interfold-contracts/scripts/openVm'
+import { deployOpenVmReceiptVerifier } from '@interfold/contracts/scripts'
 
 const names = ['OPENVM_TEST_IDENTITY', 'OPENVM_TEST_JOURNAL', 'OPENVM_TEST_VERIFIER', 'OPENVM_TEST_VERIFIER_SHA256'] as const
 const enabled = names.every((name) => process.env[name]) && Boolean(process.env.OPENVM_TEST_PROOF || process.env.OPENVM_TEST_SEAL)

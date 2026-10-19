@@ -35,6 +35,7 @@
     "test": "pnpm test:e2e",
     "test:circuits": "cd circuits/lib && nargo test",
     "compile:circuits": "bash ./scripts/compile_circuits.sh",
+    "compute:vk-hash": "bash ./scripts/compute_vk_hash.sh",
     "test:sdk": "pnpm -C packages/crisp-sdk test",
     "build:sdk": "pnpm -C packages/crisp-sdk build",
     "build:presets": "pnpm -C packages/crisp-sdk build:presets",
@@ -45,7 +46,7 @@
     "openvm": "bash scripts/openvm.sh"
   },
   "devDependencies": {
-    "@interfold/config": "^0",
+    "@interfold/config": "0.20.0-dev.1",
     "eslint": "^9.39.1",
     "@playwright/test": "1.52.0",
     "@synthetixio/synpress": "4.1.1",
@@ -62,8 +63,7 @@
   },
   "pnpm": {
     "overrides": {
-      "@interfold/config": "link:./interfold/packages/interfold-config",
-      "@interfold/contracts": "link:./interfold/packages/interfold-contracts",
+      "@interfold/contracts>@openzeppelin/contracts-upgradeable": "5.0.2",
       "@nomicfoundation/hardhat-keystore": "3.0.3",
       "@types/node": "22.7.5",
       "tsup": "8.5.0",

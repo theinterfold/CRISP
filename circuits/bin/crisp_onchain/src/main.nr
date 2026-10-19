@@ -6,10 +6,10 @@
 
 use crisp_lib::ciphertext_addition::verify_slot_update;
 use crisp_lib::ecdsa::{address_to_field, derive_address, digest_from_halves, validate_signature};
-use crisp_lib::utils::{check_coefficient_values_with_balance, check_coefficient_zero};
-use interfold_lib::configs::default::threshold::{
+use crisp_lib::preset::threshold::{
     L, N, QIS, USER_DATA_ENCRYPTION_BIT_CT, USER_DATA_ENCRYPTION_BIT_K,
 };
+use crisp_lib::utils::{check_coefficient_values_with_balance, check_coefficient_zero};
 use interfold_lib::math::{
     commitments::{compute_single_polynomial_commitment, DS_USER_DATA_ENCRYPTION_COMMITMENT},
     polynomial::Polynomial,

@@ -60,4 +60,5 @@ It exposes three main functions:
   chain. Both files declare a contract named `HonkVerifier`, which is why they are named by file.
   The Greco relations that proof checks are built by
   `crates/zk/witness/src/threshold/user_data_encryption.rs` and proved by the circuits under
-  `circuits/bin/threshold/`. See the Greco [paper](https://eprint.iacr.org/2024/594).
+  `circuits/bin/threshold/`, both in the [Interfold](https://github.com/theinterfold/interfold)
+  repository. See the Greco [paper](https://eprint.iacr.org/2024/594).

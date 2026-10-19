@@ -7,20 +7,19 @@
 
 // Compile and stage the CRISP circuits for the requested preset set.
 //
-// The preset is a global compile-time choice (circuits/lib/src/configs/default/mod.nr), so the
-// presets cannot be built concurrently — each pass switches the tree, compiles, and archives the
-// result under circuits/dist/<preset>/ before the next pass overwrites it.
+// The preset is a global compile-time choice (circuits/lib/src/preset.nr), so the presets cannot be
+// built concurrently — each pass switches the tree, compiles, and archives the result under
+// circuits/dist/<preset>/ before the next pass overwrites it.
 //
-// The threshold circuits go through the root builder rather than a bare `nargo compile`, because
-// switching preset also regenerates the parity matrices and ActiveCryptoConfig.sol. The root
-// builder does not know about the CRISP circuits, so those are compiled here afterwards.
+// The user_data_encryption circuits come compiled from the pinned Interfold release; staging takes
+// the preset's copies from circuits/interfold/.
 
 import { execFileSync } from 'node:child_process'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const CRISP = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const INTERFOLD = join(CRISP, 'interfold')
+// insecure-64 is last, so the tree is left on the preset that the repository holds.
 const ALL_PRESETS = ['secure-8192', 'insecure-64']
 
 const usage = () => {
@@ -58,30 +57,15 @@ const run = (cmd, args, cwd) => {
 for (const preset of PRESETS) {
   console.log(`\n🔮 Building CRISP circuits for ${preset}...`)
 
-  // Switches the tree to this preset. This is the step that also regenerates the parity matrices
-  // and ActiveCryptoConfig.sol, which a bare `nargo compile` would leave describing the old one.
-  // `--skip-vk`: compile_circuits.sh writes every key that CRISP uses. The `bb` that the SDK's
-  // scripts find is @aztec/bb.js's, which reports a nightly version that the builder refuses.
-  // This partial build must not replace a complete node artifact pair in dist/circuits.
-  run(
-    'pnpm',
-    ['build:circuits', '--preset', preset, '--group', 'threshold', '--skip-vk', '--output', join(CRISP, 'circuits/dist/threshold-build')],
-    INTERFOLD,
-  )
-
-  // Compiles the CRISP circuits and writes the generated Solidity verifiers into
-  // packages/crisp-contracts/contracts/verifiers/<preset>/. It recompiles the threshold circuits on
-  // the way through, which duplicates part of the step above; that is worth the few minutes rather
-  // than splitting the verifier generation away from the compile it has to agree with.
-  run('bash', ['scripts/compile_circuits.sh'], CRISP)
+  // Selects the preset, compiles the CRISP circuits, and writes the generated Solidity verifiers
+  // into packages/crisp-contracts/contracts/verifiers/.
+  run('bash', ['scripts/compile_circuits.sh', preset], CRISP)
 
   run('node', [join(CRISP, 'scripts/stage-preset-artifacts.mjs'), preset], CRISP)
 }
 
 console.log(`\n✓ staged ${PRESETS.length} preset(s); tree left on ${PRESETS.at(-1)}`)
-console.log(
-  '  If ballot circuits changed, update the selected fold binding with pnpm build:circuits sync-crisp --preset <preset> --committee <committee>.',
-)
+console.log('  If ballot circuits changed, update the fold key hashes printed by pnpm compute:vk-hash <preset>.')
 if (requested === 'all') {
   console.log('  Then rebuild the production SDK: pnpm -C packages/crisp-sdk build:prod')
   console.log('  Then check it: CRISP_CHANNEL=latest pnpm -C packages/crisp-sdk check:presets')

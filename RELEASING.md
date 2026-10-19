@@ -142,12 +142,13 @@ For the v0.19 mainnet cutover, pause requests and release every ended committee 
 OpenVM CRISP program from the qualified release source. Record the new program and verifiers in
 `packages/crisp-contracts/deployed_contracts.json`.
 
-The protocol commands run in the interfold contracts package of the `interfold/` submodule. Prepare
-the core activation batch from the CRISP repository root with:
+The protocol commands run in `packages/interfold-contracts` of an Interfold checkout at the release
+tag, after `pnpm install` in that checkout. `CRISP` is the path of the CRISP repository. Prepare the
+core activation batch with:
 
 ```sh
-pnpm --dir interfold/packages/interfold-contracts upgrade:v19 -- --network mainnet \
-  --crisp-deployments "$PWD/packages/crisp-contracts/deployed_contracts.json" \
+pnpm upgrade:v19 -- --network mainnet \
+  --crisp-deployments "$CRISP/packages/crisp-contracts/deployed_contracts.json" \
   --openvm-identity <checked-cutover-identity.json> \
   --input-availability-signer <production-signer-address>
 ```
@@ -171,8 +172,7 @@ operators with `upgrade:v19:refresh -- --network mainnet`, then wait for a later
 least 19 distinct eligible bond owners and healthy stable-release nodes before preparing resume:
 
 ```sh
-pnpm --dir interfold/packages/interfold-contracts upgrade:v19:resume -- \
-  --network mainnet --ciphernodes-restarted
+pnpm upgrade:v19:resume -- --network mainnet --ciphernodes-restarted
 ```
 
 The resume command validates the planned cutover and checks refreshed committee capacity before it

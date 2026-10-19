@@ -29,35 +29,47 @@ CRISP/
 ├── crates/                  # Rust libraries used by the server
 ├── circuits/                # Noir zero-knowledge circuits
 ├── scripts/                 # Development scripts for running, testing, and deployment
-├── interfold/              # Interfold submodule (branch main): CLI, contracts, circuits
 ├── interfold.config.yaml      # Local ciphernode network config
 └── docker-compose.yaml      # Optional multi-node deployment
 ```
 
 ### Interfold dependency
 
-CRISP builds against one commit of the [Interfold](https://github.com/theinterfold/interfold)
-repository:
+CRISP builds against one release of the [Interfold](https://github.com/theinterfold/interfold)
+repository. Each kind of dependency names the release in its own file:
 
-- The Rust crates (`e3-*`) are Cargo git dependencies in `Cargo.toml` and `guest/Cargo.toml`. Each
-  one names the commit with `rev`.
-- The `interfold/` submodule supplies the Noir library (`interfold_lib`), the
-  `user_data_encryption` circuits, the interfold contracts, the CLI, and the OpenVM compile script
-  (`interfold/crates/cli/scripts/openvm-compile.sh`). The submodule commit pins them.
+- `interfold-release.json`: the version, and the SHA-256 digest of each release asset that CRISP
+  downloads. `scripts/interfold-release.mjs` downloads an asset and refuses it when the digest does
+  not match. The assets are the interfold CLI, which `pnpm dev:setup` and CI install, and the
+  circuit archive, which supplies the compiled `user_data_encryption` circuits.
+- `Cargo.toml` and `guest/Cargo.toml`: the Rust crates (`e3-*`), Cargo git dependencies on the
+  release tag.
+- `circuits/lib/Nargo.toml` and `circuits/bin/*/Nargo.toml`: the Noir library (`interfold_lib`), a
+  Nargo git dependency on the release tag.
+- `package.json` and `packages/crisp-contracts/package.json`: the npm packages `@interfold/config`
+  and `@interfold/contracts`.
 
-Keep the `rev` values and the submodule on the same interfold commit. To move all of them to
-`<commit>`:
+To move to release `<version>`:
 
-```bash
-git -C interfold fetch origin && git -C interfold checkout <commit>
-# Set rev = "<commit>" on every e3-* dependency in Cargo.toml and guest/Cargo.toml, then:
-cargo update -p e3-sdk
-(cd guest && cargo update -p e3-safe)
-pnpm install
-```
+1. Set `version` in `interfold-release.json`, and set each digest to the SHA-256 of the asset in the
+   release `v<version>`.
+2. Set `tag = "v<version>"` on every `e3-*` dependency in `Cargo.toml` and `guest/Cargo.toml`, and
+   on every `interfold_lib` dependency in the `Nargo.toml` files.
+3. Set the `@interfold/*` versions to `<version>`.
+4. Update the lockfiles:
 
-Each `cargo update -p` command updates all crates from the interfold repository, because they
-share one git source.
+   ```bash
+   cargo update -p e3-sdk
+   (cd guest && cargo update -p e3-safe)
+   pnpm install
+   ```
+
+   Each `cargo update -p` command updates all crates from the interfold repository, because they
+   share one git source.
+
+5. Run `pnpm compute:vk-hash insecure-64` and `pnpm compute:vk-hash secure-8192`. When a printed
+   hash differs from the `*_EXPECTED_KEY_HASH_*` constant in `circuits/bin/fold/src/main.nr` or
+   `circuits/bin/fold_onchain/src/main.nr`, replace the constant.
 
 You can have an extended explanation of the single folders in the dedicated
 [documentation](https://docs.theinterfold.com/CRISP/introduction#project-structure).
@@ -102,10 +114,8 @@ service.
 The simplest way to run CRISP is:
 
 ```bash
-# Clone with the interfold submodule
-git clone --recurse-submodules https://github.com/theinterfold/CRISP.git
-cd crisp
-# In an existing clone: git submodule update --init --recursive
+git clone https://github.com/theinterfold/CRISP.git
+cd CRISP
 
 # Optional: choose local profile (copied to crisp.dev.env on first setup)
 cp crisp.dev.env.example crisp.dev.env
@@ -160,7 +170,8 @@ cd packages/crisp-contracts && pnpm hardhat node
 ### Additional Commands
 
 ```bash
-# Recompile Noir circuits and generate verifiers
+# Recompile the Noir circuits and generate verifiers (insecure-64; pass secure-8192 for the other
+# preset)
 pnpm compile:circuits
 
 # Open the interactive CLI to start voting rounds
@@ -314,15 +325,16 @@ Edit **`crisp.dev.env`** (created from `crisp.dev.env.example` on first `pnpm de
 | `CRISP_BFV_PRESET`             | `insecure-64` | BFV preset for aggregation circuits and the server `E3_PARAM_SET`     |
 | `CRISP_SKIP_PROOF_AGGREGATION` | `true`        | Ciphernode-only local-dev skip; also selects mock verifier deployment |
 
-`pnpm dev:setup` applies this profile and builds recursive circuits only when needed. `pnpm dev:up`
+`pnpm dev:setup` applies this profile and installs the matching interfold CLI. `pnpm dev:up`
 deploys contracts using the same flags.
 
 **Re-run `pnpm dev:setup` after changing `CRISP_SKIP_PROOF_AGGREGATION`.** The setting is only
 honoured by an `interfold` binary built with the matching `test-only-skip-proof-aggregation` Cargo
-feature, so `dev:setup` selects that feature from the profile and reinstalls the CLI. Running
-`dev:up` against a binary from the other profile makes every ciphernode exit at startup;
-`dev_cipher.sh` now aborts with the node status table instead of continuing. Note that
-`~/.cargo/bin/interfold` is shared — a `dev:setup` in `templates/default` or another example
+feature, so `dev:setup` selects the build from the profile and reinstalls the CLI. The release
+publishes the test-only build for Linux x86_64 only; on other platforms `dev:setup` builds it from
+the release tag with `cargo install`. Running `dev:up` against a binary from the other profile makes
+every ciphernode exit at startup; `dev_cipher.sh` now aborts with the node status table instead of
+continuing. Note that `~/.cargo/bin/interfold` is shared — a `dev:setup` in another project
 overwrites the binary this profile installed.
 
 See **[docs/PROOF_AGGREGATION_AND_ZK.md](./docs/PROOF_AGGREGATION_AND_ZK.md)** for modes, address

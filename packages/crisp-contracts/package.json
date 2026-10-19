@@ -32,7 +32,6 @@
     "ciphernode:mint:tokens": "hardhat ciphernode:mint-tokens",
     "ciphernode:add:self": "hardhat ciphernode:add",
     "clean:deployments": "hardhat utils:clean-deployments",
-    "predeploy:contracts": "pnpm --filter @interfold/contracts compile",
     "deploy:contracts": "hardhat run deploy/deploy.ts",
     "deploy:contracts:mock": "export USE_MOCKS=true PRINT_ENV_VARS=true && pnpm deploy:contracts",
     "deploy:contracts:full": "export DEPLOY_INTERFOLD=true && pnpm deploy:contracts",
@@ -40,7 +39,7 @@
     "governance:builder": "hardhat run deploy/create-governance-builder.ts",
     "test": "hardhat test mocha",
     "check:test-legs": "node scripts/check-test-legs.mjs",
-    "test:unit": "pnpm check:test-legs && hardhat test mocha tests/census-mode.test.ts tests/crisp.journal.test.ts tests/input-availability-flow.test.ts tests/input-leaf.test.ts tests/interfold-binding.test.ts tests/openvm-proof.test.ts tests/openvm-receipt.test.ts tests/openvm-service.test.ts tests/self-registry.test.ts tests/tally.decoding.test.ts",
+    "test:unit": "pnpm check:test-legs && hardhat test mocha tests/census-mode.test.ts tests/crisp.journal.test.ts tests/input-availability-flow.test.ts tests/input-leaf.test.ts tests/interfold-binding.test.ts tests/openvm-proof.test.ts tests/openvm-receipt.test.ts tests/self-registry.test.ts tests/tally.decoding.test.ts",
     "test:input-tree": "hardhat test mocha tests/input-tree-e2e.test.ts",
     "test:input-tree:poisoned-parent": "hardhat test mocha --grep \"lets an honest mask follow\" -- tests/input-tree-e2e.test.ts",
     "test:input-tree:canonical": "hardhat test mocha --grep \"^(?!.*lets an honest mask follow)\" -- tests/input-tree-e2e.test.ts",
@@ -52,7 +51,7 @@
     "prepublishOnly": "pnpm check:presets"
   },
   "dependencies": {
-    "@interfold/contracts": "0.19.0",
+    "@interfold/contracts": "0.20.0-dev.1",
     "@excubiae/contracts": "^0.4.0",
     "@zk-kit/lazy-imt.sol": "2.0.0-beta.12",
     "poseidon-solidity": "^0.0.5",

@@ -8,8 +8,9 @@
 // Stage the preset-bound circuit artifacts into circuits/dist/<preset>/.
 //
 // `nargo compile` always writes to <circuit>/target/, and the preset is chosen globally in
-// circuits/lib/src/configs/default/mod.nr, so the working tree only ever holds one preset at a
-// time. The SDK needs both side by side to publish both, so each compile pass is archived here.
+// circuits/lib/src/preset.nr, so the working tree only ever holds one preset at a time. The SDK
+// needs both side by side to publish both, so each compile pass is archived here. The
+// user_data_encryption_ct0/ct1 circuits come from the pinned Interfold release, one copy per preset.
 //
 // Only the four circuits whose ABI is shaped by the BFV degree are staged. The aggregation
 // circuits are proof-shaped and preset-independent — see src/circuits.ts.
@@ -19,19 +20,12 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { circuitSourcesDigest } from './circuit-sources.mjs'
+import { extractCircuits } from './interfold-release.mjs'
 
 const CRISP = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const INTERFOLD = join(CRISP, 'interfold')
 
 /** Degree the preset's polynomials carry, used to prove the artifact matches its directory. */
 const EXPECTED_DEGREE = { 'insecure-64': 64, 'secure-8192': 8192 }
-
-const ARTIFACTS = [
-  { name: 'crisp', from: join(CRISP, 'circuits/bin/crisp/target/crisp.json') },
-  { name: 'crisp_onchain', from: join(CRISP, 'circuits/bin/crisp_onchain/target/crisp_onchain.json') },
-  { name: 'user_data_encryption_ct0', from: join(INTERFOLD, 'circuits/bin/threshold/target/user_data_encryption_ct0.json') },
-  { name: 'user_data_encryption_ct1', from: join(INTERFOLD, 'circuits/bin/threshold/target/user_data_encryption_ct1.json') },
-]
 
 /**
  * The largest array length in the ABI is the polynomial degree for every circuit staged here.
@@ -55,6 +49,14 @@ if (!Object.hasOwn(EXPECTED_DEGREE, preset)) {
 
 const outDir = join(CRISP, 'circuits/dist', preset)
 mkdirSync(outDir, { recursive: true })
+
+const interfold = join(await extractCircuits(), preset)
+const ARTIFACTS = [
+  { name: 'crisp', from: join(CRISP, 'circuits/bin/crisp/target/crisp.json') },
+  { name: 'crisp_onchain', from: join(CRISP, 'circuits/bin/crisp_onchain/target/crisp_onchain.json') },
+  { name: 'user_data_encryption_ct0', from: join(interfold, 'user_data_encryption_ct0.json') },
+  { name: 'user_data_encryption_ct1', from: join(interfold, 'user_data_encryption_ct1.json') },
+]
 
 const staged = []
 for (const { name, from } of ARTIFACTS) {

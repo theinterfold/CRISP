@@ -11,8 +11,6 @@ export default defineConfig([
   globalIgnores([
     // External Solidity libraries, including copies retained by older checkouts.
     'packages/crisp-contracts/lib/**',
-    // The interfold submodule has its own lint configuration.
-    'interfold/**',
     // Build and cache directories.
     '**/node_modules/**',
     '**/dist/**',

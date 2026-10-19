@@ -3,6 +3,8 @@
 #
 # CRISP's OpenVM tasks. The OpenVM workers (`crates/openvm-prover`) and the interfold CLI build in
 # the interfold repository: run `pnpm openvm prover-build` and `pnpm openvm cli-build` there.
+# `interfold program compile` builds CRISP's guest, keys, receipt identity, worker configuration
+# and program runner.
 set -euo pipefail
 CRISP="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 command="${1:-}"
@@ -19,13 +21,6 @@ case "$command" in
   # CRISP's program runner: runner/, which serves the proving service.
   service-build|service-check)
     exec cargo "${command#service-}" --locked --manifest-path "$CRISP/Cargo.toml" -p e3-user-program-runner "$@"
-    ;;
-  # Builds CRISP's guest, keys, receipt identity, worker configuration and program runner, with the
-  # compile script of the interfold submodule. Takes the same OPENVM_* environment as
-  # `interfold program compile`.
-  compile)
-    cd "$CRISP"
-    exec bash "$CRISP/interfold/crates/cli/scripts/openvm-compile.sh" "$@"
     ;;
   service-start)
     cd "$CRISP"
@@ -63,8 +58,5 @@ case "$command" in
   proof-test)
     OPENVM_REQUIRE_PROOF_TEST=1 exec pnpm --filter @crisp-e3/contracts test --network default tests/openvm-proof.test.ts "$@"
     ;;
-  service-e2e)
-    OPENVM_E2E_ENABLED=1 exec pnpm --filter @crisp-e3/contracts test --network localhost tests/openvm-service.test.ts "$@"
-    ;;
-  *) echo 'Usage: pnpm openvm fixture|crisp-server-build|crisp-server-test|service-build|service-check|compile|service-start|guest-parity|guest|contract-test|proof-test|service-e2e [arguments]' >&2; exit 2 ;;
+  *) echo 'Usage: pnpm openvm fixture|crisp-server-build|crisp-server-test|service-build|service-check|service-start|guest-parity|guest|contract-test|proof-test [arguments]' >&2; exit 2 ;;
 esac
