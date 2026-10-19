@@ -7,13 +7,12 @@ on:
       - main
       - dev
     # What the image copies and compiles: the CRISP Cargo workspace, whose COPY list the Dockerfile
-    # keeps by hand, and the submodule's support-scripts crates that two workspace members link to.
+    # keeps by hand. Cargo fetches the interfold crates from git.
     paths:
       - 'server/**'
       - 'program/**'
+      - 'runner/**'
       - 'crates/**'
-      - '.interfold/**'
-      - 'interfold'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'packages/crisp-contracts/deployed_contracts.json'
@@ -25,13 +24,12 @@ on:
       - dev
       - main
     # What the image copies and compiles: the CRISP Cargo workspace, whose COPY list the Dockerfile
-    # keeps by hand, and the submodule's support-scripts crates that two workspace members link to.
+    # keeps by hand. Cargo fetches the interfold crates from git.
     paths:
       - 'server/**'
       - 'program/**'
+      - 'runner/**'
       - 'crates/**'
-      - '.interfold/**'
-      - 'interfold'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'packages/crisp-contracts/deployed_contracts.json'
@@ -59,10 +57,7 @@ jobs:
     outputs:
       image_tag: ${{ steps.version.outputs.version }}
     steps:
-      # The image build copies the support-scripts crates from the interfold submodule.
       - uses: actions/checkout@v6
-        with:
-          submodules: recursive
 
       - name: Generate version tag
         id: version

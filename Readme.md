@@ -36,19 +36,21 @@ CRISP/
 
 ### Interfold dependency
 
-CRISP builds against the `main` branch of the [Interfold](https://github.com/theinterfold/interfold)
+CRISP builds against one commit of the [Interfold](https://github.com/theinterfold/interfold)
 repository:
 
-- The Rust crates (`e3-*`) are Cargo git dependencies in `Cargo.toml` and `guest/Cargo.toml`. The
-  `Cargo.lock` files pin the commit.
+- The Rust crates (`e3-*`) are Cargo git dependencies in `Cargo.toml` and `guest/Cargo.toml`. Each
+  one names the commit with `rev`.
 - The `interfold/` submodule supplies the Noir library (`interfold_lib`), the
-  `user_data_encryption` circuits, the interfold contracts, the CLI, and the OpenVM support scripts
-  (`.interfold/support` links into it). The submodule commit pins them.
+  `user_data_encryption` circuits, the interfold contracts, the CLI, and the OpenVM compile script
+  (`interfold/crates/cli/scripts/openvm-compile.sh`). The submodule commit pins them.
 
-Keep the two pins on the same interfold commit. To move both to the current `main`:
+Keep the `rev` values and the submodule on the same interfold commit. To move all of them to
+`<commit>`:
 
 ```bash
-git submodule update --remote interfold
+git -C interfold fetch origin && git -C interfold checkout <commit>
+# Set rev = "<commit>" on every e3-* dependency in Cargo.toml and guest/Cargo.toml, then:
 cargo update -p e3-sdk
 (cd guest && cargo update -p e3-safe)
 pnpm install
@@ -56,7 +58,6 @@ pnpm install
 
 Each `cargo update -p` command updates all crates from the interfold repository, because they
 share one git source.
-```
 
 You can have an extended explanation of the single folders in the dedicated
 [documentation](https://docs.theinterfold.com/CRISP/introduction#project-structure).

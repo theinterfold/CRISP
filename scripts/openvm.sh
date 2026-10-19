@@ -16,19 +16,21 @@ case "$command" in
     export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$CRISP/target/openvm/crisp-server}"
     exec cargo "${command#crisp-server-}" --locked --manifest-path "$CRISP/Cargo.toml" -p crisp "$@"
     ;;
-  # CRISP's proving service: .interfold/support/openvm/service.
+  # CRISP's program runner: runner/, which serves the proving service.
   service-build|service-check)
-    exec cargo "${command#service-}" --locked --manifest-path "$CRISP/Cargo.toml" -p e3-support-scripts-openvm "$@"
+    exec cargo "${command#service-}" --locked --manifest-path "$CRISP/Cargo.toml" -p e3-user-program-runner "$@"
     ;;
-  # Builds CRISP's guest, keys, receipt identity, worker configuration and service. Takes the same
-  # OPENVM_* environment as `interfold program compile`.
+  # Builds CRISP's guest, keys, receipt identity, worker configuration and program runner, with the
+  # compile script of the interfold submodule. Takes the same OPENVM_* environment as
+  # `interfold program compile`.
   compile)
     cd "$CRISP"
-    exec bash .interfold/support/openvm/compile "$@"
+    exec bash "$CRISP/interfold/crates/cli/scripts/openvm-compile.sh" "$@"
     ;;
   service-start)
     cd "$CRISP"
-    exec bash .interfold/support/openvm/start "$@"
+    export OPENVM_PROVER_CONFIG="${OPENVM_PROVER_CONFIG:-$CRISP/.interfold/caches/openvm/prover.json}"
+    exec cargo run --release --bin program-runner -- openvm
     ;;
   # Builds CRISP's guest and runs it, without proving, on a fixture made by `fixture`, then checks
   # that it reveals the SHA-256 digest of the journal the native host computed.
