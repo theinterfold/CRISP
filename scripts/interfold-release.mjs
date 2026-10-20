@@ -136,14 +136,16 @@ export const extractCircuits = async () => {
   ]
 
   // The stamp names the release and the extracted files, so a new release or a new file list
-  // extracts again.
+  // extracts again. A missing file also extracts again.
   const stamp = join(CIRCUITS_DIR, 'release.json')
   const wanted = JSON.stringify({
     version: RELEASE.version,
     sha256: RELEASE.sha256[name],
     files: members.map(([, to]) => to),
   })
-  if (existsSync(stamp) && readFileSync(stamp, 'utf8') === wanted) return CIRCUITS_DIR
+  if (existsSync(stamp) && readFileSync(stamp, 'utf8') === wanted && members.every(([, to]) => existsSync(join(CIRCUITS_DIR, to)))) {
+    return CIRCUITS_DIR
+  }
 
   const archive = await fetchAsset(name)
 
