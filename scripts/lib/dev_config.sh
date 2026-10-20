@@ -7,13 +7,6 @@ _crisp_dev_config_root() {
 
 load_crisp_dev_config() {
   CRISP_ROOT="$(_crisp_dev_config_root)"
-  # The interfold submodule supplies the CLI, the interfold contracts, and the circuit sources.
-  INTERFOLD_ROOT="${CRISP_ROOT}/interfold"
-  if [[ ! -f "${INTERFOLD_ROOT}/Cargo.toml" ]]; then
-    echo "The interfold submodule is missing. Run: git submodule update --init --recursive" >&2
-    return 1
-  fi
-
   local cfg="${CRISP_ROOT}/crisp.dev.env"
   if [[ ! -f "$cfg" ]]; then
     cp "${CRISP_ROOT}/crisp.dev.env.example" "$cfg"
@@ -25,18 +18,18 @@ load_crisp_dev_config() {
   source "$cfg"
   set +a
 
-  CRISP_BFV_PRESET="${CRISP_BFV_PRESET:-insecure-512}"
+  CRISP_BFV_PRESET="${CRISP_BFV_PRESET:-insecure-64}"
   CRISP_SKIP_PROOF_AGGREGATION="${CRISP_SKIP_PROOF_AGGREGATION:-true}"
 
   case "$CRISP_BFV_PRESET" in
-    insecure-512)
+    insecure-64)
       CRISP_E3_PARAM_SET=0
       ;;
     secure-8192)
       CRISP_E3_PARAM_SET=2
       ;;
     *)
-      echo "Invalid CRISP_BFV_PRESET='${CRISP_BFV_PRESET}' (use insecure-512 or secure-8192)" >&2
+      echo "Invalid CRISP_BFV_PRESET='${CRISP_BFV_PRESET}' (use insecure-64 or secure-8192)" >&2
       exit 1
       ;;
   esac
@@ -72,7 +65,7 @@ load_crisp_dev_config() {
     export E3_PROGRAM__DEV=true
   fi
 
-  export CRISP_BFV_PRESET CRISP_E3_PARAM_SET CRISP_SKIP_PROOF_AGGREGATION CRISP_ROOT INTERFOLD_ROOT CRISP_REAL_PROOFS
+  export CRISP_BFV_PRESET CRISP_E3_PARAM_SET CRISP_SKIP_PROOF_AGGREGATION CRISP_ROOT CRISP_REAL_PROOFS
 }
 
 apply_crisp_dev_config_to_server_env() {
@@ -85,41 +78,49 @@ apply_crisp_dev_config_to_server_env() {
     sed -i.bak "s/^E3_PARAM_SET=.*/E3_PARAM_SET=${CRISP_E3_PARAM_SET}/" "$server_env"
     rm -f "${server_env}.bak"
   else
-    printf '\n# 0=InsecureThreshold512, 2=SecureThreshold8192\nE3_PARAM_SET=%s\n' \
+    printf '\n# 0=InsecureThreshold64, 2=SecureThreshold8192\nE3_PARAM_SET=%s\n' \
       "${CRISP_E3_PARAM_SET}" >> "$server_env"
   fi
 }
 
-build_interfold_circuits_at_setup() {
+# Installs the interfold CLI of the release that interfold-release.json pins into ~/.cargo/bin.
+#
+# The ciphernodes reject E3_NODES__CN*__SKIP_PROOF_AGGREGATION unless the binary carries the
+# test-only-skip-proof-aggregation Cargo feature, so the binary has to follow the profile. The
+# release publishes that build for Linux x86_64 only; on other platforms, and for a profile with no
+# published build, the CLI is built from the release tag. Always reinstalling means that a binary
+# from an earlier release or an earlier profile cannot survive.
+install_interfold_cli() {
+  local version platform asset="" archive features="" circuits_sha256
+  version="$(node -p "require('${CRISP_ROOT}/interfold-release.json').version")"
+  platform="$(uname -s)-$(uname -m)"
   if [[ "$CRISP_SKIP_PROOF_AGGREGATION" == "true" ]]; then
-    echo "Skipping recursive proof-aggregation circuit build for the CRISP dev profile."
-    return 0
+    features="--features test-only-skip-proof-aggregation"
+    if [[ "$platform" == "Linux-x86_64" ]]; then
+      asset="interfold-test-only-skip-proof-aggregation-linux-x86_64.tar.gz"
+    fi
+  else
+    case "$platform" in
+      Linux-x86_64) asset="interfold-linux-x86_64.tar.gz" ;;
+      Darwin-arm64) asset="interfold-macos-aarch64.tar.gz" ;;
+    esac
   fi
-  local committee="${CRISP_COMMITTEE:-minimum}"
-  echo "Building interfold circuits (preset=${CRISP_BFV_PRESET}, committee=${committee})..."
-  (
-    cd "${INTERFOLD_ROOT}" &&
-      pnpm build:circuits \
-        --preset "${CRISP_BFV_PRESET}" \
-        --committee "${committee}" \
-        --skip-if-built
-  )
-}
 
-sync_interfold_circuit_artifacts() {
-  local committee="${CRISP_COMMITTEE:-minimum}"
-  local src="${INTERFOLD_ROOT}/dist/circuits/${CRISP_BFV_PRESET}/${committee}"
-  local dst="${CRISP_ROOT}/.interfold/noir/circuits/${CRISP_BFV_PRESET}/${committee}"
-
-  if [[ ! -f "${src}/recursive/dkg/pk/pk.json" ]]; then
-    echo "No built circuits at ${src}; run pnpm dev:setup first. Using interfold noir setup release layout."
+  mkdir -p "${HOME}/.cargo/bin"
+  if [[ -n "$asset" ]]; then
+    echo "Installing the interfold ${version} CLI from the release (${asset})..."
+    archive="$(node "${CRISP_ROOT}/scripts/interfold-release.mjs" asset "$asset")"
+    tar -xzf "$archive" -C "${HOME}/.cargo/bin" interfold
     return 0
   fi
 
-  echo "Syncing circuits ${CRISP_BFV_PRESET}/${committee} → ${dst}"
-  mkdir -p "$(dirname "${dst}")"
-  rm -rf "${dst}"
-  cp -R "${src}" "$(dirname "${dst}")/"
+  echo "Building the interfold ${version} CLI from its release tag (${features:-no extra features})..."
+  # A release build of the CLI pins the SHA-256 of its circuit archive, which `interfold noir setup`
+  # checks. The pin comes from the release workflow, so a build from the tag takes it from here.
+  circuits_sha256="$(node -p "require('${CRISP_ROOT}/interfold-release.json').sha256['circuits-${version}.tar.gz']")"
+  # shellcheck disable=SC2086
+  E3_CIRCUITS_ARCHIVE_SHA256="$circuits_sha256" cargo install --locked \
+    --git https://github.com/theinterfold/interfold --tag "v${version}" --bin interfold -f $features e3-cli
 }
 
 print_crisp_dev_config_summary() {

@@ -4,15 +4,15 @@
 
 **Source of truth for local dev:** `crisp.dev.env` in the repository root (from `crisp.dev.env.example`).
 
-| Variable                       | Default        | Effect                                                |
-| ------------------------------ | -------------- | ----------------------------------------------------- |
-| `CRISP_BFV_PRESET`             | `insecure-512` | BFV preset for circuits and the server `E3_PARAM_SET` |
-| `CRISP_SKIP_PROOF_AGGREGATION` | `true`         | Enables the ciphernode-only local-dev/test skip flag  |
+| Variable                       | Default       | Effect                                                |
+| ------------------------------ | ------------- | ----------------------------------------------------- |
+| `CRISP_BFV_PRESET`             | `insecure-64` | BFV preset for circuits and the server `E3_PARAM_SET` |
+| `CRISP_SKIP_PROOF_AGGREGATION` | `true`        | Enables the ciphernode-only local-dev/test skip flag  |
 
 `pnpm dev:setup` copies the example if missing and builds recursive circuits only when the skip flag
-is `false`. It also writes the matching `E3_PARAM_SET` into `server/.env`: `0` for `insecure-512`
-and `2` for `secure-8192`. `pnpm dev:up` → `crisp_deploy.sh` deploys real verifiers for full
-aggregation and mock verifiers for skipped local-dev runs.
+is `false`. It also writes the matching `E3_PARAM_SET` into `server/.env`: `0` for `insecure-64` and
+`2` for `secure-8192`. `pnpm dev:up` → `crisp_deploy.sh` deploys real verifiers for full aggregation
+and mock verifiers for skipped local-dev runs.
 
 After changing `crisp.dev.env`, re-run `pnpm dev:setup` and a fresh `pnpm dev:up` (wipe
 `.interfold/data` when switching modes).
@@ -39,7 +39,7 @@ verifier checks.
 
 ```bash
 # crisp.dev.env
-CRISP_BFV_PRESET=insecure-512
+CRISP_BFV_PRESET=insecure-64
 CRISP_SKIP_PROOF_AGGREGATION=true
 ```
 
@@ -77,29 +77,30 @@ Honk proof, and `BfvPkVerifier` checks at `publishCommittee`.
 
 ```bash
 # crisp.dev.env
-CRISP_BFV_PRESET=insecure-512
+CRISP_BFV_PRESET=insecure-64
 CRISP_SKIP_PROOF_AGGREGATION=false
 ```
 
 CRISP `requestE3` reads `E3_PARAM_SET` from `server/.env`. Keep it aligned with `CRISP_BFV_PRESET`:
-`0` for `insecure-512`, `2` for `secure-8192`.
+`0` for `insecure-64`, `2` for `secure-8192`.
 
 ### Steps
 
 ```bash
 # From the repository root
 # Edit crisp.dev.env (or crisp.dev.env.example → crisp.dev.env) as above
-pnpm dev:setup    # builds DKG circuits
+pnpm dev:setup    # installs the interfold CLI without the proof-aggregation skip
 rm -rf .interfold/data   # required when switching from Mode A
 pnpm dev:up       # deploy with ENABLE_ZK_VERIFICATION=true
 pnpm cli init
 ```
 
-`dev:setup` runs `pnpm build:circuits --preset <CRISP_BFV_PRESET>` before contract compile and
-updates `server/.env`. `dev:up` deploys via `crisp_deploy.sh` with `ENABLE_ZK_VERIFICATION=true`.
+`dev:setup` installs the interfold CLI of the release in `interfold-release.json` and updates
+`server/.env`. `scripts/dev_cipher.sh` runs `interfold noir setup`, which installs the circuits of
+the same release. `dev:up` deploys via `crisp_deploy.sh` with `ENABLE_ZK_VERIFICATION=true`.
 
-**Do not** run `pnpm build:circuits` with a different preset after deploy without redeploying — that
-causes **`VkHashMismatch()`** at `publishCommittee`.
+**Do not** move to another Interfold release after deploy without redeploying — that causes
+**`VkHashMismatch()`** at `publishCommittee`.
 
 Expect DKG aggregation to take on the order of **minutes** per committee (fold + aggregator
 proving).
@@ -115,11 +116,11 @@ proving).
 
 ## Invalid combinations
 
-| Deploy                                   | Ciphernode skip flag | Result                                                                                       |
-| ---------------------------------------- | -------------------- | -------------------------------------------------------------------------------------------- |
-| Mock verifiers                           | `false`              | Valid, but unnecessarily performs the expensive recursive workflow.                          |
-| Production verifiers                     | `true`               | Final C5/C7 placeholders are rejected; no contract-side bypass exists.                       |
-| ZK, circuits recompiled **after** deploy | `false`              | **`VkHashMismatch()`**; redeploy the production verifier wrappers after rebuilding circuits. |
+| Deploy                                        | Ciphernode skip flag | Result                                                                                         |
+| --------------------------------------------- | -------------------- | ---------------------------------------------------------------------------------------------- |
+| Mock verifiers                                | `false`              | Valid, but unnecessarily performs the expensive recursive workflow.                            |
+| Production verifiers                          | `true`               | Final C5/C7 placeholders are rejected; no contract-side bypass exists.                         |
+| ZK, other circuits installed **after** deploy | `false`              | **`VkHashMismatch()`**; redeploy the production verifier wrappers after changing the circuits. |
 
 ---
 
@@ -142,8 +143,8 @@ No manual copy from `deployed_contracts.json` is required. Stale addresses only 
 ### `publishCommittee` reverts — `0x0c260259` (`VkHashMismatch`)
 
 **Cause:** `BfvPkVerifier` immutables (`expectedNodesFoldKeyHash`, `expectedC5KeyHash`) do not match
-the VK hashes embedded in the DKG aggregator proof (usually circuits were rebuilt after verifier
-deploy).
+the VK hashes embedded in the DKG aggregator proof (usually the installed circuits come from another
+Interfold release than the deployed verifiers).
 
 **Fix:**
 
@@ -175,9 +176,10 @@ RPC is running. Harmless for CRISP-on-Anvil.
 
 | Step             | Mode A (`CRISP_SKIP_PROOF_AGGREGATION=true`) | Mode B (`=false`)                             |
 | ---------------- | -------------------------------------------- | --------------------------------------------- |
-| `pnpm dev:setup` | Skips recursive circuit builds               | `pnpm build:circuits --preset …`              |
+| `pnpm dev:setup` | Installs the test-only interfold CLI         | Installs the standard interfold CLI           |
 | `pnpm dev:up`    | Mock PK/decryption/fold verifiers            | Production verifiers + full recursive proving |
 
-See also: `packages/interfold-contracts/scripts/deployInterfold.ts`,
+In the [Interfold repository](https://github.com/theinterfold/interfold), see
+`packages/interfold-contracts/scripts/deployInterfold.ts`,
 `packages/interfold-contracts/contracts/verifiers/bfv/BfvPkVerifier.sol`, and
 `agent/flow-trace/04_DKG_AND_COMPUTATION.md` for the full DKG publication flow.

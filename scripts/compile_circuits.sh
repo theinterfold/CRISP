@@ -2,9 +2,39 @@
 
 set -euo pipefail
 
-# Script runs from the CRISP repository root. Interfold circuits are in the interfold submodule.
-INTERFOLD_CIRCUITS="interfold/circuits"
+# Compiles the CRISP circuits for one BFV preset: `compile_circuits.sh [insecure-64|secure-8192]`,
+# insecure-64 by default. The script runs from the CRISP repository root.
+#
+# The user_data_encryption circuits are not compiled here. They come compiled from the Interfold
+# release that interfold-release.json pins (`node scripts/interfold-release.mjs circuits`).
 CRISP_CIRCUITS="circuits"
+PRESET="${1:-insecure-64}"
+
+case "$PRESET" in
+    insecure-64) PRESET_MODULE="insecure" ;;
+    secure-8192) PRESET_MODULE="secure" ;;
+    *)
+        echo "Usage: compile_circuits.sh [insecure-64|secure-8192]" >&2
+        exit 1
+        ;;
+esac
+
+# The preset is a compile-time choice of the CRISP library. With insecure-64, this writes the file
+# that the repository holds.
+cat >"$CRISP_CIRCUITS/lib/src/preset.nr" <<EOF
+// SPDX-License-Identifier: LGPL-3.0-only
+//
+// This file is provided WITHOUT ANY WARRANTY;
+// without even the implied warranty of MERCHANTABILITY
+// or FITNESS FOR A PARTICULAR PURPOSE.
+
+//! The BFV preset that the CRISP circuits compile against.
+//!
+//! \`scripts/compile_circuits.sh <preset>\` rewrites this file. The committed file selects
+//! insecure-64, the preset for local development and pull-request CI.
+
+pub use interfold_lib::configs::${PRESET_MODULE}::threshold;
+EOF
 
 # The generated verifiers are NOT preset-specific. They are written from the fold circuit's
 # verification key, and the fold circuit takes the inner key as an input and checks its hash against
@@ -24,39 +54,6 @@ STACKS=(
     "crisp:fold:crisp_fold:CRISPVerifier.sol"
     "crisp_onchain:fold_onchain:crisp_onchain_fold:CRISPOnchainVerifier.sol"
 )
-
-echo "Compiling interfold user_data_encryption circuits (dependencies)..."
-
-echo "Compiling user_data_encryption_ct0..."
-if ! (cd "$INTERFOLD_CIRCUITS/bin/threshold/user_data_encryption_ct0" && nargo compile); then
-    echo "Error: user_data_encryption_ct0 compilation failed"
-    exit 1
-fi
-
-echo "Compiling user_data_encryption_ct1..."
-if ! (cd "$INTERFOLD_CIRCUITS/bin/threshold/user_data_encryption_ct1" && nargo compile); then
-    echo "Error: user_data_encryption_ct1 compilation failed"
-    exit 1
-fi
-
-echo "Compiling user_data_encryption..."
-if ! (cd "$INTERFOLD_CIRCUITS/bin/threshold/user_data_encryption" && nargo compile); then
-    echo "Error: user_data_encryption compilation failed"
-    exit 1
-fi
-
-# Inner recursive proofs use noir-recursive-no-zk; fold's compute_vk_hash chain reads
-# `{name}.vk_recursive_hash` in each package target/ (same layout as interfold `scripts/build-circuits.ts`).
-THRESHOLD_TARGET="${INTERFOLD_CIRCUITS}/bin/threshold/target"
-echo "Writing noir-recursive-no-zk VKs (user_data_encryption)..."
-for name in user_data_encryption_ct0 user_data_encryption_ct1 user_data_encryption; do
-    if ! bb write_vk -b "${THRESHOLD_TARGET}/${name}.json" -o "${THRESHOLD_TARGET}" -t noir-recursive-no-zk; then
-        echo "Error: bb write_vk (noir-recursive-no-zk) failed for ${name}"
-        exit 1
-    fi
-    mv "${THRESHOLD_TARGET}/vk" "${THRESHOLD_TARGET}/${name}.vk_recursive"
-    mv "${THRESHOLD_TARGET}/vk_hash" "${THRESHOLD_TARGET}/${name}.vk_recursive_hash"
-done
 
 # Apply project-specific checks that the generated verifier does not emit.
 patch_verifier() {

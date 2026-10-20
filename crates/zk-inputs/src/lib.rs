@@ -11,10 +11,9 @@
 use crate::ciphertext_addition::CiphertextAdditionWitness;
 use e3_fhe_params::build_bfv_params_arc;
 use e3_fhe_params::{default_param_set, BfvParamSet, BfvPreset};
-use e3_zk_helpers::circuits::threshold::user_data_encryption::circuit::UserDataEncryptionCircuit;
-use e3_zk_helpers::circuits::threshold::user_data_encryption::circuit::UserDataEncryptionCircuitData;
-use e3_zk_helpers::CircuitComputation;
-use e3_zk_helpers::Computation;
+use e3_zk_config::threshold::user_data_encryption::Configs as EncryptionConfig;
+use e3_zk_witness::threshold::user_data_encryption::encrypt_and_prepare;
+use e3_zk_witness::threshold::user_data_encryption::UserDataEncryptionCircuitData;
 use eyre::{Context, Result};
 use fhe::bfv::BfvParameters;
 use fhe::bfv::Ciphertext;
@@ -31,7 +30,7 @@ mod utils;
 
 pub struct ZKInputsGenerator {
     bfv_params: Arc<BfvParameters>,
-    bfv_preset: BfvPreset,
+    encryption_config: EncryptionConfig,
 }
 
 impl ZKInputsGenerator {
@@ -70,8 +69,8 @@ impl ZKInputsGenerator {
         let bfv_params =
             build_bfv_params_arc(degree, plaintext_modulus, moduli, canonical_variance);
         Ok(Self {
+            encryption_config: EncryptionConfig::new(&bfv_params)?,
             bfv_params,
-            bfv_preset,
         })
     }
 
@@ -90,7 +89,7 @@ impl ZKInputsGenerator {
     /// Creates a new generator from a JavaScript-facing preset name.
     pub fn from_preset_name(name: &str) -> Result<Self> {
         let preset = match name.trim() {
-            "insecure-512" => BfvPreset::InsecureThreshold512,
+            "insecure-64" => BfvPreset::InsecureThreshold64,
             "secure-8192" => BfvPreset::SecureThreshold8192,
             other => BfvPreset::from_name(other)?,
         };
@@ -183,19 +182,13 @@ impl ZKInputsGenerator {
         let pt = Plaintext::try_encode(&vote, Encoding::poly(), &self.bfv_params)
             .with_context(|| "Failed to encode plaintext")?;
 
-        let user_data_encryption_computation_output = UserDataEncryptionCircuit::compute(
-            self.bfv_preset,
+        let (ct, user_data_encryption_inputs) = encrypt_and_prepare(
+            &self.encryption_config,
             &UserDataEncryptionCircuitData {
                 public_key: pk,
                 plaintext: pt,
             },
         )?;
-
-        let ct = Ciphertext::from_bytes(
-            &user_data_encryption_computation_output.inputs.ciphertext,
-            &self.bfv_params,
-        )
-        .with_context(|| "Failed to deserialize ciphertext")?;
 
         let previous_ct = previous_ciphertext
             .map(|bytes| {
@@ -222,8 +215,7 @@ impl ZKInputsGenerator {
         .with_context(|| "Failed to compute ciphertext addition inputs")?;
 
         let ciphertext_addition_witness_json = ciphertext_addition_inputs.to_json()?;
-        let user_data_encryption_witness_json =
-            user_data_encryption_computation_output.inputs.to_json()?;
+        let user_data_encryption_witness_json = user_data_encryption_inputs.to_json();
         let inputs_json = utils::merge_json_objects(
             ciphertext_addition_witness_json,
             user_data_encryption_witness_json,
@@ -306,18 +298,18 @@ impl ZKInputsGenerator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use e3_fhe_params::constants::{insecure_512, secure_8192};
+    use e3_fhe_params::constants::{insecure_64, secure_8192};
     use e3_fhe_params::{BfvParamSet, BfvPreset};
     use num_bigint::BigUint;
 
     /// Helper function to create a vote vector with alternating 0s and 1s (deterministic)
     fn create_vote_vector() -> Vec<u64> {
-        (0..insecure_512::DEGREE).map(|i| (i % 2) as u64).collect()
+        (0..insecure_64::DEGREE).map(|i| (i % 2) as u64).collect()
     }
 
     /// A ballot of all zeros, which is what a mask encrypts.
     fn zero_vote() -> Vec<u64> {
-        vec![0u64; insecure_512::DEGREE]
+        vec![0u64; insecure_64::DEGREE]
     }
 
     /// Reads one commitment out of the witness JSON, as the decimal string the circuit takes.
@@ -343,18 +335,18 @@ mod tests {
 
     #[test]
     fn from_preset_name_selects_the_requested_threshold_preset() {
-        let insecure = ZKInputsGenerator::from_preset_name("insecure-512")
+        let insecure = ZKInputsGenerator::from_preset_name("insecure-64")
             .expect("insecure preset should parse");
         let secure =
             ZKInputsGenerator::from_preset_name("secure-8192").expect("secure preset should parse");
 
         let insecure_params = insecure.get_bfv_params();
-        assert_eq!(insecure_params.degree(), insecure_512::DEGREE);
+        assert_eq!(insecure_params.degree(), insecure_64::DEGREE);
         assert_eq!(
             insecure_params.plaintext(),
-            insecure_512::threshold::PLAINTEXT_MODULUS
+            insecure_64::threshold::PLAINTEXT_MODULUS
         );
-        assert_eq!(insecure_params.moduli(), insecure_512::threshold::MODULI);
+        assert_eq!(insecure_params.moduli(), insecure_64::threshold::MODULI);
 
         let secure_params = secure.get_bfv_params();
         assert_eq!(secure_params.degree(), secure_8192::DEGREE);
@@ -377,7 +369,7 @@ mod tests {
 
     #[test]
     fn try_new_rejects_noncanonical_error_variance() {
-        let threshold = BfvParamSet::from(BfvPreset::InsecureThreshold512);
+        let threshold = BfvParamSet::from(BfvPreset::InsecureThreshold64);
 
         let result = ZKInputsGenerator::try_new(
             threshold.degree,
@@ -475,9 +467,9 @@ mod tests {
 
         // Test with different vote patterns
         let test_votes = vec![
-            vec![0u64; insecure_512::DEGREE], // All zeros
-            vec![1u64; insecure_512::DEGREE], // All ones
-            create_vote_vector(),             // Alternating pattern
+            vec![0u64; insecure_64::DEGREE], // All zeros
+            vec![1u64; insecure_64::DEGREE], // All ones
+            create_vote_vector(),            // Alternating pattern
         ];
 
         for vote in test_votes {
@@ -534,7 +526,7 @@ mod tests {
         assert!(result.is_err(), "Should fail with invalid secret key");
 
         // Test invalid ciphertext bytes
-        let valid_sk_bytes = bincode::serialize(&vec![0i64; insecure_512::DEGREE]).unwrap();
+        let valid_sk_bytes = bincode::serialize(&vec![0i64; insecure_64::DEGREE]).unwrap();
         let result = generator.decrypt_vote(&valid_sk_bytes, &[1, 2, 3]);
         assert!(result.is_err(), "Should fail with invalid ciphertext");
 

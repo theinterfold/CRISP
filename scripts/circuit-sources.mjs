@@ -21,22 +21,16 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const CRISP = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const INTERFOLD = join(CRISP, 'interfold')
 
 /**
- * The circuits every staged artifact is compiled from, with the libraries they import.
+ * The circuits every staged artifact is compiled from, with the library they import.
  *
- * circuits/lib is included in both trees because the BFV preset itself is chosen there
- * (circuits/lib/src/configs/default/mod.nr), so a preset switch shows up in this digest.
+ * The Nargo.toml files name the Interfold tag that supplies `interfold_lib`, and
+ * interfold-release.json pins the archive that supplies the user_data_encryption circuits, so a
+ * move to another Interfold release shows up in this digest.
  */
-const SOURCE_DIRS = [
-  join(CRISP, 'circuits/bin/crisp'),
-  join(CRISP, 'circuits/bin/crisp_onchain'),
-  join(CRISP, 'circuits/lib'),
-  join(INTERFOLD, 'circuits/bin/threshold/user_data_encryption_ct0'),
-  join(INTERFOLD, 'circuits/bin/threshold/user_data_encryption_ct1'),
-  join(INTERFOLD, 'circuits/lib'),
-]
+const SOURCE_DIRS = [join(CRISP, 'circuits/bin/crisp'), join(CRISP, 'circuits/bin/crisp_onchain'), join(CRISP, 'circuits/lib')]
+const SOURCE_FILES = [join(CRISP, 'interfold-release.json')]
 
 /** A compile reads these. Everything else in those directories is output or editor noise. */
 const SOURCE_FILE = /\.(nr|toml)$/
@@ -47,16 +41,16 @@ const SKIP_DIRS = new Set(['target', 'node_modules'])
 /**
  * The generated preset selector, which the digest must ignore.
  *
- * `build-circuits.ts` rewrites this file on every preset switch, and `build-presets.mjs` builds
- * insecure-512 last so the working tree is left on the default preset. The tree therefore never
+ * `compile_circuits.sh` rewrites this file on every preset switch, and `build-presets.mjs` builds
+ * insecure-64 last so the working tree is left on the default preset. The tree therefore never
  * holds the selector the secure-8192 archive was staged under, and a digest that included it would
- * report a fresh secure archive as stale every time — which is exactly what it did.
+ * report a fresh secure archive as stale every time.
  *
  * Leaving it out costs nothing. The digest answers "have the circuit sources changed", and the
  * preset an archive holds is established three other ways: the directory it sits in, `preset` in
  * its manifest, and the ABI degree that stage-preset-artifacts.mjs checks per artifact.
  */
-const GENERATED = new Set([join(INTERFOLD, 'circuits/lib/src/configs/default/mod.nr')])
+const GENERATED = new Set([join(CRISP, 'circuits/lib/src/preset.nr')])
 
 const walk = (dir, found) => {
   if (!existsSync(dir)) return found
@@ -80,7 +74,7 @@ const walk = (dir, found) => {
  */
 export const circuitSourcesDigest = () => {
   const hash = createHash('sha256')
-  const files = SOURCE_DIRS.flatMap((dir) => walk(dir, [])).sort()
+  const files = [...SOURCE_DIRS.flatMap((dir) => walk(dir, [])), ...SOURCE_FILES].sort()
 
   for (const file of files) {
     hash.update(relative(CRISP, file))

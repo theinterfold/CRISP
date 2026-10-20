@@ -49,6 +49,8 @@ playwright-report/
 .interfold/noir/
 # Deployment-local generated files are not program source.
 .interfold/generated/
+# The user_data_encryption circuits extracted from the pinned Interfold release.
+circuits/interfold/
 cache_hardhat/
 # Retained by older checkouts that installed Solidity libraries with forge.
 packages/crisp-contracts/lib/

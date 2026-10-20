@@ -4,6 +4,8 @@
 // without even the implied warranty of MERCHANTABILITY
 // or FITNESS FOR A PARTICULAR PURPOSE.
 
+import { writeFileSync } from 'node:fs'
+
 import {
   hashLeaf,
   generateBFVKeys,
@@ -19,10 +21,10 @@ import {
 } from '@crisp-e3/sdk'
 import type { ProofData } from '@crisp-e3/sdk'
 import { setCircuits } from '@crisp-e3/sdk'
-import { loadCircuits } from '@crisp-e3/sdk/insecure-512'
+import { loadCircuits } from '@crisp-e3/sdk/insecure-64'
 
 // The BFV-shaped circuits ship as a separate entry point per preset, so proving needs one
-// installed. These tests run against the insecure-512 parameters the contracts are deployed with.
+// installed. These tests run against the insecure-64 parameters the contracts are deployed with.
 before(async () => {
   setCircuits(await loadCircuits())
 })
@@ -159,10 +161,30 @@ describe('CRISP Contracts', function () {
   describe('validate input', () => {
     it('should verify the proof correctly with the crisp verifier', async function () {
       const verifyGas = await honkVerifier.verify.estimateGas(voteProof.proof, voteProof.publicInputs)
-      console.log(`[bench-gas] crisp_user_verify=${verifyGas.toString()}`)
       const isValid = await honkVerifier.verify(voteProof.proof, voteProof.publicInputs)
 
       expect(isValid).to.be.true
+      const benchmarkOutput = process.env.BENCHMARK_CRISP_GAS_OUTPUT
+      if (benchmarkOutput) {
+        const measuredGas = Number(verifyGas)
+        if (!Number.isSafeInteger(measuredGas)) throw new Error('Verifier gas exceeds the JSON integer range')
+        writeFileSync(
+          benchmarkOutput,
+          JSON.stringify(
+            {
+              verify_gas: { user: measuredGas },
+              source: 'crisp_verifier_test',
+              preset: 'insecure-64',
+              artifact: {
+                proof_hex: ethers.hexlify(voteProof.proof),
+                public_inputs_hex: `0x${voteProof.publicInputs.map((value: string) => ethers.toBeHex(BigInt(value), 32).slice(2)).join('')}`,
+              },
+            },
+            null,
+            2,
+          ),
+        )
+      }
     })
 
     it('should verify the proof for a vote mask', async function () {

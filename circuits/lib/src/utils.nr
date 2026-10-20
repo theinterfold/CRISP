@@ -4,10 +4,10 @@
 // without even the implied warranty of MERCHANTABILITY
 // or FITNESS FOR A PARTICULAR PURPOSE.
 
-use interfold_lib::configs::default::MAX_MSG_NON_ZERO_COEFFS;
-use interfold_lib::configs::default::threshold::{
+use crate::preset::threshold::{
     PLAINTEXT_MODULUS, Q_INVERSE_MOD_T, Q_MOD_T, USER_DATA_ENCRYPTION_BIT_K,
 };
+use interfold_lib::configs::default::MAX_MSG_NON_ZERO_COEFFS;
 use interfold_lib::math::helpers::assert_in_range;
 use interfold_lib::math::modulo::unconstrained_U128::__compute_mod_reduction;
 use interfold_lib::math::polynomial::Polynomial;
@@ -122,9 +122,9 @@ pub fn check_coefficient_zero<let D: u32>(k1: Polynomial<D>, num_options: u32) -
 // Tests build `k1` the way the witness generator does and take `t` and `Q_MOD_T` from the compiled
 // preset, so they hold for any plaintext modulus of at least 100.
 
-/// The degree of the `insecure-512` preset, well above `MAX_OPTIONS`, so the layout is read from
+/// The degree of the `insecure-64` preset, well above `MAX_OPTIONS`, so the layout is read from
 /// the real degree.
-global TEST_DEGREE: u32 = 512;
+global TEST_DEGREE: u32 = 64;
 
 /// The `k1` coefficient the witness generator produces for one message coefficient.
 fn scale(m: u64) -> Field {

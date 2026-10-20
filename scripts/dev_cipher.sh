@@ -28,8 +28,6 @@ load_crisp_dev_config
 echo "Setting up ZK prover..."
 interfold noir setup
 
-sync_interfold_circuit_artifacts
-
 # using & instead of -d so that wait works below
 interfold nodes up -v &
 SWARM_PID=$!

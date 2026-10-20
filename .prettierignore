@@ -1,6 +1,3 @@
-# The interfold submodule has its own formatting rules.
-interfold
-
 # directories
 node_modules
 dist

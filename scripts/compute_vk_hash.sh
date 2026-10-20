@@ -1,27 +1,31 @@
 #!/usr/bin/env bash
-# Fold public key_hash = compute_vk_hash(ude, crisp, ct0, ct1). Needs pnpm compile:circuits.
+# SPDX-License-Identifier: LGPL-3.0-only
 #
-# Prints one hash per ballot stack. Each belongs in the matching fold circuit:
+# Prints the key hash that each fold circuit binds for one BFV preset:
+# `compute_vk_hash.sh [insecure-64|secure-8192]`, insecure-64 by default.
+#
+#   compute_vk_hash(user_data_encryption, ballot, user_data_encryption_ct0, user_data_encryption_ct1)
+#
+# Each hash belongs in the matching fold circuit, under the constant of the preset:
 #   crisp         -> circuits/bin/fold/src/main.nr         CRISP_FOLD_EXPECTED_KEY_HASH_*
 #   crisp_onchain -> circuits/bin/fold_onchain/src/main.nr CRISP_ONCHAIN_FOLD_EXPECTED_KEY_HASH_*
 #
-# The `crisp` hash changes whenever the crisp circuit changes, not only when a new stack is added.
+# The ballot hash changes whenever the ballot circuit changes, and the user_data_encryption hashes
+# change with the Interfold release that interfold-release.json pins.
 set -euo pipefail
 
 CRISP="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-INTERFOLD="$CRISP/interfold"
-T="$INTERFOLD/circuits/bin/threshold/target"
+PRESET="${1:-insecure-64}"
+cd "$CRISP"
 
-for name in crisp crisp_onchain; do
-  VK=(
-    "$T/user_data_encryption.vk_recursive_hash"
-    "$CRISP/circuits/bin/${name}/target/${name}.vk_recursive_hash"
-    "$T/user_data_encryption_ct0.vk_recursive_hash"
-    "$T/user_data_encryption_ct1.vk_recursive_hash"
-  )
-  for f in "${VK[@]}"; do
-    [[ -f "$f" ]] || { echo "missing $f (run pnpm compile:circuits in the CRISP root)" >&2; exit 1; }
-  done
-  printf '%s: ' "$name"
-  (cd "$INTERFOLD" && cargo run --quiet --locked --release -p e3-zk-artifacts --bin zk-artifacts -- vk-hash "${VK[@]}")
+bash scripts/compile_circuits.sh "$PRESET"
+INTERFOLD="$(node scripts/interfold-release.mjs circuits)"
+
+for ballot in crisp crisp_onchain; do
+  printf '%s %s: ' "$PRESET" "$ballot"
+  cargo run --quiet --locked --release -p zk-inputs --bin fold_key_hash -- \
+    "$INTERFOLD/user_data_encryption.vk_recursive_hash" \
+    "circuits/bin/${ballot}/target/${ballot}.vk_recursive_hash" \
+    "$INTERFOLD/${PRESET}/user_data_encryption_ct0.vk_recursive_hash" \
+    "$INTERFOLD/${PRESET}/user_data_encryption_ct1.vk_recursive_hash"
 done

@@ -13,9 +13,6 @@ services:
       - cargo-bin:/home/ubuntu/.cargo/bin
       - cargo-registry:/home/ubuntu/.cargo/registry
       - cargo-target:/app/target
-      - interfold-target:/app/interfold/target
-      - interfold-node-modules:/app/interfold/node_modules
-      - evm-node-modules:/app/interfold/packages/interfold-contracts/node_modules
       - crisp-node-modules:/app/node_modules
       - client-node-modules:/app/client/node_modules
       - crisp-contracts-node-modules:/app/packages/crisp-contracts/node_modules
@@ -37,9 +34,6 @@ volumes:
   cargo-bin:
   cargo-registry:
   cargo-target:
-  interfold-target:
-  interfold-node-modules:
-  evm-node-modules:
   crisp-node-modules:
   client-node-modules:
   crisp-contracts-node-modules:

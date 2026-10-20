@@ -7,10 +7,6 @@ packages:
 linkWorkspacePackages: true
 # Keep in sync with "pnpm.overrides" in package.json; pnpm versions differ in which one they read.
 overrides:
-  # Local development builds against the interfold submodule. Published packages keep the npm
-  # version that their package.json names.
-  '@interfold/config': link:./interfold/packages/interfold-config
-  '@interfold/contracts': link:./interfold/packages/interfold-contracts
   # The interfold workspace pins.
   '@nomicfoundation/hardhat-keystore': 3.0.3
   '@types/node': 22.7.5

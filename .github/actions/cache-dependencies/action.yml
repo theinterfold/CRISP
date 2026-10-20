@@ -34,8 +34,7 @@ runs:
         toolchain="${RUST_TOOLCHAIN:?Set RUST_TOOLCHAIN to the toolchain that builds the target}"
         echo "policy=rustc-${toolchain}-dev-${CARGO_PROFILE_DEV_DEBUG:-default}-test-${CARGO_PROFILE_TEST_DEBUG:-default}" >> "$GITHUB_OUTPUT"
 
-    # The key names the lockfile of CRISP and the lockfile of the OpenVM guest, and the lockfile of the interfold submodule, which the
-    # interfold tools in the submodule build against.
+    # The key names the lockfile of CRISP and the lockfile of the OpenVM guest.
     - name: Cache Rust dependencies
       id: cache
       uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
@@ -44,5 +43,5 @@ runs:
           ~/.cargo/registry
           ~/.cargo/git
           ${{ inputs.rust-target-path }}
-        key: rust-deps-${{ steps.cache-key.outputs.scope }}-${{ steps.cache-key.outputs.policy }}-${{ hashFiles('Cargo.lock', 'guest/Cargo.lock', 'interfold/Cargo.lock') }}
+        key: rust-deps-${{ steps.cache-key.outputs.scope }}-${{ steps.cache-key.outputs.policy }}-${{ hashFiles('Cargo.lock', 'guest/Cargo.lock') }}
         restore-keys: rust-deps-${{ steps.cache-key.outputs.scope }}-${{ steps.cache-key.outputs.policy }}-
