@@ -55,6 +55,24 @@ STACKS=(
     "crisp_onchain:fold_onchain:crisp_onchain_fold:CRISPOnchainVerifier.sol"
 )
 
+compile_noir() {
+    local package="$1"
+    local log
+    log="$(mktemp)"
+    if ! (cd "$package" && nargo compile --force) >"$log" 2>&1; then
+        cat "$log"
+        rm -f "$log"
+        return 1
+    fi
+    cat "$log"
+    if grep -Fq 'bug:' "$log"; then
+        echo "Error: Nargo emitted a compiler bug diagnostic" >&2
+        rm -f "$log"
+        return 1
+    fi
+    rm -f "$log"
+}
+
 # Apply project-specific checks that the generated verifier does not emit.
 patch_verifier() {
     local verifier_path="$1"
@@ -131,7 +149,7 @@ for stack in "${STACKS[@]}"; do
     crisp_target="${CRISP_CIRCUITS}/bin/${crisp_dir}/target"
 
     echo "Compiling ${crisp_dir} circuit..."
-    if ! (cd "$CRISP_CIRCUITS/bin/${crisp_dir}" && nargo compile); then
+    if ! compile_noir "$CRISP_CIRCUITS/bin/${crisp_dir}"; then
         echo "Error: ${crisp_dir} circuit compilation failed"
         exit 1
     fi
@@ -144,8 +162,16 @@ for stack in "${STACKS[@]}"; do
     mv "${crisp_target}/vk" "${crisp_target}/${crisp_dir}.vk_recursive"
     mv "${crisp_target}/vk_hash" "${crisp_target}/${crisp_dir}.vk_recursive_hash"
 
+done
+
+# Generate both stack commitments from these fresh ballot artifacts and the pinned named Interfold
+# identities before compiling either consumer. Other presets remain untouched until their own build.
+node scripts/fold-anchors.mjs "$PRESET" --live
+
+for stack in "${STACKS[@]}"; do
+    IFS=":" read -r crisp_dir fold_dir fold_pkg verifier_file <<<"$stack"
     echo "Compiling ${fold_dir} circuit (verifies user_data_encryption + ${crisp_dir})..."
-    if ! (cd "$CRISP_CIRCUITS/bin/${fold_dir}" && nargo compile); then
+    if ! compile_noir "$CRISP_CIRCUITS/bin/${fold_dir}"; then
         echo "Error: ${fold_dir} circuit compilation failed"
         exit 1
     fi

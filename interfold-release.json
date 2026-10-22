@@ -1,7 +1,14 @@
 {
   "version": "0.20.0-dev.2",
+  "candidate": {
+    "sourceRevision": "e962966e1e646fbe09fcdf39590799fa499f794f",
+    "source": "interfold-source-e962966e1.tar.gz",
+    "contracts": "interfold-contracts-e962966e1.tgz"
+  },
   "sha256": {
-    "circuits-0.20.0-dev.2.tar.gz": "20e8e5a97f46c0d965c027fbdccb0b322037c8308fdb8fb79561e21d98257468",
+    "interfold-source-e962966e1.tar.gz": "4de4c1c6c6e312d2baebb246cf5b4c43e3af994ed69ffacdf59ac44b26ad697b",
+    "interfold-contracts-e962966e1.tgz": "0f5d8f83e7c2470c2b9e22c3525930e51ab2549110d24b7a09cec37b84a0595d",
+    "circuits-0.20.0-dev.2.tar.gz": "e592ed94d9a5a1554dba9c240385fbc66fc8559c227de9c0ec36945c72a65978",
     "interfold-linux-x86_64.tar.gz": "79f6fd93929fb064381e35481d34a2a3b3d55df79443ba24467367a97d111a0a",
     "interfold-macos-aarch64.tar.gz": "830dfe22d5430732d12021b5cdcc6f457e089c38fab29b245027673679ff8d50",
     "interfold-test-only-skip-proof-aggregation-linux-x86_64.tar.gz": "36731fcfb6f6f9a9d6c816c5e7db3d9d668ea38a9256d29a5f3fc898bd6acdab"

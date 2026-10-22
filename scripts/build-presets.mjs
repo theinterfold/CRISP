@@ -64,8 +64,10 @@ for (const preset of PRESETS) {
   run('node', [join(CRISP, 'scripts/stage-preset-artifacts.mjs'), preset], CRISP)
 }
 
+if (requested === 'all') run('node', [join(CRISP, 'scripts/fold-anchors.mjs'), '--check'], CRISP)
+
 console.log(`\n✓ staged ${PRESETS.length} preset(s); tree left on ${PRESETS.at(-1)}`)
-console.log('  If ballot circuits changed, update the fold key hashes printed by pnpm compute:vk-hash <preset>.')
+console.log('  Both folds import the shared anchors generated from the matching Interfold and ballot keys.')
 if (requested === 'all') {
   console.log('  Then rebuild the production SDK: pnpm -C packages/crisp-sdk build:prod')
   console.log('  Then check it: CRISP_CHANNEL=latest pnpm -C packages/crisp-sdk check:presets')

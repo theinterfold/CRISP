@@ -64,6 +64,7 @@
     "vitest": "^1.6.1"
   },
   "dependencies": {
+    "@interfold/contracts": "0.20.0-dev.2",
     "@aztec/bb.js": "5.2.0",
     "@crisp-e3/zk-inputs": "workspace:*",
     "@noir-lang/noir_js": "1.0.0-beta.26",

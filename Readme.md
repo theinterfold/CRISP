@@ -68,9 +68,25 @@ To move to release `<version>`:
    share one git source.
 
 5. Run `pnpm compute:vk-hash secure-8192`, then `pnpm compute:vk-hash insecure-64`, so that
-   `circuits/lib/src/preset.nr` ends on the committed `insecure-64` preset. When a printed hash
-   differs from the `*_EXPECTED_KEY_HASH_*` constant in `circuits/bin/fold/src/main.nr` or
-   `circuits/bin/fold_onchain/src/main.nr`, replace the constant.
+   `circuits/lib/src/preset.nr` ends on the committed `insecure-64` preset. Each build generates the
+   matching stack/preset constants in `circuits/lib/src/fold_anchors.nr` from named Interfold
+   identities and fresh ballot keys before compiling either fold. Do not copy hashes into the folds.
+   After staging both presets, `node scripts/fold-anchors.mjs --check` independently rederives all
+   four commitments without changing sources. Missing or stale prepared artifacts fail.
+
+### Local #2197 review candidate
+
+This companion branch uses a locally packed, SHA-256-pinned candidate. It is not a published release
+pin. Keep its source/package/circuit assets under `.interfold/caches/release/<version>/` as named by
+`interfold-release.json`; run `node scripts/interfold-release.mjs candidate`, then `pnpm install`
+and `cargo update -p e3-sdk` before building. The preparer verifies asset digests and writes an
+ignored Cargo patch configuration for the complete candidate workspace. Noir imports the extracted
+candidate source, and npm uses the pinned local package override. A mutable sibling checkout is
+never a build input. The new identity reader requires the archive's pair slices and their referenced
+artifacts, not only four raw anchor files.
+
+Publication and replacement of these local paths with one immutable public release remain deferred
+for review. Do not publish this candidate companion or describe its local pin as a public release.
 
 You can have an extended explanation of the single folders in the dedicated
 [documentation](https://docs.theinterfold.com/CRISP/introduction#project-structure).
@@ -97,8 +113,9 @@ Before getting started, ensure you have installed:
 Local development runs the unproved development runner unless `CRISP_REAL_PROOFS=1` (see
 `crisp.dev.env.example`). Real proofs use OpenVM: build the workers, configure `program.openvm` in
 `interfold.config.yaml`, and run `interfold program compile`. Follow
-[`crates/openvm-prover/README.md`](https://github.com/theinterfold/interfold/blob/main/crates/openvm-prover/README.md). A machine with a working
-CUDA GPU proves on it when the CUDA worker is configured; any other machine proves on the CPU.
+[`crates/openvm-prover/README.md`](https://github.com/theinterfold/interfold/blob/main/crates/openvm-prover/README.md).
+A machine with a working CUDA GPU proves on it when the CUDA worker is configured; any other machine
+proves on the CPU.
 
 The CRISP deployment reads the receipt identity `interfold program compile` wrote, unless
 `OPENVM_APP_EXE_COMMIT`, `OPENVM_APP_VM_COMMIT`, and either `OPENVM_VERIFIER_ARTIFACT` with
@@ -195,8 +212,9 @@ sets `program.dev: false`. The local scripts override that with `E3_PROGRAM__DEV
 The real-proof compute service uses OpenVM. CRISP's guest is `guest/`, and its service is the
 `program-runner` binary of `runner/`; the guest and the runner both link `program/`, the processor
 and policy the contract agrees with. Follow the
-[OpenVM guide](https://github.com/theinterfold/interfold/blob/main/crates/openvm-prover/README.md) to build the workers, then run
-`interfold program compile` for the guest, keys, identity and service.
+[OpenVM guide](https://github.com/theinterfold/interfold/blob/main/crates/openvm-prover/README.md)
+to build the workers, then run `interfold program compile` for the guest, keys, identity and
+service.
 
 Set `program.dev: false` and supply deployment-local `program.openvm.prover_bin` and, on a GPU
 machine, `program.openvm.prover_bin_cuda` paths. Do not put account keys, proving artifacts, or
@@ -326,8 +344,8 @@ Edit **`crisp.dev.env`** (created from `crisp.dev.env.example` on first `pnpm de
 | `CRISP_BFV_PRESET`             | `insecure-64` | BFV preset for aggregation circuits and the server `E3_PARAM_SET`     |
 | `CRISP_SKIP_PROOF_AGGREGATION` | `true`        | Ciphernode-only local-dev skip; also selects mock verifier deployment |
 
-`pnpm dev:setup` applies this profile and installs the matching interfold CLI. `pnpm dev:up`
-deploys contracts using the same flags.
+`pnpm dev:setup` applies this profile and installs the matching interfold CLI. `pnpm dev:up` deploys
+contracts using the same flags.
 
 **Re-run `pnpm dev:setup` after changing `CRISP_SKIP_PROOF_AGGREGATION`.** The setting is only
 honoured by an `interfold` binary built with the matching `test-only-skip-proof-aggregation` Cargo
@@ -343,16 +361,16 @@ sync, and troubleshooting (`VkHashMismatch`, etc.).
 
 ### Vercel (CRISP client)
 
-Deploy from **`client`**. The build uses the published **`@crisp-e3/sdk`** package on
-npm (`pnpm install --ignore-workspace`), not the workspace. The published SDK package
-already contains the staged preset circuits, so Vercel does not compile Noir circuits.
+Deploy from **`client`**. The build uses the published **`@crisp-e3/sdk`** package on npm
+(`pnpm install --ignore-workspace`), not the workspace. The published SDK package already contains
+the staged preset circuits, so Vercel does not compile Noir circuits.
 
 - **Project root directory:** `client`
 - **`vercel build` in CI:** run from the **repository root** (not `cd client` first)
 - Optional Vercel env: `ENABLE_EXPERIMENTAL_COREPACK=1`
 
-Commit `client/pnpm-lock.yaml` after dependency bumps
-(`pnpm install --ignore-workspace` in that directory) for reproducible installs.
+Commit `client/pnpm-lock.yaml` after dependency bumps (`pnpm install --ignore-workspace` in that
+directory) for reproducible installs.
 
 ## Publishing packages to npm
 

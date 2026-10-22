@@ -11,6 +11,7 @@
 //! verification, Merkle tree operations, and vote validation.
 
 pub mod constants;
+pub mod fold_anchors;
 pub mod ciphertext_addition;
 pub mod ecdsa;
 pub mod merkle_tree;

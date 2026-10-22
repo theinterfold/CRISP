@@ -5,6 +5,7 @@
 // or FITNESS FOR A PARTICULAR PURPOSE.
 
 import { ethers } from 'ethers'
+import { BFV_ENCRYPTION_SCHEME_ID } from '@interfold/contracts/bfv'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -122,7 +123,7 @@ async function main() {
   const ciphertextVerifier = requireAddress(chainDeployments.OpenVmBfvCiphertextVerifier?.address, 'OpenVmBfvCiphertextVerifier')
   const adminPlugin = requireAddress(protocolConfig.governance.adminPlugin, 'Aragon Admin plugin')
   const proposerSafe = requireAddress(protocolConfig.governance.proposerSafe, 'Governance proposer Safe')
-  const encryptionSchemeId = ethers.keccak256(ethers.toUtf8Bytes('fhe.rs:BFV'))
+  const encryptionSchemeId = BFV_ENCRYPTION_SCHEME_ID
 
   const actions = [
     safeTx(interfold, interfoldInterface.encodeFunctionData('setCiphertextVerifier', [encryptionSchemeId, ciphertextVerifier])),

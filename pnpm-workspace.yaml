@@ -7,6 +7,7 @@ packages:
 linkWorkspacePackages: true
 # Keep in sync with "pnpm.overrides" in package.json; pnpm versions differ in which one they read.
 overrides:
+  '@interfold/contracts': file:./.interfold/caches/release/0.20.0-dev.2/interfold-contracts-e962966e1.tgz
   # The interfold workspace pins.
   '@nomicfoundation/hardhat-keystore': 3.0.3
   '@types/node': 22.7.5
