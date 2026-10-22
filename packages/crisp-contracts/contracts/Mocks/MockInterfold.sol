@@ -12,9 +12,10 @@ import { IDecryptionVerifier } from "@interfold/contracts/contracts/interfaces/I
 import { IPkVerifier } from "@interfold/contracts/contracts/interfaces/IPkVerifier.sol";
 import { ICiphernodeRegistry } from "@interfold/contracts/contracts/interfaces/ICiphernodeRegistry.sol";
 import { BfvParameters } from "../CRISPProgram.sol";
+import { BfvProtocol } from "@interfold/contracts/contracts/lib/BfvProtocol.sol";
 
 contract MockInterfold {
-  bytes32 public constant ENCRYPTION_SCHEME_ID = keccak256("fhe.rs:BFV");
+  bytes32 public constant ENCRYPTION_SCHEME_ID = BfvProtocol.ENCRYPTION_SCHEME_ID;
   bytes public plaintextOutput;
   bytes32 public committeePublicKey;
   uint256[2] public mockInputWindow;

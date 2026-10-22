@@ -20,6 +20,12 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const CRISP = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+if (
+  process.env.npm_lifecycle_event === 'prepublishOnly' &&
+  JSON.parse(readFileSync(join(CRISP, 'interfold-release.json'), 'utf8')).candidate
+) {
+  throw new Error('Local review candidates cannot be published; select the reviewed immutable public Interfold release first')
+}
 const SDK = join(CRISP, 'packages', 'crisp-sdk')
 const CONTRACTS = join(CRISP, 'packages', 'crisp-contracts')
 

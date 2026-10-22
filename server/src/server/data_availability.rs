@@ -27,7 +27,10 @@ use e3_data_availability::{
 use e3_evm_helpers::contracts::{
     InterfoldContractFactory, InterfoldRead, InterfoldReadContract, InterfoldWrite,
 };
-use e3_fhe_params::{build_bfv_params_from_set_arc, encode_bfv_params, BfvParamSet, BfvPreset};
+use e3_fhe_params::{
+    build_bfv_params_from_set_arc, current_bfv_crypto_config_id, encode_bfv_params, BfvParamSet,
+    BfvPreset,
+};
 use evm_helpers::{is_insufficient_funds, CRISPContract, InputPublished, SimulateError};
 use fhe::bfv::BfvParameters;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -138,14 +141,7 @@ pub fn input_rejection_message(error: &anyhow::Error) -> Option<&'static str> {
 /// (`ActiveCryptoConfig.configIdForParamSet`). Deriving it from the local tables proves that they
 /// are the request-time parameters when it equals the stored `e3CryptoConfigIds` value.
 fn crypto_config_id_for_params(params: &BfvParameters) -> B256 {
-    keccak256(
-        (
-            keccak256(b"fhe.rs:BFV"),
-            keccak256(encode_bfv_params(params)),
-            keccak256(b"interfold-bfv-v5"),
-        )
-            .abi_encode(),
-    )
+    current_bfv_crypto_config_id(&encode_bfv_params(params))
 }
 
 /// The BFV tables for one on-chain parameter set, built once per process.

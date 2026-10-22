@@ -9,6 +9,8 @@ members = [
   "crates/crisp-utils",
 ]
 resolver = "3"
+# The digest-pinned candidate is a separate workspace, not an implicit path member of CRISP.
+exclude = [".interfold/caches/candidate/source"]
 
 [workspace.package]
 version = "0.1.0"

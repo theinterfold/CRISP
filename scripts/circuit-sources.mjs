@@ -51,6 +51,9 @@ const SKIP_DIRS = new Set(['target', 'node_modules'])
  * its manifest, and the ABI degree that stage-preset-artifacts.mjs checks per artifact.
  */
 const GENERATED = new Set([join(CRISP, 'circuits/lib/src/preset.nr')])
+// Only the folds import this module; these archives contain ballot/ct leaves, not folds. Its own
+// read-only check rederives both stacks' commitments from those exact leaves and pinned identities.
+GENERATED.add(join(CRISP, 'circuits/lib/src/fold_anchors.nr'))
 
 const walk = (dir, found) => {
   if (!existsSync(dir)) return found

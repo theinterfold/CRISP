@@ -5,6 +5,7 @@
 // or FITNESS FOR A PARTICULAR PURPOSE.
 
 import { hashMessage } from 'viem'
+import { CIRCUIT_DIMENSIONS } from '@interfold/contracts/bfv'
 import type { ProofStage } from './types'
 
 /** The proofs `finishBallotProof` produces, in order. See {@link ProofStage}. */
@@ -35,11 +36,11 @@ export const CRISP_SERVER_CHAIN_BLOCK_AT_TIMESTAMP_ENDPOINT = 'chain/block-at-ti
 
 export const MERKLE_TREE_MAX_DEPTH = 20 // static, hardcoded in the circuit.
 
-// @note Must stay aligned with CRISP circuits / threshold message layout (Rust & Noir MAX_MSG_NON_ZERO_COEFFS).
 // The committee publishes this many plaintext coefficients as the tally; option `o` is coefficient `o`.
-export const MAX_MSG_NON_ZERO_COEFFS = 50
+export const MAX_MSG_NON_ZERO_COEFFS = CIRCUIT_DIMENSIONS.messageCoeffsCount
 // Hard limit on the maximum number of vote options supported.
 export const MAX_VOTE_OPTIONS = 10
+if (MAX_VOTE_OPTIONS > MAX_MSG_NON_ZERO_COEFFS) throw new Error('CRISP option limit exceeds the BFV message width')
 
 /**
  * Message used by users to prove ownership of their Ethereum account

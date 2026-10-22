@@ -14,6 +14,7 @@ import {
   storeDeploymentArgs,
 } from '@interfold/contracts/scripts'
 import { Interfold__factory as InterfoldFactory } from '@interfold/contracts/types'
+import { BFV_ENCRYPTION_SCHEME_ID } from '@interfold/contracts/bfv'
 
 import hre from 'hardhat'
 import path from 'node:path'
@@ -83,7 +84,7 @@ export const deployCRISPContracts = async (): Promise<CRISPDeploymentResult> => 
   const receiptVerifier = await ethers.getContractAt('OpenVmReceiptVerifier', verifier)
   const IMAGE_ID = await receiptVerifier.imageId()
 
-  const encryptionSchemeId = ethers.keccak256(ethers.toUtf8Bytes('fhe.rs:BFV'))
+  const encryptionSchemeId = BFV_ENCRYPTION_SCHEME_ID
 
   const ciphertextVerifier = await ethers.deployContract('OpenVmBfvCiphertextVerifier', [verifier, IMAGE_ID])
   await ciphertextVerifier.waitForDeployment()

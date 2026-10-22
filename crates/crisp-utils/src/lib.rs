@@ -12,7 +12,7 @@ use num_bigint::BigUint;
 ///
 /// Coefficient `o` holds option `o`'s total; the rest, up to the BFV polynomial degree, is zero
 /// padding.
-pub const MAX_MSG_NON_ZERO_COEFFS: usize = 50;
+pub use e3_zk_config::MAX_MSG_NON_ZERO_COEFFS;
 
 /// Represents decoded vote counts from a tally
 #[derive(Debug, Clone)]

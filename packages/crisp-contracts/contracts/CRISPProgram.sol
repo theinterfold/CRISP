@@ -12,6 +12,7 @@ import { IInterfold } from "@interfold/contracts/contracts/interfaces/IInterfold
 import { ICiphernodeRegistry } from "@interfold/contracts/contracts/interfaces/ICiphernodeRegistry.sol";
 import { E3 } from "@interfold/contracts/contracts/interfaces/IE3.sol";
 import { OpenVmComputeProof } from "@interfold/contracts/contracts/lib/OpenVmComputeProof.sol";
+import { BfvProtocol } from "@interfold/contracts/contracts/lib/BfvProtocol.sol";
 import { LazyIMTData, InternalLazyIMT } from "@zk-kit/lazy-imt.sol/InternalLazyIMT.sol";
 import { SNARK_SCALAR_FIELD } from "@zk-kit/lazy-imt.sol/Constants.sol";
 import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
@@ -145,7 +146,7 @@ contract CRISPProgram is IE3Program, IE3ProgramDataAvailability, IERC165, Ownabl
 
   // Constants
   /// @notice Encryption scheme ID used for the CRISP program.
-  bytes32 public constant ENCRYPTION_SCHEME_ID = keccak256("fhe.rs:BFV");
+  bytes32 public constant ENCRYPTION_SCHEME_ID = BfvProtocol.ENCRYPTION_SCHEME_ID;
   /// @notice The depth of the input Merkle tree.
   uint8 public constant TREE_DEPTH = 20;
   /// @notice Minimum time available to create new input commitments after a worst-case key setup.
@@ -154,7 +155,7 @@ contract CRISPProgram is IE3Program, IE3ProgramDataAvailability, IERC165, Ownabl
   /// @dev Must stay aligned with `@crisp-e3/sdk` and `crisp_utils` (`MAX_MSG_NON_ZERO_COEFFS`).
   /// Coefficient `o` for `o < numOptions` is the total on option `o`; the rest of these
   /// coefficients, and the coefficients up to the BFV degree, are zero padding.
-  uint256 constant MAX_MSG_NON_ZERO_COEFFS = 50;
+  uint256 constant MAX_MSG_NON_ZERO_COEFFS = BfvProtocol.MESSAGE_COEFFS_COUNT;
   /// @notice Maximum number of vote options a round may configure.
   /// @dev Bounded by the Noir circuit, which asserts `num_options <= MAX_OPTIONS`
   /// (`circuits/lib/src/constants.nr`). A round above this accepts no ballot, because every

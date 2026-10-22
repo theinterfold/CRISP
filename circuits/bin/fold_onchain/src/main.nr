@@ -7,13 +7,9 @@
 use bb_proof_verification::{UltraHonkProof, UltraHonkVerificationKey, verify_honk_proof_non_zk};
 use interfold_lib::math::commitments::compute_vk_hash;
 
-/// Binds the four inner `vk_hash` witnesses, one constant per BFV preset. Regenerate with
-/// `pnpm compute:vk-hash <preset>` in the repository root after changing crisp_onchain,
-/// `crisp_lib`, or the Interfold release that supplies user_data_encryption / ct0 / ct1.
-pub global CRISP_ONCHAIN_FOLD_EXPECTED_KEY_HASH_INSECURE: Field =
-    0x1ba44ab942a8ace27b50f3609b4912adb384f06561133e31b19caa4b97a70145;
-pub global CRISP_ONCHAIN_FOLD_EXPECTED_KEY_HASH_SECURE: Field =
-    0x225abc9d92035e910c9bd0deac6060640ad49b30ed6ef4de6d094397010ebdac;
+use crisp_lib::fold_anchors::{
+    CRISP_ONCHAIN_FOLD_EXPECTED_KEY_HASH_INSECURE, CRISP_ONCHAIN_FOLD_EXPECTED_KEY_HASH_SECURE,
+};
 
 fn main(
     // User Data Encryption Section.
