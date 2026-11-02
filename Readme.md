@@ -50,8 +50,9 @@ repository. Each kind of dependency names the release in its own file:
   and `@interfold/contracts`.
 - The ZK toolchain follows the release's `crates/zk/prover/versions.json` and `ci.yml`: `nargo`
   (`NOIR_TOOLCHAIN` in `.github/workflows/ci.yml`), the `bb_proof_verification` tag in
-  `circuits/bin/fold*/Nargo.toml`, `@aztec-foundation/bb.js` and `@noir-lang/noir_js` in
-  `packages/crisp-sdk/package.json`, and the `@noir-lang/noir_js` override in `client/package.json`.
+  `circuits/bin/fold*/Nargo.toml`, and `@aztec-foundation/bb.js` and `@noir-lang/noir_js` in
+  `packages/crisp-sdk/package.json`. The `@noir-lang/noir_js` override in `client/package.json`
+  tracks the published SDK and moves only with a production publish (see `RELEASING.md`).
 
 To move to release `<version>`:
 
