@@ -1,0 +1,44 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": ["AGENTS.md"],
+  "permission": {
+    "read": {
+      "*": "allow",
+      "**/.env": "deny",
+      "**/.env.local": "deny",
+      "**/.env.*.local": "deny",
+      "**/*.secrets.json": "deny"
+    },
+    "skill": {
+      "*": "allow"
+    },
+    "bash": {
+      "pnpm build:*": "allow",
+      "pnpm compile:contracts": "allow",
+      "pnpm test": "allow",
+      "pnpm test:*": "allow",
+      "pnpm lint": "allow",
+      "pnpm format": "allow",
+      "pnpm format:check": "allow",
+      "pnpm check:staged": "allow",
+      "cargo build *": "allow",
+      "cargo test *": "allow",
+      "cargo check *": "allow",
+      "cargo clippy *": "allow",
+      "cargo fmt *": "allow",
+      "cargo nextest *": "allow",
+      "cargo tree *": "allow",
+      "cargo metadata *": "allow",
+      "nargo test *": "allow",
+      "nargo check *": "allow",
+      "nargo fmt *": "allow",
+      "git status": "allow",
+      "git diff *": "allow",
+      "git log *": "allow",
+      "git show *": "allow",
+      "git blame *": "allow",
+      "git branch *": "allow",
+      "*": "ask"
+    }
+  }
+}
