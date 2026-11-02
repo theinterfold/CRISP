@@ -16,6 +16,11 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./chain": {
+      "types": "./dist/chain.d.ts",
+      "import": "./dist/chain.js",
+      "default": "./dist/chain.js"
+    },
     "./insecure-64": {
       "types": "./dist/presets/insecure-64.d.ts",
       "import": "./dist/presets/insecure-64.js",

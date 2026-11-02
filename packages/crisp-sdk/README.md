@@ -244,11 +244,76 @@ const { stage, retryOffered } = getSubmissionStage({
 // retryOffered: true only for `excluded` before the commitment deadline.
 ```
 
+#### Reading a Round From the Chain
+
+Round readiness, the committee key and "does this slot already hold an entry" need no CRISP server.
+Only ballot staging (`broadcastVote`, `getVoteAvailability`) does. A `CrispSDK` built without a
+`serverUrl` runs these reads through its `rpcUrl`; its server-backed methods throw.
+
+```typescript
+import { CrispSDK } from '@crisp-e3/sdk'
+
+const sdk = new CrispSDK({ rpcUrl }) // `new CrispSDK(serverUrl, rpcUrl)` still works
+const round = { interfoldAddress, e3Id, chainId }
+
+const state = await sdk.getRoundState(round)
+// state.acceptingInputs: the key is published (`KeyPublished`) and now is within
+// [inputWindow.start, commitmentDeadline), the checks `CRISPProgram.publishInput` makes.
+// `commitmentDeadline` is earlier than `inputWindow.end` by the program's finalization window.
+
+// Throws unless a candidate's recomputed BFV commitment equals the coordinator's. A candidate is
+// only a hint that a committee member published, so never encrypt to an unchecked one.
+const publicKey = await sdk.getCommitteePublicKey(round)
+
+const { active, entries } = await sdk.getSlotStatus({ programAddress, e3Id, slot, chainId })
+// `active` means the slot has a committed entry, not that its owner voted: anyone can mask a slot.
+```
+
+A page that only shows round status can import the same reads from `@crisp-e3/sdk/chain`, which
+pulls in `viem` and nothing else: no wasm, no noir, no bb.js.
+
+The log scans walk `eth_getLogs` in 5000-block chunks from the round's request (the key) or from
+the opening of its input window (slot status), so they need an RPC that serves that history; many
+public endpoints prune old logs. Pass `fromBlock` to narrow the scan.
+
+#### Resolving a Slot Head Without the Server
+
+A re-vote or mask has to name the slot's current head as its parent, and its ciphertext is an input
+to the new ballot. `getSlotHead` resolves it from the chain, applying the Secure Process's rule
+(`chain_head_per_slot`): walking the slot's entries in tree-index order, an entry becomes the head
+when its bytes reproduce its on-chain commitment **and** it names the current head as its parent.
+Ciphertext bytes come from a `DaReader`, and each answer is checked against the entry's on-chain
+`keccak256` before use.
+
+```typescript
+import { CrispSDK, createAvailDaReader, createFallbackDaReader, createHttpDaReader } from '@crisp-e3/sdk'
+
+const daReader = createFallbackDaReader(
+  createAvailDaReader({ rpcUrl: 'https://turing-rpc.avail.so/rpc' }), // entries with an Avail receipt
+  createHttpDaReader('https://<store>'), // GET <store>/objects/<keccak256>: entries still waiting for one
+)
+
+const sdk = new CrispSDK({ rpcUrl, daReader }) // no serverUrl needed
+const prepared = await sdk.prepareBallot({ e3Id, programAddress, chainId, slotAddress, ...ballot })
+```
+
+- Which reader serves which entry: `InputCommitted` reserves the tree index at once, but the Avail
+  block (`availabilityBlock`) only appears with `InputPublished`, which can trail by hours. The Avail
+  reader needs it, so an entry still waiting needs a store that holds bytes by content hash. The CRISP
+  server's staging route (`/availability` under its base URL, passed to `createHttpDaReader`) is one.
+- It fails rather than guesses. An unreadable entry that could be the head, or bytes that fail the
+  hash check, throw: naming a stale parent gets the input dropped from the tally.
+- Without a `daReader`, `prepareBallot` asks the server (needs `serverUrl`). With neither, it treats
+  the slot as empty only when `getSlotStatus` finds no entry, and throws on an occupied slot.
+- The BFV commitment is recomputed with the registered preset, so register the round's preset first,
+  as for any ballot.
+
 ## API
 
 ### CrispSDK Class
 
-- `constructor(serverUrl: string)` - Create a new SDK instance
+- `constructor(serverUrl?: string | null, rpcUrl?: string | null)` or `constructor({ serverUrl?, rpcUrl? })` -
+  Create a new SDK instance. Without a `serverUrl`, methods that call the CRISP server throw.
 - `generateVoteProof(voteProofRequest: VoteProofRequest): Promise<ProofData>` - Generate a vote
   proof (automatically handles previous ciphertext)
 - `generateMaskVoteProof(maskVoteProofRequest: MaskVoteProofRequest): Promise<ProofData>` - Generate
@@ -262,6 +327,37 @@ const { stage, retryOffered } = getSubmissionStage({
 - `getPreviousCiphertext(serverUrl: string, e3Id: bigint, address: string): Promise<SlotHead | undefined>` -
   Get the end of a slot's chain of usable entries, as `{ ciphertext, index }`. `index` is what a new
   input names as its parent. Undefined when the slot holds nothing usable.
+
+### Chain Read Functions
+
+Read straight from the chain; no CRISP server. All take `rpcUrl` (optional) and are also exported
+from the light `@crisp-e3/sdk/chain` entry.
+
+- `getRoundState({ interfoldAddress, e3Id, chainId, rpcUrl?, now? }): Promise<RoundState>` - The
+  round's stage, input window, commitment deadline, request time, key commitment, parameter set and
+  program, and `acceptingInputs`.
+- `getRoundBfvParams(options): Promise<RoundBfvParams>` - The round's BFV parameters from
+  `paramSetRegistry`.
+- `getCommitteePublicKeyCandidates({ ...round, fromBlock?, toBlock?, maxCandidates? }): Promise<CommitteePublicKeyCandidate[]>` -
+  The unverified key candidates announced on the ciphernode registry, deduplicated and capped.
+- `getCommitteePublicKey({ ...round, fromBlock?, toBlock?, maxCandidates? }): Promise<Uint8Array>` -
+  The candidate whose BFV commitment equals the on-chain one (main entry only; it needs wasm).
+- `getSlotStatus({ programAddress, e3Id, slot, chainId, rpcUrl?, fromBlock?, toBlock? }): Promise<SlotStatus>` -
+  `{ active, entries }` from the slot's `InputCommitted` events.
+- `getInputStartBlock({ programAddress, e3Id, chainId, rpcUrl? }): Promise<bigint>` - The block at
+  which the round's input window opened.
+- `scanLogs(client, { address, event, args?, fromBlock, toBlock?, chunkSize? })` and
+  `blockAtTimestamp(client, timestamp)` - Chunked `eth_getLogs`, and the first block at or after a
+  unix timestamp.
+- `getSlotHead({ programAddress, e3Id, slot, chainId, rpcUrl?, daReader, fromBlock?, toBlock?, chunkSize? }): Promise<SlotHead | undefined>` -
+  The slot head from the chain and a `DaReader`, with the Secure Process's rule (main entry only; it
+  needs wasm). Same answer as the server's `previous-ciphertext`.
+- `getSlotEntries(options): Promise<SlotEntry[]>` - The slot's entries merged from `InputCommitted`
+  and `InputPublished`, by tree index.
+- `chainHeadPerSlot(entries, isUsable)` and `slotHeadIndex(entries, slot, isUsable)` - The pure
+  head rule, with no I/O.
+- `createAvailDaReader({ rpcUrl })`, `createHttpDaReader(baseUrl)`, `createFallbackDaReader(...readers)`
+  and `readVerified(reader, entry)` - Ciphertext readers, and the hash check every byte goes through.
 
 ### Token Functions
 

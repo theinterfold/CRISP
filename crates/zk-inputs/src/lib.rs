@@ -139,6 +139,22 @@ impl ZKInputsGenerator {
         Ok(commitment.to_vec())
     }
 
+    /// Computes the commitment of a serialized BFV public key under this generator's parameters.
+    ///
+    /// The committee key of a round is authenticated by this value: the registry stores it behind
+    /// a verified DKG proof, and any key blob that recomputes to it is the committee's key. Bytes
+    /// that do not decode as a key for these parameters are an error, not a non-matching value.
+    pub fn compute_public_key_commitment(&self, public_key: &[u8]) -> Result<Vec<u8>> {
+        let commitment = e3_bfv_client::client::compute_pk_commitment(
+            public_key.to_vec(),
+            self.bfv_params.degree(),
+            self.bfv_params.plaintext(),
+            self.bfv_params.moduli().to_vec(),
+        )
+        .map_err(|e| eyre::eyre!("Failed to compute public key commitment: {e}"))?;
+        Ok(commitment.to_vec())
+    }
+
     /// Generates the CRISP ZK inputs for one ballot.
     ///
     /// One function for all three operations. A first vote, a re-vote, and a mask differ only in

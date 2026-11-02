@@ -34,7 +34,34 @@ export {
 } from './vote'
 export { encodeSolidityProof, decodeInputIdentity } from './envelope'
 export { getSubmissionStage } from './submission'
-export { CrispSDK, SERVER_RPC } from './sdk'
+export { blockAtTimestamp, scanLogs } from './logs'
+export {
+  MAX_COMMITTEE_KEY_CANDIDATES,
+  ROUND_STAGES,
+  getCommitteePublicKeyCandidates,
+  getInputStartBlock,
+  getRoundBfvParams,
+  getRoundState,
+  getSlotStatus,
+} from './round'
+export { getCommitteePublicKey, isCommitteeKeyAuthentic } from './committeeKey'
+export type { ScanLogsParams } from './logs'
+export type {
+  ChainReadOptions,
+  CommitteePublicKeyCandidate,
+  RoundBfvParams,
+  RoundReadOptions,
+  RoundStage,
+  RoundState,
+  SlotStatus,
+} from './round'
+export { chainHeadPerSlot, slotHeadIndex } from './headRule'
+export { MAX_DA_OBJECT_BYTES, createAvailDaReader, createFallbackDaReader, createHttpDaReader, readVerified } from './da'
+export { getSlotEntries, getSlotHead } from './slotHead'
+export type { HeadEntry, IsUsable } from './headRule'
+export type { AvailDaReaderOptions, DaEntry, DaReader, HttpDaReaderOptions } from './da'
+export type { GetSlotHeadParams, SlotEntry } from './slotHead'
+export { CrispSDK, SERVER_RPC, type CrispSDKOptions } from './sdk'
 
 export type {
   ChainHead,

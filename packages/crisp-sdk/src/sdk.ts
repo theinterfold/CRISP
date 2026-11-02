@@ -53,6 +53,31 @@ import type {
   VoteStatusResponse,
   WebResultResponse,
 } from './types'
+import { getCommitteePublicKey } from './committeeKey'
+import { getCommitteePublicKeyCandidates, getRoundState, getSlotStatus } from './round'
+import { getSlotHead } from './slotHead'
+
+import type { DaReader } from './da'
+import type { CommitteePublicKeyCandidate, RoundReadOptions, RoundState, SlotStatus } from './round'
+
+/**
+ * The options-object form of the {@link CrispSDK} constructor.
+ */
+export type CrispSDKOptions = {
+  /** The base URL of the CRISP server. Omit for an instance that never calls it. */
+  serverUrl?: string | null
+  /** Endpoint for direct chain reads; see the positional `rpcUrl` of the constructor. */
+  rpcUrl?: string | null
+  /**
+   * Where ciphertext bytes are read from. When set, {@link CrispSDK.prepareBallot} resolves the
+   * slot head from the chain and this reader instead of the server's `previous-ciphertext`, so a
+   * ballot can be prepared with no server. Every byte read is checked against its on-chain hash.
+   */
+  daReader?: DaReader
+}
+
+/** Tuning for the registry log scan behind the committee key reads. */
+type CommitteeKeyScanOptions = { fromBlock?: bigint; toBlock?: bigint; maxCandidates?: number }
 
 /**
  * Pass as the SDK's `rpcUrl` to read the chain through the CRISP server's own `/chain/rpc` route.
@@ -67,10 +92,10 @@ export const SERVER_RPC = 'server' as const
  */
 export class CrispSDK {
   /**
-   * The server URL for the CRISP SDK.
-   * It's used by methods that communicate directly with the CRISP server.
+   * The server URL for the CRISP SDK, or `undefined` for a chain-only instance.
+   * Read it through {@link serverUrl}, which refuses to hand out a missing one.
    */
-  private serverUrl: string
+  private serverBase: string | undefined
 
   /**
    * Endpoint used for direct chain reads, or `undefined` to use viem's default public RPC.
@@ -78,22 +103,52 @@ export class CrispSDK {
   private rpcUrl: string | undefined
 
   /**
+   * Where ciphertext bytes come from, when slot heads are read from the chain instead of the
+   * CRISP server. See {@link CrispSDKOptions.daReader}.
+   */
+  private daReader: DaReader | undefined
+
+  /**
    * Create a new instance.
    *
-   * @param serverUrl - The base URL of the CRISP server
+   * Either positionally, `new CrispSDK(serverUrl, rpcUrl)`, or with an options object,
+   * `new CrispSDK({ rpcUrl })`. Without a `serverUrl` the instance serves everything that reads
+   * the chain directly; methods that call the CRISP server throw instead.
+   *
+   * @param serverUrl - The base URL of the CRISP server. Optional: omit (or pass `null`) for an
+   *                    instance that never calls the server.
    * @param rpcUrl - Endpoint for direct chain reads. Omit (or pass `null`) to keep viem's default
    *                 public RPC. Pass {@link SERVER_RPC} to read through the CRISP server's own
-   *                 `/chain/rpc` route instead of a third-party endpoint. Any other string is used
-   *                 as the endpoint URL directly.
+   *                 `/chain/rpc` route instead of a third-party endpoint; that needs a `serverUrl`.
+   *                 Any other string is used as the endpoint URL directly.
    *
    * Routing through the server is opt-in rather than the default because it is a change of
    * transport, not a tuning knob: a caller who merely upgrades this package would have every chain
    * read redirected to a route their deployed server may not have — or may not be configured to
    * serve the contracts being read — turning a version bump into an outage.
    */
-  constructor(serverUrl: string, rpcUrl?: string | null) {
-    this.serverUrl = serverUrl
-    this.rpcUrl = rpcUrl === SERVER_RPC ? chainRpcUrl(serverUrl) : (rpcUrl ?? undefined)
+  constructor(serverUrl?: string | null, rpcUrl?: string | null)
+  constructor(options: CrispSDKOptions)
+  constructor(first?: string | null | CrispSDKOptions, second?: string | null) {
+    const options: CrispSDKOptions = typeof first === 'object' && first !== null ? first : { serverUrl: first, rpcUrl: second }
+    const serverUrl = options.serverUrl ?? undefined
+    const rpcUrl = options.rpcUrl ?? undefined
+
+    if (rpcUrl === SERVER_RPC && !serverUrl) throw new Error('SERVER_RPC reads through the CRISP server, which needs a serverUrl')
+
+    this.serverBase = serverUrl
+    this.rpcUrl = rpcUrl === SERVER_RPC ? chainRpcUrl(serverUrl as string) : rpcUrl
+    this.daReader = options.daReader
+  }
+
+  /**
+   * The CRISP server URL, for the methods that call the server.
+   * @throws If the instance was created without one
+   */
+  private get serverUrl(): string {
+    if (!this.serverBase) throw new Error('This CrispSDK was created without a serverUrl, so it cannot call the CRISP server')
+
+    return this.serverBase
   }
 
   /**
@@ -104,20 +159,64 @@ export class CrispSDK {
    * `CRISPProgram.ballotDigest(e3Id, slot, ctCommitment)`, have the voter sign it, then call
    * {@link finishBallot}.
    *
-   * Masks and real votes take the same path. This method calls the same server API
-   * (previous-ciphertext) for both, so the server cannot infer the ballot type from the request
-   * pattern, and the encryption is identical either way.
+   * Masks and real votes take the same path, and the head is resolved the same way for both, so
+   * whoever serves it cannot infer the ballot type from the request pattern; the encryption is
+   * identical either way.
+   *
+   * The slot head comes from, in order of preference:
+   *
+   * 1. the chain and the {@link CrispSDKOptions.daReader}, when the instance has one — no server
+   *    call. Needs `request.programAddress`, and `request.chainId` unless a server can supply it.
+   * 2. the CRISP server's `previous-ciphertext`, when the instance has a `serverUrl`.
+   * 3. neither: the slot is taken as empty only when the chain shows no entry committed to it.
+   *    An occupied slot throws, because encrypting without its head would produce an input the
+   *    tally drops, silently erasing the voter's re-vote.
    *
    * @param request - The ballot to encrypt.
    * @returns A promise that resolves to the prepared ballot.
    */
   async prepareBallot(request: PrepareBallotRequest): Promise<PreparedBallot> {
-    const head = await getPreviousCiphertext(this.serverUrl, request.e3Id, request.slotAddress)
+    const head = await this.resolveSlotHead(request)
 
     // Branched rather than spread conditionally. The two halves of a slot head only mean anything
     // together and the type models them as a pair, which a conditional spread widens back into two
     // independent optional fields — the exact shape the pair exists to rule out.
     return head ? prepareBallot({ ...request, previousCiphertext: head.ciphertext, previousIndex: head.index }) : prepareBallot(request)
+  }
+
+  /**
+   * The slot head a ballot has to extend, from the source {@link prepareBallot} documents.
+   */
+  private async resolveSlotHead(request: PrepareBallotRequest): Promise<SlotHead | undefined> {
+    if (this.daReader || !this.serverBase) {
+      const { e3Id, slotAddress, programAddress } = request
+
+      if (!programAddress) {
+        throw new Error(
+          this.daReader
+            ? 'Reading the slot head from the chain needs request.programAddress'
+            : 'Without a serverUrl or a daReader the slot cannot be read, and without request.programAddress its emptiness cannot be checked',
+        )
+      }
+
+      const chainId = request.chainId ?? (this.serverBase ? Number((await getRoundDetails(this.serverBase, e3Id)).chainId) : undefined)
+      if (chainId === undefined) throw new Error('Reading the slot head from the chain needs request.chainId when the instance has no serverUrl')
+
+      if (this.daReader) {
+        return getSlotHead({ programAddress, e3Id, slot: slotAddress, chainId, rpcUrl: this.rpcUrl, daReader: this.daReader })
+      }
+
+      const status = await getSlotStatus({ programAddress, e3Id, slot: slotAddress, chainId, rpcUrl: this.rpcUrl })
+      if (status.active) {
+        throw new Error(
+          `Slot ${slotAddress} already holds ${status.entries} entr${status.entries === 1 ? 'y' : 'ies'}; preparing a ballot needs its head, which needs a serverUrl or a daReader`,
+        )
+      }
+
+      return undefined
+    }
+
+    return getPreviousCiphertext(this.serverBase, request.e3Id, request.slotAddress)
   }
 
   /**
@@ -363,5 +462,43 @@ export class CrispSDK {
    */
   async getPreviousCiphertext(e3Id: bigint, address: string): Promise<SlotHead | undefined> {
     return getPreviousCiphertext(this.serverUrl, e3Id, address)
+  }
+
+  /**
+   * Read a round's stage, input window and key commitment from the Interfold coordinator, and
+   * derive whether it is taking inputs. Needs no CRISP server.
+   * @param options - The coordinator address, the round and the chain
+   * @returns The round state
+   */
+  async getRoundState(options: Omit<RoundReadOptions, 'rpcUrl'> & { now?: bigint }): Promise<RoundState> {
+    return getRoundState({ ...options, rpcUrl: this.rpcUrl })
+  }
+
+  /**
+   * Get a round's committee public key from the chain, verified against its on-chain commitment.
+   * Needs no CRISP server.
+   * @param options - The coordinator address, the round and the chain
+   * @returns The committee public key bytes
+   */
+  async getCommitteePublicKey(options: Omit<RoundReadOptions, 'rpcUrl'> & CommitteeKeyScanOptions): Promise<Uint8Array> {
+    return getCommitteePublicKey({ ...options, rpcUrl: this.rpcUrl })
+  }
+
+  /**
+   * Collect the unverified committee public key candidates announced on the ciphernode registry.
+   * @param options - The coordinator address, the round and the chain
+   * @returns The candidates, none of them verified
+   */
+  async getCommitteePublicKeyCandidates(options: Omit<RoundReadOptions, 'rpcUrl'> & CommitteeKeyScanOptions): Promise<CommitteePublicKeyCandidate[]> {
+    return getCommitteePublicKeyCandidates({ ...options, rpcUrl: this.rpcUrl })
+  }
+
+  /**
+   * Read whether a slot already holds a committed entry, from the chain. Needs no CRISP server.
+   * @param options - The program address, the round, the slot and the chain
+   * @returns Whether the slot is active and how many entries it holds
+   */
+  async getSlotStatus(options: Omit<Parameters<typeof getSlotStatus>[0], 'rpcUrl'>): Promise<SlotStatus> {
+    return getSlotStatus({ ...options, rpcUrl: this.rpcUrl })
   }
 }
