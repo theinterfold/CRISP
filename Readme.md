@@ -222,13 +222,15 @@ Local development uses `DATA_AVAILABILITY_MODE=mock`. The mock keeps the full in
 ciphertext in the CRISP server database and produces a deterministic local receipt. It does not
 model VectorX latency or Avail fees.
 
-Sepolia and Ethereum mainnet use Avail. On Sepolia, CRISP and the protocol ciphertext verifier use
+Ethereum mainnet uses Avail. On Sepolia, CRISP and the protocol ciphertext verifier use
 `MockOpenVmReceiptVerifier`, which accepts every OpenVM receipt. Ethereum mainnet uses real RISC
-Zero verification. CRISPProgram on Sepolia is `0x8d88d6ED93aCab8d580347AB7fEc178efD3Ef250`, and its
-Avail data availability verifier is `AvailVectorXDataAvailabilityVerifier`
-(`0x2D78C7d1A0278Be46d00637Bb2F376df0361d878`). Its two Noir verifiers come from the circuits in
-this directory, built with Noir `v1.0.0-rc.3` and bb `6.0.0`.
-Before starting the CRISP server:
+Zero verification. CRISPProgram on Sepolia is `0x25Df8D3C04D67efb6198E215963d19a8d119ADFF`. While
+Avail Turing is unavailable, it uses `MockCrispDataAvailabilityVerifier`
+(`0xB5cDE772357C9dB2d2515Cf94Daa0696c9a2FB17`): run its server with `DATA_AVAILABILITY_MODE=mock`
+and `ALLOW_SEPOLIA_MOCK_DATA_AVAILABILITY=true`, and point the ciphernodes at the server's
+`/availability` route with `mode: mock_http`. Its two Noir verifiers come from the circuits in this
+directory, built with Noir `v1.0.0-rc.3` and bb `6.0.0`.
+Before starting the CRISP server with Avail:
 
 1. Register an Avail App ID for CRISP.
 2. Fund a dedicated Avail account that can pay for every `submit_data` transaction.
@@ -237,7 +239,7 @@ Before starting the CRISP server:
 4. Deploy CRISP with `INPUT_AVAILABILITY_SIGNER` set to the Ethereum address derived from the
    server's `PRIVATE_KEY`. On every network, the server `PRIVATE_KEY` must be the key of the signer
    address that CRISPProgram stores. The current Sepolia deployment used
-   `CRISP_UNPROVED_TEST=1 ALLOW_SEPOLIA_UNPROVED_COMPUTE=true USE_MOCKS=true MOCK_DATA_AVAILABILITY=false`.
+   `CRISP_UNPROVED_TEST=1 ALLOW_SEPOLIA_UNPROVED_COMPUTE=true USE_MOCKS=true MOCK_DATA_AVAILABILITY=true`.
    `USE_MOCKS=true` deploys the mock voting token and selects the mock data-availability verifier,
    unless `MOCK_DATA_AVAILABILITY=false` keeps Avail. It does not select a compute mock: every
    network except the isolated local chain deploys the real OpenVM receipt verifier, unless

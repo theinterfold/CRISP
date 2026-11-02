@@ -59,12 +59,12 @@ chains:
     rpc_url: "wss://ethereum-sepolia-rpc.publicnode.com"
     chain_id: 11155111
     data_availability:
-      mode: avail
-      rpc_url: "https://turing-rpc.avail.so/rpc"
+      mode: mock_http
+      rpc_url: "http://127.0.0.1:4000/availability"
     contracts:
       e3_program:
-        address: "0x8d88d6ED93aCab8d580347AB7fEc178efD3Ef250"
-        deploy_block: 12050658
+        address: "0x25Df8D3C04D67efb6198E215963d19a8d119ADFF"
+        deploy_block: 12050714
       interfold:
         address: "0xb35EE9ed8BE5967daabBA8c2e817C52D0b57ac26"
         deploy_block: 12050035
