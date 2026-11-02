@@ -272,9 +272,9 @@ const { active, entries } = await sdk.getSlotStatus({ programAddress, e3Id, slot
 A page that only shows round status can import the same reads from `@crisp-e3/sdk/chain`, which
 pulls in `viem` and nothing else: no wasm, no noir, no bb.js.
 
-The log scans walk `eth_getLogs` in 5000-block chunks from the round's request (the key) or from
-the opening of its input window (slot status), so they need an RPC that serves that history; many
-public endpoints prune old logs. Pass `fromBlock` to narrow the scan.
+The log scans walk `eth_getLogs` in 5000-block chunks from the round's request (the key) or from the
+opening of its input window (slot status), so they need an RPC that serves that history; many public
+endpoints prune old logs. Pass `fromBlock` to narrow the scan.
 
 #### Resolving a Slot Head Without the Server
 
@@ -286,7 +286,12 @@ Ciphertext bytes come from a `DaReader`, and each answer is checked against the 
 `keccak256` before use.
 
 ```typescript
-import { CrispSDK, createAvailDaReader, createFallbackDaReader, createHttpDaReader } from '@crisp-e3/sdk'
+import {
+  CrispSDK,
+  createAvailDaReader,
+  createFallbackDaReader,
+  createHttpDaReader,
+} from '@crisp-e3/sdk'
 
 const daReader = createFallbackDaReader(
   createAvailDaReader({ rpcUrl: 'https://turing-rpc.avail.so/rpc' }), // entries with an Avail receipt
@@ -298,9 +303,10 @@ const prepared = await sdk.prepareBallot({ e3Id, programAddress, chainId, slotAd
 ```
 
 - Which reader serves which entry: `InputCommitted` reserves the tree index at once, but the Avail
-  block (`availabilityBlock`) only appears with `InputPublished`, which can trail by hours. The Avail
-  reader needs it, so an entry still waiting needs a store that holds bytes by content hash. The CRISP
-  server's staging route (`/availability` under its base URL, passed to `createHttpDaReader`) is one.
+  block (`availabilityBlock`) only appears with `InputPublished`, which can trail by hours. The
+  Avail reader needs it, so an entry still waiting needs a store that holds bytes by content hash.
+  The CRISP server's staging route (`/availability` under its base URL, passed to
+  `createHttpDaReader`) is one.
 - It fails rather than guesses. An unreadable entry that could be the head, or bytes that fail the
   hash check, throw: naming a stale parent gets the input dropped from the tally.
 - Without a `daReader`, `prepareBallot` asks the server (needs `serverUrl`). With neither, it treats
@@ -312,8 +318,10 @@ const prepared = await sdk.prepareBallot({ e3Id, programAddress, chainId, slotAd
 
 ### CrispSDK Class
 
-- `constructor(serverUrl?: string | null, rpcUrl?: string | null)` or `constructor({ serverUrl?, rpcUrl? })` -
-  Create a new SDK instance. Without a `serverUrl`, methods that call the CRISP server throw.
+- `constructor(serverUrl?: string | null, rpcUrl?: string | null)` or
+  `constructor({ serverUrl?, rpcUrl?, daReader? })` - Create a new SDK instance. Without a
+  `serverUrl`, methods that call the CRISP server throw. With a `daReader`, `prepareBallot` resolves
+  the slot head from the chain instead of the server.
 - `generateVoteProof(voteProofRequest: VoteProofRequest): Promise<ProofData>` - Generate a vote
   proof (automatically handles previous ciphertext)
 - `generateMaskVoteProof(maskVoteProofRequest: MaskVoteProofRequest): Promise<ProofData>` - Generate
@@ -330,8 +338,10 @@ const prepared = await sdk.prepareBallot({ e3Id, programAddress, chainId, slotAd
 
 ### Chain Read Functions
 
-Read straight from the chain; no CRISP server. All take `rpcUrl` (optional) and are also exported
-from the light `@crisp-e3/sdk/chain` entry.
+Read straight from the chain; no CRISP server. The chain reads take `rpcUrl` (optional).
+`getPublicClient`, `getRoundState`, `getRoundBfvParams`, `getCommitteePublicKeyCandidates`,
+`getSlotStatus`, `getInputStartBlock`, `scanLogs` and `blockAtTimestamp` are also exported from the
+light `@crisp-e3/sdk/chain` entry; the rest are in the main entry only.
 
 - `getRoundState({ interfoldAddress, e3Id, chainId, rpcUrl?, now? }): Promise<RoundState>` - The
   round's stage, input window, commitment deadline, request time, key commitment, parameter set and
@@ -354,10 +364,12 @@ from the light `@crisp-e3/sdk/chain` entry.
   needs wasm). Same answer as the server's `previous-ciphertext`.
 - `getSlotEntries(options): Promise<SlotEntry[]>` - The slot's entries merged from `InputCommitted`
   and `InputPublished`, by tree index.
-- `chainHeadPerSlot(entries, isUsable)` and `slotHeadIndex(entries, slot, isUsable)` - The pure
-  head rule, with no I/O.
-- `createAvailDaReader({ rpcUrl })`, `createHttpDaReader(baseUrl)`, `createFallbackDaReader(...readers)`
-  and `readVerified(reader, entry)` - Ciphertext readers, and the hash check every byte goes through.
+- `chainHeadPerSlot(entries, isUsable)` and `slotHeadIndex(entries, slot, isUsable)` - The pure head
+  rule, with no I/O.
+- `createAvailDaReader({ rpcUrl, timeoutMs? })`, `createHttpDaReader(baseUrl, { timeoutMs? })`,
+  `createFallbackDaReader(...readers)` and `readVerified(reader, entry)` - Ciphertext readers, and
+  the hash check every byte goes through. Each request times out after `timeoutMs` (default 15000),
+  so a hung store fails and the fallback moves on.
 
 ### Token Functions
 

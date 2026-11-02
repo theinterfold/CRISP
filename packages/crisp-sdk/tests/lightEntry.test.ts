@@ -33,7 +33,9 @@ describe('@crisp-e3/sdk/chain entry', () => {
   const graph = importGraph(resolve(SRC, 'light.ts'))
 
   it('reaches no wasm, noir or bb.js import', () => {
-    const heavy = [...graph].flatMap(([file, specifiers]) => specifiers.filter((s) => HEAVY.some((h) => s.startsWith(h))).map((s) => `${file}: ${s}`))
+    const heavy = [...graph].flatMap(([file, specifiers]) =>
+      specifiers.filter((s) => HEAVY.some((h) => s.startsWith(h))).map((s) => `${file}: ${s}`),
+    )
 
     expect(heavy).toEqual([])
   })

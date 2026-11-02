@@ -22,7 +22,10 @@ const coordinatorAbi = parseAbi([
   'function ciphernodeRegistry() view returns (address)',
 ])
 
-const programAbi = parseAbi(['function inputCommitmentDeadline(uint256 e3Id) view returns (uint256)', 'function interfold() view returns (address)'])
+const programAbi = parseAbi([
+  'function inputCommitmentDeadline(uint256 e3Id) view returns (uint256)',
+  'function interfold() view returns (address)',
+])
 
 const committeePublishedEvent = parseAbiItem(
   'event CommitteePublished(uint256 indexed e3Id, address[] nodes, bytes publicKey, bytes32 pkCommitment, bytes proof)',
@@ -119,7 +122,13 @@ export type RoundState = {
  *                      timestamp of the chain's latest block.
  * @returns The round state
  */
-export const getRoundState = async ({ interfoldAddress, e3Id, chainId, rpcUrl, now }: RoundReadOptions & { now?: bigint }): Promise<RoundState> => {
+export const getRoundState = async ({
+  interfoldAddress,
+  e3Id,
+  chainId,
+  rpcUrl,
+  now,
+}: RoundReadOptions & { now?: bigint }): Promise<RoundState> => {
   const client = getPublicClient(chainId, rpcUrl)
   const address = interfoldAddress as Address
 
@@ -306,7 +315,11 @@ export const getCommitteePublicKeyCandidates = async ({
 
   for (const log of published) {
     if (log.args.publicKey === '0x') continue
-    entries.push({ block: log.blockNumber, logIndex: log.logIndex, candidate: { publicKey: hexToBytes(log.args.publicKey), source: 'event' } })
+    entries.push({
+      block: log.blockNumber,
+      logIndex: log.logIndex,
+      candidate: { publicKey: hexToBytes(log.args.publicKey), source: 'event' },
+    })
   }
 
   const chunkLogs = chunked.map((log) => ({
@@ -393,7 +406,13 @@ export const getSlotStatus = async ({
   rpcUrl,
   fromBlock,
   toBlock,
-}: ChainReadOptions & { programAddress: string; e3Id: bigint; slot: string; fromBlock?: bigint; toBlock?: bigint }): Promise<SlotStatus> => {
+}: ChainReadOptions & {
+  programAddress: string
+  e3Id: bigint
+  slot: string
+  fromBlock?: bigint
+  toBlock?: bigint
+}): Promise<SlotStatus> => {
   const client = getPublicClient(chainId, rpcUrl)
 
   const logs = await scanLogs(client, {

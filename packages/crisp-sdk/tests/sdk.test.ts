@@ -60,7 +60,12 @@ describe('CrispSDK without a server', () => {
     await sdk.getRoundState(round)
     await sdk.getCommitteePublicKey(round)
     await sdk.getCommitteePublicKeyCandidates(round)
-    await sdk.getSlotStatus({ programAddress: '0x00000000000000000000000000000000000000e0', e3Id, slot: '0x00000000000000000000000000000000000000f0', chainId: 1 })
+    await sdk.getSlotStatus({
+      programAddress: '0x00000000000000000000000000000000000000e0',
+      e3Id,
+      slot: '0x00000000000000000000000000000000000000f0',
+      chainId: 1,
+    })
 
     expect(reads.getRoundState).toHaveBeenCalledWith({ ...round, rpcUrl: 'https://rpc.example' })
     expect(keyReads.getCommitteePublicKey).toHaveBeenCalledWith({ ...round, rpcUrl: 'https://rpc.example' })

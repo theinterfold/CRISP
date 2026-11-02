@@ -98,12 +98,16 @@ export const createFallbackDaReader = (...readers: DaReader[]): DaReader => ({
 
 type FetchLike = typeof fetch
 
+const DEFAULT_TIMEOUT_MS = 15_000
+
 /**
  * Options shared by the HTTP readers.
  */
 export type HttpDaReaderOptions = {
   /** Fetch implementation. Defaults to the global `fetch`. */
   fetch?: FetchLike
+  /** Per-request timeout in milliseconds, so a hung store fails and a fallback can move on. Defaults to 15000. */
+  timeoutMs?: number
 }
 
 /**
@@ -114,12 +118,15 @@ export type HttpDaReaderOptions = {
  *
  * @param baseUrl - The store's base URL, without the `/objects` segment
  */
-export const createHttpDaReader = (baseUrl: string, { fetch: fetchImpl = fetch }: HttpDaReaderOptions = {}): DaReader => {
+export const createHttpDaReader = (
+  baseUrl: string,
+  { fetch: fetchImpl = fetch, timeoutMs = DEFAULT_TIMEOUT_MS }: HttpDaReaderOptions = {},
+): DaReader => {
   const base = baseUrl.replace(/\/+$/, '')
 
   return {
     async read(entry) {
-      const response = await fetchImpl(`${base}/objects/${entry.encryptedVoteHash}`)
+      const response = await fetchImpl(`${base}/objects/${entry.encryptedVoteHash}`, { signal: AbortSignal.timeout(timeoutMs) })
 
       if (!response.ok) {
         throw new Error(`Object ${entry.encryptedVoteHash} is unavailable at ${base}: ${response.status} ${response.statusText}`)
@@ -199,7 +206,11 @@ export type AvailDaReaderOptions = HttpDaReaderOptions & {
  *
  * Cannot serve an entry that has no `availabilityBlock` yet.
  */
-export const createAvailDaReader = ({ rpcUrl, fetch: fetchImpl = fetch }: AvailDaReaderOptions): DaReader => {
+export const createAvailDaReader = ({
+  rpcUrl,
+  fetch: fetchImpl = fetch,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+}: AvailDaReaderOptions): DaReader => {
   if (!/^https?:\/\//i.test(rpcUrl)) {
     throw new Error('Avail RPC URL must use HTTP or HTTPS')
   }
@@ -210,6 +221,7 @@ export const createAvailDaReader = ({ rpcUrl, fetch: fetchImpl = fetch }: AvailD
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ jsonrpc: '2.0', id: ++nextId, method, params }),
+      signal: AbortSignal.timeout(timeoutMs),
     })
 
     if (!response.ok) {

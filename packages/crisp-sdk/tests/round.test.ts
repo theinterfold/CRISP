@@ -7,7 +7,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { bytesToHex, keccak256, zeroAddress } from 'viem'
 
-import { ROUND_STAGES, assembleKeyChunks, getCommitteePublicKeyCandidates, getInputStartBlock, getRoundState, getSlotStatus } from '../src/round'
+import {
+  ROUND_STAGES,
+  assembleKeyChunks,
+  getCommitteePublicKeyCandidates,
+  getInputStartBlock,
+  getRoundState,
+  getSlotStatus,
+} from '../src/round'
 
 import type { Address, Hex } from 'viem'
 import type { KeyChunkLog, RoundStage } from '../src/round'
@@ -73,10 +80,21 @@ const install = (w: World) => {
     }
   })
 
-  const getLogs = vi.fn(async ({ event, args, fromBlock, toBlock }: { event: { name: string }; args: Record<string, unknown>; fromBlock: bigint; toBlock: bigint }) =>
-    (w.logs[event.name] ?? []).filter(
-      (log) => log.blockNumber >= fromBlock && log.blockNumber <= toBlock && Object.entries(args).every(([k, v]) => log.args[k] === v),
-    ),
+  const getLogs = vi.fn(
+    async ({
+      event,
+      args,
+      fromBlock,
+      toBlock,
+    }: {
+      event: { name: string }
+      args: Record<string, unknown>
+      fromBlock: bigint
+      toBlock: bigint
+    }) =>
+      (w.logs[event.name] ?? []).filter(
+        (log) => log.blockNumber >= fromBlock && log.blockNumber <= toBlock && Object.entries(args).every(([k, v]) => log.args[k] === v),
+      ),
   )
 
   const getBlock = vi.fn(async (a: { blockTag?: 'latest'; blockNumber?: bigint }) => {
@@ -126,11 +144,14 @@ describe('getRoundState', () => {
     expect((await read(now)).acceptingInputs).toBe(expected)
   })
 
-  it.each(ROUND_STAGES.filter((stage) => stage !== 'KeyPublished'))('is not accepting inputs in stage %s, even inside the window', async (stage) => {
-    install(world({ stage }))
+  it.each(ROUND_STAGES.filter((stage) => stage !== 'KeyPublished'))(
+    'is not accepting inputs in stage %s, even inside the window',
+    async (stage) => {
+      install(world({ stage }))
 
-    expect((await read(500n)).acceptingInputs).toBe(false)
-  })
+      expect((await read(500n)).acceptingInputs).toBe(false)
+    },
+  )
 
   it('takes the time from the latest block when none is given', async () => {
     install(world({ inputWindow: [timestampOf(HEAD) - 10n, timestampOf(HEAD) + 1_000n], commitmentDeadline: timestampOf(HEAD) + 500n }))
@@ -228,7 +249,7 @@ describe('assembleKeyChunks', () => {
     expect(hash).toBe(keccak256(candidates[0].publicKey))
   })
 
-  it('does not let one publisher complete another publisher\'s group', () => {
+  it("does not let one publisher complete another publisher's group", () => {
     const logs = [...chunksOf(key, alice).slice(0, 2), ...chunksOf(key, bob).slice(2)]
 
     expect(assembleKeyChunks(logs)).toEqual([])
@@ -245,7 +266,14 @@ describe('getCommitteePublicKeyCandidates', () => {
     args: { e3Id, publicKey, nodes: [], pkCommitment: '0x00', proof: '0x' },
   })
 
-  const chunkLog = (blockNumber: bigint, logIndex: number, publisher: Address, bytes: Uint8Array, chunkIndex: number, size: number): FakeLog => ({
+  const chunkLog = (
+    blockNumber: bigint,
+    logIndex: number,
+    publisher: Address,
+    bytes: Uint8Array,
+    chunkIndex: number,
+    size: number,
+  ): FakeLog => ({
     blockNumber,
     logIndex,
     args: {
@@ -290,10 +318,7 @@ describe('getCommitteePublicKeyCandidates', () => {
       world({
         logs: {
           CommitteePublished: [published(60n, bytesToHex(eventKey)), published(70n, bytesToHex(eventKey), 1), published(65n, '0x')],
-          CommitteePublicKeyChunkPublished: [
-            chunkLog(61n, 0, SLOT, chunkedKey, 1, 100),
-            chunkLog(61n, 1, SLOT, chunkedKey, 0, 100),
-          ],
+          CommitteePublicKeyChunkPublished: [chunkLog(61n, 0, SLOT, chunkedKey, 1, 100), chunkLog(61n, 1, SLOT, chunkedKey, 0, 100)],
         },
       }),
     )
@@ -306,7 +331,7 @@ describe('getCommitteePublicKeyCandidates', () => {
     ])
   })
 
-  it('ignores other rounds\' logs', async () => {
+  it("ignores other rounds' logs", async () => {
     install(world({ logs: { CommitteePublished: [published(60n, '0x0102', 0, E3_ID + 1n)] } }))
 
     expect(await read()).toEqual([])
@@ -333,21 +358,38 @@ describe('getCommitteePublicKeyCandidates', () => {
 })
 
 describe('getSlotStatus', () => {
-  const committed = (blockNumber: bigint, slot: Address = SLOT, e3Id = E3_ID): FakeLog => ({ blockNumber, logIndex: 0, args: { e3Id, slotAddress: slot } })
-  const read = (extra: { fromBlock?: bigint } = {}) => getSlotStatus({ programAddress: PROGRAM, e3Id: E3_ID, slot: SLOT, chainId: 1, ...extra })
+  const committed = (blockNumber: bigint, slot: Address = SLOT, e3Id = E3_ID): FakeLog => ({
+    blockNumber,
+    logIndex: 0,
+    args: { e3Id, slotAddress: slot },
+  })
+  const read = (extra: { fromBlock?: bigint } = {}) =>
+    getSlotStatus({ programAddress: PROGRAM, e3Id: E3_ID, slot: SLOT, chainId: 1, ...extra })
 
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
   it('is inactive for a slot with no committed input', async () => {
-    install(world({ logs: { InputCommitted: [committed(200n, '0x00000000000000000000000000000000000000f1' as Address), committed(200n, SLOT, E3_ID + 1n)] } }))
+    install(
+      world({
+        logs: {
+          InputCommitted: [committed(200n, '0x00000000000000000000000000000000000000f1' as Address), committed(200n, SLOT, E3_ID + 1n)],
+        },
+      }),
+    )
 
     expect(await read()).toEqual({ active: false, entries: 0 })
   })
 
   it('counts every committed entry of the slot in the round', async () => {
-    install(world({ logs: { InputCommitted: [committed(200n), committed(300n), committed(300n, '0x00000000000000000000000000000000000000f1' as Address)] } }))
+    install(
+      world({
+        logs: {
+          InputCommitted: [committed(200n), committed(300n), committed(300n, '0x00000000000000000000000000000000000000f1' as Address)],
+        },
+      }),
+    )
 
     expect(await read()).toEqual({ active: true, entries: 2 })
   })
@@ -357,7 +399,12 @@ describe('getSlotStatus', () => {
 
     await read()
 
-    expect(getLogs.mock.calls[0][0]).toMatchObject({ address: PROGRAM, fromBlock: 120n, toBlock: HEAD, args: { e3Id: E3_ID, slotAddress: SLOT } })
+    expect(getLogs.mock.calls[0][0]).toMatchObject({
+      address: PROGRAM,
+      fromBlock: 120n,
+      toBlock: HEAD,
+      args: { e3Id: E3_ID, slotAddress: SLOT },
+    })
   })
 
   it('does not look the window up when given a fromBlock', async () => {

@@ -39,19 +39,22 @@ const generatorFor = ({ degree, plaintextModulus, moduli }: RoundBfvParams) => {
  * cycle is not a stable byte-for-byte check.
  *
  * Bytes that do not decode as a key for the parameters are an ordinary "no", not an exception:
- * candidates come from publishers, and one junk blob must not abort the search.
+ * candidates come from publishers, and one junk blob must not abort the search. Parameters the
+ * wasm does not support throw, since no candidate could ever match them.
  *
  * @param publicKey - The serialized key to check
  * @param expectedCommitment - The round's on-chain key commitment (32 bytes, hex)
  * @param params - The round's BFV parameters
  * @returns Whether the key's commitment equals `expectedCommitment`
+ * @throws If the BFV parameters are not a supported threshold preset
  */
 export const isCommitteeKeyAuthentic = (publicKey: Uint8Array, expectedCommitment: string, params: RoundBfvParams): boolean => {
   if (publicKey.length === 0 || !isHex(expectedCommitment) || size(expectedCommitment) !== 32) return false
 
+  const generator = generatorFor(params)
   let actual: Uint8Array
   try {
-    actual = generatorFor(params).computePkCommitment(publicKey)
+    actual = generator.computePkCommitment(publicKey)
   } catch {
     return false
   }

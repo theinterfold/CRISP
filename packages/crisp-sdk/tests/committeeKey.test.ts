@@ -53,7 +53,13 @@ describe('committee public key', () => {
     it('rejects a different key, bytes that are not a key, and an empty key', () => {
       expect(commitmentA).not.toBe(commitmentB)
       expect(isCommitteeKeyAuthentic(keyA, commitmentB, params)).toBe(false)
-      expect(isCommitteeKeyAuthentic(Uint8Array.from({ length: 64 }, (_, i) => i), commitmentA, params)).toBe(false)
+      expect(
+        isCommitteeKeyAuthentic(
+          Uint8Array.from({ length: 64 }, (_, i) => i),
+          commitmentA,
+          params,
+        ),
+      ).toBe(false)
       expect(isCommitteeKeyAuthentic(new Uint8Array(), commitmentA, params)).toBe(false)
     })
 
@@ -61,6 +67,11 @@ describe('committee public key', () => {
       expect(isCommitteeKeyAuthentic(keyA, '0x' + '00'.repeat(32), params)).toBe(false)
       expect(isCommitteeKeyAuthentic(keyA, '0x1234', params)).toBe(false)
       expect(isCommitteeKeyAuthentic(keyA, 'not hex', params)).toBe(false)
+    })
+
+    it('throws for parameters that are not a supported preset instead of reporting a mismatch', () => {
+      const unsupported = { ...params, plaintextModulus: params.plaintextModulus + 2n }
+      expect(() => isCommitteeKeyAuthentic(keyA, commitmentA, unsupported)).toThrow()
     })
   })
 
@@ -74,7 +85,13 @@ describe('committee public key', () => {
         readContract: async ({ functionName }: { functionName: string }) => {
           switch (functionName) {
             case 'getE3':
-              return { inputWindow: [0n, 10n ** 12n], e3Program: PROGRAM, requestBlock: 1_000n, committeePublicKey: commitment, paramSet: 0 }
+              return {
+                inputWindow: [0n, 10n ** 12n],
+                e3Program: PROGRAM,
+                requestBlock: 1_000n,
+                committeePublicKey: commitment,
+                paramSet: 0,
+              }
             case 'getE3Stage':
               return stage
             case 'inputCommitmentDeadline':
@@ -87,7 +104,10 @@ describe('committee public key', () => {
               throw new Error(`unexpected read ${functionName}`)
           }
         },
-        getBlock: async (a: { blockTag?: 'latest'; blockNumber?: bigint }) => ({ number: a.blockTag === 'latest' ? 99n : a.blockNumber, timestamp: 1_000n + (a.blockNumber ?? 99n) }),
+        getBlock: async (a: { blockTag?: 'latest'; blockNumber?: bigint }) => ({
+          number: a.blockTag === 'latest' ? 99n : a.blockNumber,
+          timestamp: 1_000n + (a.blockNumber ?? 99n),
+        }),
         getBlockNumber: async () => 99n,
         getLogs: async ({ event }: { event: { name: string } }) =>
           event.name === 'CommitteePublished'

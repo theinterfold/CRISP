@@ -200,7 +200,8 @@ export class CrispSDK {
       }
 
       const chainId = request.chainId ?? (this.serverBase ? Number((await getRoundDetails(this.serverBase, e3Id)).chainId) : undefined)
-      if (chainId === undefined) throw new Error('Reading the slot head from the chain needs request.chainId when the instance has no serverUrl')
+      if (chainId === undefined)
+        throw new Error('Reading the slot head from the chain needs request.chainId when the instance has no serverUrl')
 
       if (this.daReader) {
         return getSlotHead({ programAddress, e3Id, slot: slotAddress, chainId, rpcUrl: this.rpcUrl, daReader: this.daReader })
@@ -489,7 +490,9 @@ export class CrispSDK {
    * @param options - The coordinator address, the round and the chain
    * @returns The candidates, none of them verified
    */
-  async getCommitteePublicKeyCandidates(options: Omit<RoundReadOptions, 'rpcUrl'> & CommitteeKeyScanOptions): Promise<CommitteePublicKeyCandidate[]> {
+  async getCommitteePublicKeyCandidates(
+    options: Omit<RoundReadOptions, 'rpcUrl'> & CommitteeKeyScanOptions,
+  ): Promise<CommitteePublicKeyCandidate[]> {
     return getCommitteePublicKeyCandidates({ ...options, rpcUrl: this.rpcUrl })
   }
 

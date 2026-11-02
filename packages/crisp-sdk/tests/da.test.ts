@@ -81,7 +81,10 @@ describe('createHttpDaReader', () => {
 
     const read = await createHttpDaReader('https://da.example/availability/', { fetch }).read(entry)
 
-    expect(fetch).toHaveBeenCalledWith(`https://da.example/availability/objects/${entry.encryptedVoteHash}`)
+    expect(fetch).toHaveBeenCalledWith(
+      `https://da.example/availability/objects/${entry.encryptedVoteHash}`,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    )
     expect(new Uint8Array(read)).toEqual(data)
   })
 
@@ -89,6 +92,15 @@ describe('createHttpDaReader', () => {
     const fetch = vi.fn(async () => new Response('', { status: 404, statusText: 'Not Found' }))
 
     await expect(createHttpDaReader('https://da.example', { fetch }).read(entryFor(bytes(4)))).rejects.toThrow('404')
+  })
+
+  it('rejects a store that never answers once the timeout elapses', async () => {
+    const fetch = vi.fn(
+      (_url: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_, reject) => init?.signal?.addEventListener('abort', () => reject(init.signal?.reason))),
+    )
+
+    await expect(createHttpDaReader('https://da.example', { fetch, timeoutMs: 10 }).read(entryFor(bytes(4)))).rejects.toThrow()
   })
 })
 
