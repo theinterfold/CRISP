@@ -9,7 +9,7 @@ use crisp::config::CONFIG;
 use crisp::deployments::{self, LOCALHOST_CHAIN_ID};
 use crisp::e3_request::{self, ComputeProviderParams};
 use crisp::server::rpc;
-use e3_sdk::evm_helpers::contracts::{InterfoldContract, InterfoldRead, InterfoldWrite};
+use e3_sdk::evm::contracts::{InterfoldContract, InterfoldRead, InterfoldWrite};
 use evm_helpers::CRISPContract;
 use eyre::{bail, eyre, Result};
 use log::info;

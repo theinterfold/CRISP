@@ -46,7 +46,7 @@
     "openvm": "bash scripts/openvm.sh"
   },
   "devDependencies": {
-    "@interfold/config": "0.20.0-dev.2",
+    "@interfold/config": "0.20.0-dev.3",
     "eslint": "^9.39.1",
     "@playwright/test": "1.52.0",
     "@synthetixio/synpress": "4.1.1",

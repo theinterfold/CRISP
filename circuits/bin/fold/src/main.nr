@@ -11,9 +11,9 @@ use interfold_lib::math::commitments::compute_vk_hash;
 /// `pnpm compute:vk-hash <preset>` in the repository root after changing crisp, `crisp_lib`, or the
 /// Interfold release that supplies user_data_encryption / ct0 / ct1.
 pub global CRISP_FOLD_EXPECTED_KEY_HASH_INSECURE: Field =
-    0x1ea21b298df0f63f37fd013592944209caa3b728e239798b1b77a0455e39a13b;
+    0x0325fc5eef938885b730eecc24570fa58dd2b1edcdce7ef75d7ee75ba7b3e9c2;
 pub global CRISP_FOLD_EXPECTED_KEY_HASH_SECURE: Field =
-    0x196e81843c72ecfb887e91c1d4243ba605c244193d8e196458c0f0c173f26f58;
+    0x0ede998b63e6e94e2f067cfffb4d26ec492f45e19b480eec14580a1913fd3bc7;
 
 fn main(
     // User Data Encryption Section.

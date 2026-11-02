@@ -24,7 +24,7 @@ use e3_data_availability::{
     AvailPublisher, AvailReader, DataAvailabilityPublisher, DataAvailabilityReader, DataReference,
     PendingPublication, ProofStatus,
 };
-use e3_evm_helpers::contracts::{
+use e3_evm_client::contracts::{
     InterfoldContractFactory, InterfoldRead, InterfoldReadContract, InterfoldWrite,
 };
 use e3_fhe_params::{build_bfv_params_from_set_arc, encode_bfv_params, BfvParamSet, BfvPreset};
@@ -2586,7 +2586,7 @@ mod tests {
     /// published, with an input window that opens at `input_window_start`.
     async fn index_round(db: &Db, e3_id: &str, input_window_start: u64) {
         use crate::server::database::SledDB;
-        use e3_evm_helpers::contracts::CommitteeSize;
+        use e3_evm_client::contracts::CommitteeSize;
         use e3_sdk::indexer::{models::E3, E3Repository, SharedStore};
 
         let store = SharedStore::new(Arc::new(tokio::sync::RwLock::new(

@@ -11,7 +11,7 @@
 
 use alloy::primitives::{Address, Bytes, U256};
 use alloy::sol_types::SolValue;
-use e3_sdk::evm_helpers::contracts::{CommitteeSize, InterfoldRead, InterfoldWrite};
+use e3_sdk::evm::contracts::{CommitteeSize, InterfoldRead, InterfoldWrite};
 use evm_helpers::CRISPContract;
 use log::{error, info, warn};
 use serde::Serialize;

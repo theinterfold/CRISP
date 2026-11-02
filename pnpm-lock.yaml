@@ -17,8 +17,8 @@ importers:
   .:
     devDependencies:
       '@interfold/config':
-        specifier: 0.20.0-dev.2
-        version: 0.20.0-dev.2(eslint@9.39.1(jiti@1.21.7))(tsup@8.5.0(@microsoft/api-extractor@7.58.12(@types/node@22.7.5))(@swc/core@1.15.46)(jiti@1.21.7)(postcss@8.5.25)(tsx@4.20.6)(typescript@5.8.3)(yaml@2.8.2))(typescript@5.8.3)
+        specifier: 0.20.0-dev.3
+        version: 0.20.0-dev.3(eslint@9.39.1(jiti@1.21.7))(tsup@8.5.0(@microsoft/api-extractor@7.58.12(@types/node@22.7.5))(@swc/core@1.15.46)(jiti@1.21.7)(postcss@8.5.25)(tsx@4.20.6)(typescript@5.8.3)(yaml@2.8.2))(typescript@5.8.3)
       '@playwright/test':
         specifier: 1.52.0
         version: 1.52.0
@@ -165,8 +165,8 @@ importers:
         specifier: ^0.4.0
         version: 0.4.0
       '@interfold/contracts':
-        specifier: 0.20.0-dev.2
-        version: 0.20.0-dev.2(@swc/core@1.15.46)(@swc/wasm@1.15.46)(@types/node@22.7.5)(bufferutil@4.1.0)(ethers@6.17.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))(typescript@5.8.3)(utf-8-validate@5.0.10)(zod@3.25.76)
+        specifier: 0.20.0-dev.3
+        version: 0.20.0-dev.3(@swc/core@1.15.46)(@swc/wasm@1.15.46)(@types/node@22.7.5)(bufferutil@4.1.0)(ethers@6.17.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))(typescript@5.8.3)(utf-8-validate@5.0.10)(zod@3.25.76)
       '@zk-kit/lazy-imt.sol':
         specifier: 2.0.0-beta.12
         version: 2.0.0-beta.12
@@ -246,15 +246,15 @@ importers:
 
   packages/crisp-sdk:
     dependencies:
-      '@aztec/bb.js':
-        specifier: 5.2.0
-        version: 5.2.0
+      '@aztec-foundation/bb.js':
+        specifier: 6.0.0
+        version: 6.0.0
       '@crisp-e3/zk-inputs':
         specifier: workspace:*
         version: link:../crisp-zk-inputs
       '@noir-lang/noir_js':
-        specifier: 1.0.0-beta.26
-        version: 1.0.0-beta.26
+        specifier: 1.0.0-rc.3
+        version: 1.0.0-rc.3
       '@zk-kit/lean-imt':
         specifier: ^2.2.4
         version: 2.2.5(bufferutil@4.1.0)(utf-8-validate@5.0.10)
@@ -337,8 +337,8 @@ packages:
   '@arbitrum/nitro-contracts@3.0.0':
     resolution: {integrity: sha512-7VzNW9TxvrX9iONDDsi7AZlEUPa6z+cjBkB4Mxlnog9VQZAapRC3CdRXyUzHnBYmUhRzyNJdyxkWPw59QGcLmA==}
 
-  '@aztec/bb.js@5.2.0':
-    resolution: {integrity: sha512-XQRbl6TfHg7xXwf4b3cNSggtwsIxl2z2/zV49/Ahxa1Nc1D7x05NY0QL5mYSRdOJlGKZ3TUTH48lDWAwJSVulg==}
+  '@aztec-foundation/bb.js@6.0.0':
+    resolution: {integrity: sha512-w+rlVHbSbb1neDeJGMDSbNZCxuD6TeSrN/1lbnVgqhKcVfqdDXdTt2b6RUToCsk7Q2Dmx4oqU5tfBcFY//LQtg==}
     hasBin: true
 
   '@babel/code-frame@7.27.1':
@@ -1801,14 +1801,14 @@ packages:
       '@types/node':
         optional: true
 
-  '@interfold/config@0.20.0-dev.2':
-    resolution: {integrity: sha512-a4oQ1TQt3vmol/SSE5JT4Wcsb+3JoUPYfNOMkMhvDPVM/iEWcLj/Sklel7ud1W8NyTMjJcxYAj2moPKiNSXH9Q==}
+  '@interfold/config@0.20.0-dev.3':
+    resolution: {integrity: sha512-Fob+eqQMK71ifiLIYfxAXe5oJE2G0ftkmbZFlu9XlwDGmuXqhv49AI/616lrBmjN8WhUZq3TxenYwgBE61rUvA==}
     peerDependencies:
       eslint: ^9.0.0
       tsup: 8.5.0
 
-  '@interfold/contracts@0.20.0-dev.2':
-    resolution: {integrity: sha512-B+aMq00XuPW/b1kAI8PojxmXr5dhe6kOTYtlaDxrSjWrPdie7Ya0dLydOOtN5q+RFC1Pm72Ucy+dlybeXLAhkA==}
+  '@interfold/contracts@0.20.0-dev.3':
+    resolution: {integrity: sha512-PlGOmmnVN/6QbX9YNuB6SB6bUqOwpsGedSbihkJDM9gCzyX/wDgsOp2l6Sn6omrTxGq6V2BF9DubHDPcEk/Ybg==}
 
   '@isaacs/balanced-match@4.0.1':
     resolution: {integrity: sha512-yzMTt9lEb8Gv7zRioUilSglI0c0smZ9k5D65677DLWLtWJaXIS3CqcGyUFByYKlnUj6TkjLVs54fBl6+TiGQDQ==}
@@ -2082,17 +2082,17 @@ packages:
     resolution: {integrity: sha512-oGB+UxlgWcgQkgwo8GcEGwemoTFt3FIO9ababBmaGwXIoBKZ+GTy0pP185beGg7Llih/NSHSV2XAs1lnznocSg==}
     engines: {node: '>= 8'}
 
-  '@noir-lang/acvm_js@1.0.0-beta.26':
-    resolution: {integrity: sha512-f9+gLTQrOuZYLjHHdULC9J1ItcLs5237W62Y+CzRBI3MVfD/rhe5trdGoUwuIVvW9ttUObQsR4UkhvN5gcxYnA==}
+  '@noir-lang/acvm_js@1.0.0-rc.3':
+    resolution: {integrity: sha512-bTTrcPphNHVrFkbJPVcFrrigwwU/N9+trgEa9PF2X/VWWAX0B1gOGSBwqziOKMwThpU7H2Jb3Z6OFMEhpMKaEQ==}
 
-  '@noir-lang/noir_js@1.0.0-beta.26':
-    resolution: {integrity: sha512-0p3AyhQ+xQDHhE6eNSj79pWXvcPupmpxTsh7zkxf4dJnv3iB6XgzbrJspn6ed0VtSWGuHpFjRJbRY+PZFMeyMg==}
+  '@noir-lang/noir_js@1.0.0-rc.3':
+    resolution: {integrity: sha512-NrJZPd7zpBWXzP240rP78fr6RE8vg3mFIMIsT5Xiqbh6zdBKfLI8Nb7Ea4UFwFWyRFDqZO3qGd3HbGyRWxxZ8Q==}
 
-  '@noir-lang/noirc_abi@1.0.0-beta.26':
-    resolution: {integrity: sha512-w/KjhJx095dAKECPlLb7QY6FovZ8dJboCXzgcZ9k0yZfhawhN4/8SEcC7JCer+GKxKZEBSY3VtlZmW3ch4J83A==}
+  '@noir-lang/noirc_abi@1.0.0-rc.3':
+    resolution: {integrity: sha512-jax7q2CAAG4jxCzr8MllH/LZxnxnS5PF1YyzmFJ7DTf97k3+LaHSnBPXE8TwQYDsWwyNxQTqDWw1QVEoO1ESaQ==}
 
-  '@noir-lang/types@1.0.0-beta.26':
-    resolution: {integrity: sha512-TFJMafp32koXf3TFVAfPBirwkVdlRHzSTM1nVAkRJDTQQNnI7qoAjvzXWXjgpE65kwjukQyzcmaucOegruawPw==}
+  '@noir-lang/types@1.0.0-rc.3':
+    resolution: {integrity: sha512-k1UHd67/OSPJb9E6WNKeMtuoDbflLpu803jtbaVqDlr2P/rH8+joDuIxK+nwBMVlnCO2LlcJaN4wpQ/TRHJ78w==}
 
   '@nomicfoundation/edr-darwin-arm64@0.12.0-next.10':
     resolution: {integrity: sha512-LYXaU0Pk7zA4iAHMdvZ9Gs5QaScs9n5IpclWBNVevSHnL1/uJiFLDF4FYE/NonvaCST6Rd0E4MS3pJltsrBQmA==}
@@ -6658,6 +6658,9 @@ packages:
     resolution: {integrity: sha512-NxNv/kLguCA7p3jE8oL2aEBsrJWgAakBpgmgK6lpPWV+WuOmY6r2/zbAVnP+T8bQlA0nzHXSJSJW0Hq7ylaD2Q==}
     engines: {node: '>= 6'}
 
+  proper-lockfile@4.1.2:
+    resolution: {integrity: sha512-TjNPblN4BwAWMXU8s9AEz4JmQxnD1NNL7bNOY/AKUzyamc379FWASUhc/K1pL2noVb+XmZKLL68cjzLsiOAMaA==}
+
   property-information@5.6.0:
     resolution: {integrity: sha512-YUHSPk+A30YPv+0Qf8i9Mbfe/C0hdPXk1s1jPVToV8pk8BQtpw10ct89Eo7OWkutrwqvT0eicAxlOg3dOAu8JA==}
 
@@ -6924,6 +6927,10 @@ packages:
     resolution: {integrity: sha512-TyeJ1zif53BPfHootBGwPRYT1RUt6oGWsaQr8UyZW/eAm9bKoijtvruSDEmZHm92CwS9nj7/fWttqPCgzep8CA==}
     engines: {node: '>= 0.4'}
     hasBin: true
+
+  retry@0.12.0:
+    resolution: {integrity: sha512-9LkiTwjUh6rT555DtE9rTX+BKByPfrMzEAtnlEtdEwr3Nkffwiihqe2bWADg+OQRjt9gl6ICdmB/ZFDCGAtSow==}
+    engines: {node: '>= 4'}
 
   reusify@1.1.0:
     resolution: {integrity: sha512-g6QUff04oZpHs0eG5p83rFLhHeV00ug/Yf9nZM6fLeUrPguBTkTQOdpAWWspMh55TZfVQDPaN3NQJfbVRAxdIw==}
@@ -8221,13 +8228,14 @@ snapshots:
       patch-package: 6.5.1
       solady: 0.0.182
 
-  '@aztec/bb.js@5.2.0':
+  '@aztec-foundation/bb.js@6.0.0':
     dependencies:
       comlink: 4.4.2
       commander: 12.1.0
       idb-keyval: 6.3.0
       msgpackr: 1.12.1
       pako: 2.2.0
+      proper-lockfile: 4.1.2
       tslib: 2.8.1
 
   '@babel/code-frame@7.27.1':
@@ -10067,7 +10075,7 @@ snapshots:
     optionalDependencies:
       '@types/node': 22.7.5
 
-  '@interfold/config@0.20.0-dev.2(eslint@9.39.1(jiti@1.21.7))(tsup@8.5.0(@microsoft/api-extractor@7.58.12(@types/node@22.7.5))(@swc/core@1.15.46)(jiti@1.21.7)(postcss@8.5.25)(tsx@4.20.6)(typescript@5.8.3)(yaml@2.8.2))(typescript@5.8.3)':
+  '@interfold/config@0.20.0-dev.3(eslint@9.39.1(jiti@1.21.7))(tsup@8.5.0(@microsoft/api-extractor@7.58.12(@types/node@22.7.5))(@swc/core@1.15.46)(jiti@1.21.7)(postcss@8.5.25)(tsx@4.20.6)(typescript@5.8.3)(yaml@2.8.2))(typescript@5.8.3)':
     dependencies:
       '@eslint/eslintrc': 3.3.1
       '@eslint/js': 9.39.1
@@ -10083,7 +10091,7 @@ snapshots:
       - supports-color
       - typescript
 
-  '@interfold/contracts@0.20.0-dev.2(@swc/core@1.15.46)(@swc/wasm@1.15.46)(@types/node@22.7.5)(bufferutil@4.1.0)(ethers@6.17.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))(typescript@5.8.3)(utf-8-validate@5.0.10)(zod@3.25.76)':
+  '@interfold/contracts@0.20.0-dev.3(@swc/core@1.15.46)(@swc/wasm@1.15.46)(@types/node@22.7.5)(bufferutil@4.1.0)(ethers@6.17.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))(typescript@5.8.3)(utf-8-validate@5.0.10)(zod@3.25.76)':
     dependencies:
       '@chainlink/contracts': 1.5.0(@types/node@22.7.5)(bufferutil@4.1.0)(ethers@6.17.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))(utf-8-validate@5.0.10)
       '@openzeppelin/contracts': 5.3.0
@@ -10513,20 +10521,20 @@ snapshots:
       '@nodelib/fs.scandir': 2.1.5
       fastq: 1.20.1
 
-  '@noir-lang/acvm_js@1.0.0-beta.26': {}
+  '@noir-lang/acvm_js@1.0.0-rc.3': {}
 
-  '@noir-lang/noir_js@1.0.0-beta.26':
+  '@noir-lang/noir_js@1.0.0-rc.3':
     dependencies:
-      '@noir-lang/acvm_js': 1.0.0-beta.26
-      '@noir-lang/noirc_abi': 1.0.0-beta.26
-      '@noir-lang/types': 1.0.0-beta.26
+      '@noir-lang/acvm_js': 1.0.0-rc.3
+      '@noir-lang/noirc_abi': 1.0.0-rc.3
+      '@noir-lang/types': 1.0.0-rc.3
       pako: 3.0.1
 
-  '@noir-lang/noirc_abi@1.0.0-beta.26':
+  '@noir-lang/noirc_abi@1.0.0-rc.3':
     dependencies:
-      '@noir-lang/types': 1.0.0-beta.26
+      '@noir-lang/types': 1.0.0-rc.3
 
-  '@noir-lang/types@1.0.0-beta.26': {}
+  '@noir-lang/types@1.0.0-rc.3': {}
 
   '@nomicfoundation/edr-darwin-arm64@0.12.0-next.10': {}
 
@@ -16627,6 +16635,12 @@ snapshots:
       kleur: 3.0.3
       sisteransi: 1.0.5
 
+  proper-lockfile@4.1.2:
+    dependencies:
+      graceful-fs: 4.2.11
+      retry: 0.12.0
+      signal-exit: 3.0.7
+
   property-information@5.6.0:
     dependencies:
       xtend: 4.0.2
@@ -16921,6 +16935,8 @@ snapshots:
       is-core-module: 2.16.2
       path-parse: 1.0.7
       supports-preserve-symlinks-flag: 1.0.0
+
+  retry@0.12.0: {}
 
   reusify@1.1.0: {}
 

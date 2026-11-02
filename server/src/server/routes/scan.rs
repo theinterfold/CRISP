@@ -23,7 +23,7 @@ use alloy::eips::BlockNumberOrTag;
 use alloy::primitives::{Address, Bytes, B256};
 use alloy::providers::{DynProvider, Provider};
 use alloy::rpc::types::Filter;
-use e3_sdk::evm_helpers::retry::call_with_retry;
+use e3_sdk::evm::retry::call_with_retry;
 use log::{error, warn};
 use std::collections::HashMap;
 use std::fmt::Display;

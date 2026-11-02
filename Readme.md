@@ -48,6 +48,10 @@ repository. Each kind of dependency names the release in its own file:
   Nargo git dependency on the release tag.
 - `package.json` and `packages/crisp-contracts/package.json`: the npm packages `@interfold/config`
   and `@interfold/contracts`.
+- The ZK toolchain follows the release's `crates/zk/prover/versions.json` and `ci.yml`: `nargo`
+  (`NOIR_TOOLCHAIN` in `.github/workflows/ci.yml`), the `bb_proof_verification` tag in
+  `circuits/bin/fold*/Nargo.toml`, `@aztec-foundation/bb.js` and `@noir-lang/noir_js` in
+  `packages/crisp-sdk/package.json`, and the `@noir-lang/noir_js` override in `client/package.json`.
 
 To move to release `<version>`:
 
@@ -55,7 +59,8 @@ To move to release `<version>`:
    release `v<version>`.
 2. Set `tag = "v<version>"` on every `e3-*` dependency in `Cargo.toml` and `guest/Cargo.toml`, and
    on every `interfold_lib` dependency in the `Nargo.toml` files.
-3. Set the `@interfold/*` versions to `<version>`.
+3. Set the `@interfold/*` versions to `<version>`, and move the toolchain pins above when the
+   release moved them.
 4. Update the lockfiles:
 
    ```bash
@@ -71,6 +76,10 @@ To move to release `<version>`:
    `circuits/lib/src/preset.nr` ends on the committed `insecure-64` preset. When a printed hash
    differs from the `*_EXPECTED_KEY_HASH_*` constant in `circuits/bin/fold/src/main.nr` or
    `circuits/bin/fold_onchain/src/main.nr`, replace the constant.
+6. Run `pnpm build:presets:all`, which regenerates the verifiers in
+   `packages/crisp-contracts/contracts/verifiers/` and restages both presets, then rebuild and check
+   the SDK: `pnpm -C packages/crisp-sdk build:prod` and
+   `CRISP_CHANNEL=latest pnpm -C packages/crisp-sdk check:presets`.
 
 You can have an extended explanation of the single folders in the dedicated
 [documentation](https://docs.theinterfold.com/CRISP/introduction#project-structure).
@@ -90,9 +99,9 @@ Before getting started, ensure you have installed:
 - Noir toolchain: [`nargo`](https://noir-lang.org/docs/installation) and
   [`bb`](https://barretenberg.aztec.network/docs/getting_started). Install the versions CI pins,
   since other versions may not compile the circuits:
-  - `nargo`: `noirup -v v1.0.0-beta.26` (`NOIR_TOOLCHAIN` in `.github/workflows/ci.yml`)
+  - `nargo`: `noirup -v v1.0.0-rc.3` (`NOIR_TOOLCHAIN` in `.github/workflows/ci.yml`)
   - `bb`: version and per-platform checksums live in Interfold's
-    [`crates/zk/prover/versions.json`](https://github.com/theinterfold/interfold/blob/v0.20.0-dev.2/crates/zk/prover/versions.json)
+    [`crates/zk/prover/versions.json`](https://github.com/theinterfold/interfold/blob/v0.20.0-dev.3/crates/zk/prover/versions.json)
 
 Local development runs the unproved development runner unless `CRISP_REAL_PROOFS=1` (see
 `crisp.dev.env.example`). Real proofs use OpenVM: build the workers, configure `program.openvm` in

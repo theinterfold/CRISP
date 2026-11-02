@@ -32,7 +32,10 @@ export default defineConfig({
       '@noir-lang/noirc_abi',
       '@noir-lang/acvm_js',
       '@noir-lang/noir_js',
-      '@aztec/bb.js', // Pre-bundling breaks worker URLs (thread.worker.js, main.worker.js)
+      // Pre-bundling breaks worker URLs (thread.worker.js, main.worker.js). The standalone deploy
+      // installs the published SDK, which depends on the old package name until the pin moves.
+      '@aztec-foundation/bb.js',
+      '@aztec/bb.js',
       // The SDK worker URL must stay relative to the installed SDK package.
       '@crisp-e3/sdk',
       '@crisp-e3/sdk/insecure-64',

@@ -20,7 +20,7 @@ import { MASK_SIGNATURE, PROOF_STAGES } from './constants'
 export { encodeVote, encryptVote, decodeTally, decryptVote, generateBFVKeys } from './encoding'
 export { splitDigest } from './circuitInputs'
 import { Noir, type CompiledCircuit } from '@noir-lang/noir_js'
-import { Barretenberg, BackendType, UltraHonkBackend } from '@aztec/bb.js'
+import { Barretenberg, BackendType, UltraHonkBackend } from '@aztec-foundation/bb.js'
 // Only the aggregation circuits are imported here. Their ABI is proof and verification-key shaped
 // rather than polynomial shaped, so one artifact serves every preset and inlining them costs ~0.3MB.
 // The BFV-shaped circuits arrive through `setCircuits()` — see ./circuits.
