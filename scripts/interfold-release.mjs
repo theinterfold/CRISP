@@ -23,6 +23,9 @@
 //   release/<preset>/minimum/default/...        the BFV aggregation VK anchors, in the release
 //                                               layout that INTERFOLD_CIRCUITS_DIR names for a
 //                                               deploy with ZK verification
+//   release/<preset>/minimum/vk-commitments.json   the pair's VK commitment catalogue slice and its
+//   release/<preset>/minimum/.build-stamp.json     build stamp, which the deploy checks against
+//                                               @interfold/contracts
 //
 // Each `vk_recursive_hash` is the `noir-recursive-no-zk` key hash that the fold circuits bind.
 
@@ -130,6 +133,12 @@ export const extractCircuits = async () => {
     ...PRESETS.flatMap((preset) =>
       BFV_VK_ANCHORS.map((anchor) => {
         const from = `circuits/${preset}/${COMMITTEE}/default/${anchor}`
+        return [from, `release/${from.slice('circuits/'.length)}`]
+      }),
+    ),
+    ...PRESETS.flatMap((preset) =>
+      ['vk-commitments.json', '.build-stamp.json'].map((file) => {
+        const from = `circuits/${preset}/${COMMITTEE}/${file}`
         return [from, `release/${from.slice('circuits/'.length)}`]
       }),
     ),

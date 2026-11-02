@@ -30,7 +30,7 @@ masking exists to prevent.
 The generator also exposes `encryptVote` / `decryptVote` for standalone BFV operations and
 `generateKeys` for key generation.
 
-These witness objects are then passed to `@noir-lang/noir_js` and `@aztec/bb.js` to generate the
+These witness objects are then passed to `@noir-lang/noir_js` and `@aztec-foundation/bb.js` to generate the
 actual ZK proofs.
 
 ## Usage

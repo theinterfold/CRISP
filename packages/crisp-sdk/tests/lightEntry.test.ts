@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest'
 const SRC = resolve(__dirname, '../src')
 
 /** Packages whose import drags in wasm, noir or barretenberg. */
-const HEAVY = ['@crisp-e3/zk-inputs', '@noir-lang/noir_js', '@aztec/bb.js']
+const HEAVY = ['@crisp-e3/zk-inputs', '@noir-lang/noir_js', '@aztec-foundation/bb.js']
 
 const IMPORT = /^\s*(?:import|export)\s[^'"]*?from\s+['"]([^'"]+)['"]/gm
 

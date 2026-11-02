@@ -38,9 +38,14 @@ pub struct Config {
     #[serde(default)]
     pub crisp_voting_token: Option<String>,
     pub chain_id: u64,
-    /// `mock` (local chains only) or `avail`. Defaults by chain.
+    /// `mock` (local chains, or Sepolia with `allow_sepolia_mock_data_availability`) or `avail`.
+    /// Defaults by chain.
     #[serde(default)]
     pub data_availability_mode: Option<String>,
+    /// Acknowledge mock data availability on Sepolia: ciphertexts live only in this server's
+    /// database, and the program checks their hash without an Avail proof.
+    #[serde(default)]
+    pub allow_sepolia_mock_data_availability: bool,
     #[serde(default)]
     pub avail_rpc_url: Option<String>,
     #[serde(default)]
@@ -191,6 +196,7 @@ impl Config {
         Self::validate_data_availability(
             config.chain_id,
             &config.data_availability_mode(),
+            config.allow_sepolia_mock_data_availability,
             config.avail_proof_lead(),
             config.data_availability_max_pending_bytes,
         )?;
@@ -206,7 +212,7 @@ impl Config {
     /// Refuse an `HTTP_RPC_URL` that serves a chain other than `CHAIN_ID`.
     ///
     /// The chain rules of this server (the mainnet relay flag, the secure parameter set, the
-    /// local-only mock data availability) read `CHAIN_ID`, while every transaction goes to the
+    /// mock data availability) read `CHAIN_ID`, while every transaction goes to the
     /// chain of the RPC. For example, `CHAIN_ID=11155111` with a mainnet RPC would relay on
     /// mainnet without `MAINNET_RELAY`.
     pub async fn validate_rpc_chain(&self) -> anyhow::Result<()> {
@@ -275,14 +281,16 @@ impl Config {
     fn validate_data_availability(
         chain_id: u64,
         mode: &str,
+        allow_sepolia_mock: bool,
         proof_lead: u64,
         max_pending_bytes: u64,
     ) -> Result<(), ConfigError> {
         match mode {
             "mock" if is_local_chain_id(chain_id) => return Ok(()),
+            "mock" if chain_id == SEPOLIA_CHAIN_ID && allow_sepolia_mock => return Ok(()),
             "mock" => {
                 return Err(invalid(
-                    "DATA_AVAILABILITY_MODE=mock is allowed only on local development chains",
+                    "DATA_AVAILABILITY_MODE=mock is allowed only on local development chains, or on Sepolia with ALLOW_SEPOLIA_MOCK_DATA_AVAILABILITY=true",
                 ))
             }
             "avail" => {}
@@ -320,6 +328,8 @@ impl Config {
         Ok(())
     }
 }
+
+const SEPOLIA_CHAIN_ID: u64 = 11_155_111;
 
 const fn is_local_chain_id(chain_id: u64) -> bool {
     matches!(chain_id, 1_337 | 31_337)
@@ -382,18 +392,20 @@ mod tests {
 
     #[test]
     fn avail_requires_a_nonzero_proof_lead() {
-        assert!(Config::validate_data_availability(31_337, "mock", 0, 0).is_ok());
-        assert!(Config::validate_data_availability(1, "avail", 10_800, 1024 * 1024).is_ok());
-        assert!(Config::validate_data_availability(1, "avail", 0, 1024 * 1024).is_err());
-        assert!(Config::validate_data_availability(1, "avail", 10_800, 1024).is_err());
+        assert!(Config::validate_data_availability(31_337, "mock", false, 0, 0).is_ok());
+        assert!(Config::validate_data_availability(1, "avail", false, 10_800, 1024 * 1024).is_ok());
+        assert!(Config::validate_data_availability(1, "avail", false, 0, 1024 * 1024).is_err());
+        assert!(Config::validate_data_availability(1, "avail", false, 10_800, 1024).is_err());
     }
 
     #[test]
-    fn mock_data_availability_is_local_only() {
-        assert!(Config::validate_data_availability(1, "mock", 0, 0).is_err());
-        assert!(Config::validate_data_availability(11_155_111, "mock", 0, 0).is_err());
-        assert!(Config::validate_data_availability(1_337, "mock", 0, 0).is_ok());
-        assert!(Config::validate_data_availability(31_337, "mock", 0, 0).is_ok());
+    fn mock_data_availability_is_local_or_acknowledged_sepolia_only() {
+        assert!(Config::validate_data_availability(1, "mock", false, 0, 0).is_err());
+        assert!(Config::validate_data_availability(1, "mock", true, 0, 0).is_err());
+        assert!(Config::validate_data_availability(11_155_111, "mock", false, 0, 0).is_err());
+        assert!(Config::validate_data_availability(11_155_111, "mock", true, 0, 0).is_ok());
+        assert!(Config::validate_data_availability(1_337, "mock", false, 0, 0).is_ok());
+        assert!(Config::validate_data_availability(31_337, "mock", false, 0, 0).is_ok());
     }
 
     #[test]

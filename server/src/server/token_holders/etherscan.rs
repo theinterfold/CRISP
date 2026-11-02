@@ -19,7 +19,7 @@ use alloy::providers::{DynProvider, Provider};
 use alloy::sol;
 use alloy::sol_types::SolEvent;
 use alloy::transports::RpcError;
-use e3_sdk::evm_helpers::retry::call_with_retry;
+use e3_sdk::evm::retry::call_with_retry;
 use eyre::{ensure, eyre, Context, Result};
 use serde::{de::DeserializeOwned, Deserialize};
 use std::collections::{HashMap, HashSet};

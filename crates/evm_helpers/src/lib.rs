@@ -20,7 +20,7 @@ use alloy::{
     sol,
     transports::RpcError,
 };
-use e3_evm_helpers::{contracts::Interfold, nonce::send_with_next_nonce};
+use e3_evm_client::{contracts::Interfold, nonce::send_with_next_nonce};
 use eyre::Result;
 use std::sync::Arc;
 
@@ -783,7 +783,7 @@ mod tests {
     #[tokio::test]
     async fn an_output_that_the_e3_verifier_rejects_is_refused() {
         use alloy::{sol_types::SolCall, transports::mock::Asserter};
-        use e3_evm_helpers::contracts::{CommitteeSize, E3};
+        use e3_evm_client::contracts::{CommitteeSize, E3};
 
         let asserter = Asserter::new();
         let provider = ProviderBuilder::new()
@@ -795,7 +795,7 @@ mod tests {
         };
         let e3 = E3 {
             seed: U256::ZERO,
-            committeeSize: CommitteeSize::Minimum,
+            committeeSize: CommitteeSize::Minimum.into(),
             requestBlock: U256::ZERO,
             inputWindow: [U256::ZERO; 2],
             encryptionSchemeId: B256::repeat_byte(2),

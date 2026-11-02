@@ -6,7 +6,7 @@
 
 use alloy::node_bindings::Anvil;
 use alloy::primitives::{Address, Bytes, B256, U256};
-use e3_evm_helpers::contracts::{InterfoldContract, InterfoldWrite};
+use e3_evm_client::contracts::{InterfoldContract, InterfoldWrite};
 use evm_helpers::{is_insufficient_funds, CRISPContractFactory};
 use eyre::Result;
 

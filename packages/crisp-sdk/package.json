@@ -69,9 +69,9 @@
     "vitest": "^1.6.1"
   },
   "dependencies": {
-    "@aztec/bb.js": "5.2.0",
+    "@aztec-foundation/bb.js": "6.0.0",
     "@crisp-e3/zk-inputs": "workspace:*",
-    "@noir-lang/noir_js": "1.0.0-beta.26",
+    "@noir-lang/noir_js": "1.0.0-rc.3",
     "@zk-kit/lean-imt": "^2.2.4",
     "poseidon-lite": "^0.3.0",
     "viem": "2.30.6"

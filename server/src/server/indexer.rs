@@ -26,7 +26,7 @@ use crisp_utils::decode_tally;
 use e3_fhe_params::decode_bfv_params_arc;
 use e3_sdk::indexer::INDEXER_CURSOR_KEY;
 use e3_sdk::{
-    evm_helpers::{
+    evm::{
         contracts::{
             E3Stage, InterfoldContract, InterfoldContractFactory, InterfoldRead, ReadOnly,
             ReadWrite,

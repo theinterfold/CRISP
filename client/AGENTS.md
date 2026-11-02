@@ -23,8 +23,8 @@ proving and encryption; it does not own protocol, circuit, or contract behavior.
   server automation. `client/.env` is generated from `.env.example`, and `VITE_CRISP_TOKEN` is
   rewritten by the local deploy, so do not commit local values.
 - COOP/COEP headers are set separately in `vercel.json` and the Vite dev server, next to the
-  `@aztec/bb.js` worker handling in `vite.config.ts`. Changing one without the other makes dev and
-  production behave differently, and a plain-code check will not catch it.
+  `@aztec-foundation/bb.js` worker handling in `vite.config.ts`. Changing one without the other
+  makes dev and production behave differently, and a plain-code check will not catch it.
 - Wallet flows are only truly exercised by the Playwright e2e in `../test/`, which drives MetaMask
   through Synpress against a local chain. Type checks and unit tests do not prove signing, network
   switching, or proof generation in a browser.

@@ -12,7 +12,7 @@ use actix_web::{web, HttpRequest, HttpResponse};
 use alloy::primitives::{Address, Bytes, U256};
 use alloy::sol;
 use alloy::sol_types::SolEvent;
-use e3_sdk::evm_helpers::contracts::{InterfoldContract, InterfoldWrite};
+use e3_sdk::evm::contracts::{InterfoldContract, InterfoldWrite};
 use evm_helpers::CRISPContract;
 use log::{error, info};
 use serde::{Deserialize, Serialize};
