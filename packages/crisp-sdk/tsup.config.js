@@ -30,6 +30,8 @@ if (requested !== undefined && !PRESETS.includes(requested)) {
 let selected
 const entry = {
   index: 'src/index.ts',
+  // The chain-reads-only entry behind `@crisp-e3/sdk/chain`. Must stay free of wasm, noir and bb.js.
+  chain: 'src/light.ts',
   'workers/generateCircuitInputs.worker': 'src/workers/generateCircuitInputs.worker.ts',
 }
 

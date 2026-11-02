@@ -116,6 +116,19 @@ impl ZKInputsGenerator {
             .map_err(|e| JsValue::from_str(&format!("{e}")))
     }
 
+    /// Computes the commitment of a serialized BFV public key under this generator's parameters.
+    ///
+    /// A round stores the commitment of its committee key on-chain behind a verified DKG proof.
+    /// A key blob is the committee's key only when this equals that value, so a client checks a
+    /// key it did not generate here before encrypting to it. Bytes that do not decode as a key
+    /// throw instead of returning a non-matching commitment.
+    #[wasm_bindgen(js_name = "computePkCommitment")]
+    pub fn compute_pk_commitment(&self, public_key: Vec<u8>) -> Result<Vec<u8>, JsValue> {
+        self.generator
+            .compute_public_key_commitment(&public_key)
+            .map_err(|e| JsValue::from_str(&format!("{e}")))
+    }
+
     /// Generate a public/secret key pair from JavaScript.
     #[wasm_bindgen(js_name = "generateKeys")]
     pub fn generate_keys(&self) -> Result<JsValue, JsValue> {

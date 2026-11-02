@@ -254,9 +254,17 @@ type DistributiveOmit<T, K extends keyof never> = T extends unknown ? Omit<T, K>
 /**
  * A {@link PrepareBallotInputs} plus the round it belongs to.
  *
- * The SDK resolves the slot head from the server, so callers pass neither part of it.
+ * The SDK resolves the slot head itself, so callers pass neither part of it. Resolving it from the
+ * chain, which an instance with a `daReader` or without a `serverUrl` does, needs to know where
+ * the round lives: `programAddress`, and `chainId` when no server can supply it.
  */
-export type PrepareBallotRequest = { e3Id: bigint } & DistributiveOmit<PrepareBallotInputs, 'previousCiphertext' | 'previousIndex'>
+export type PrepareBallotRequest = {
+  e3Id: bigint
+  /** The CRISPProgram address. Required when the slot head is read from the chain. */
+  programAddress?: string
+  /** The chain the program is on. Read from the server when omitted and the instance has one. */
+  chainId?: number
+} & DistributiveOmit<PrepareBallotInputs, 'previousCiphertext' | 'previousIndex'>
 
 /**
  * The end of a slot's chain of usable entries: what a new input extends.
