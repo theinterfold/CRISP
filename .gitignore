@@ -41,6 +41,8 @@ types
 deployments
 test-results/
 playwright-report/
+# Left in older checkouts by the former Synpress e2e.
+.cache-synpress/
 .interfold/data/ 
 .interfold/config/ 
 .interfold/caches/
