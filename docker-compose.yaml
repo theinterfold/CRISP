@@ -17,7 +17,6 @@ services:
       - client-node-modules:/app/client/node_modules
       - crisp-contracts-node-modules:/app/packages/crisp-contracts/node_modules
       - crisp-foundry-cache:/app/packages/crisp-contracts/out
-      - synpress-cache:/app/.cache-synpress
       - test-results:/app/test-results
       - playwright-report:/app/playwright-report
     entrypoint:
@@ -39,6 +38,5 @@ volumes:
   crisp-contracts-node-modules:
   crisp-foundry-cache:
   git-folder:
-  synpress-cache:
   test-results:
   playwright-report:
