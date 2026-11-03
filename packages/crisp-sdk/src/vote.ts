@@ -20,7 +20,7 @@ import { MASK_SIGNATURE, PROOF_STAGES } from './constants'
 export { encodeVote, encryptVote, decodeTally, decryptVote, generateBFVKeys } from './encoding'
 export { splitDigest } from './circuitInputs'
 import { Noir, type CompiledCircuit } from '@noir-lang/noir_js'
-import { Barretenberg, BackendType, UltraHonkBackend } from '@aztec-foundation/bb.js'
+import { Barretenberg, BackendType, Crs, GrumpkinCrs, UltraHonkBackend } from '@aztec-foundation/bb.js'
 // Only the aggregation circuits are imported here. Their ABI is proof and verification-key shaped
 // rather than polynomial shaped, so one artifact serves every preset and inlining them costs ~0.3MB.
 // The BFV-shaped circuits arrive through `setCircuits()` — see ./circuits.
@@ -29,9 +29,27 @@ import foldOnchainCircuit from '../../../circuits/bin/fold_onchain/target/crisp_
 import userDataEncryptionCircuit from '../../../circuits/interfold/user_data_encryption.json'
 import { requireCircuits } from './circuits'
 
+// The fold and user-data-encryption circuits are 2^21 gates (dyadic), so proving needs 2^21 points.
+const SRS_SIZE = 2 ** 21
+// The Grumpkin size `Barretenberg.new` loads.
+const GRUMPKIN_SRS_SIZE = 2 ** 16
+
 // Cached Barretenberg API instance — avoids re-initialising WASM + SRS on every proof.
 let _bbApi: Barretenberg | null = null
 let _bbApiInitPromise: Promise<Barretenberg> | null = null
+
+/**
+ * Load the SRS as `Barretenberg.new` does in the browser, without its IndexedDB cache of the
+ * decompressed G1 points. That cache is one value of `SRS_SIZE * 64` bytes (128 MiB), above the
+ * 127 MiB per-value limit of Chromium's IndexedDB, and bb.js does not catch the failed write, so
+ * every proof would fail. The points still come through bb.js's `Crs`, which caches the G2 point.
+ */
+const initBrowserSrs = async (api: Barretenberg): Promise<void> => {
+  const crs = await Crs.new(SRS_SIZE)
+  const grumpkinCrs = await GrumpkinCrs.new(GRUMPKIN_SRS_SIZE)
+  await api.srsInitSrs({ pointsBuf: crs.getG1Data(), numPoints: crs.numPoints, g2Point: crs.getG2Data() })
+  await api.srsInitGrumpkinSrs({ pointsBuf: grumpkinCrs.getG1Data(), numPoints: grumpkinCrs.numPoints })
+}
 
 const getBBApi = async (): Promise<Barretenberg> => {
   if (_bbApi) return _bbApi
@@ -39,12 +57,23 @@ const getBBApi = async (): Promise<Barretenberg> => {
 
   _bbApiInitPromise = (async () => {
     try {
-      // Outside the browser, bb.js prefers its native Unix-socket backend, allows the bb
-      // process only 5s to create the socket, and drops the timeout into an unhandled
-      // rejection — callers then wait forever instead of failing. Pin Node to WASM. The
-      // browser is unaffected: it already selects the (multi-threaded) worker backend.
-      const backend = typeof window === 'undefined' ? { backend: BackendType.Wasm } : {}
-      const api = await Barretenberg.new({ srsSize: 2 ** 21, ...backend })
+      let api: Barretenberg
+      if (typeof window === 'undefined') {
+        // Outside the browser, bb.js prefers its native Unix-socket backend, allows the bb
+        // process only 5s to create the socket, and drops the timeout into an unhandled
+        // rejection — callers then wait forever instead of failing. Pin Node to WASM.
+        api = await Barretenberg.new({ srsSize: SRS_SIZE, backend: BackendType.Wasm })
+      } else {
+        // The browser selects the (multi-threaded) worker backend.
+        api = await Barretenberg.new({ skipSrsInit: true })
+        try {
+          await initBrowserSrs(api)
+        } catch (error) {
+          // The instance never reaches `_bbApi`, so `destroyBBApi` could not free its workers.
+          await api.destroy()
+          throw error
+        }
+      }
       _bbApi = api
       return api
     } finally {
