@@ -52,6 +52,12 @@ on `^0.18.0` can never drift onto a testing build through an update — reaching
 SDK releases carry both presets, a production publish moves `client/package.json` and
 `client/pnpm-lock.yaml` to the published version. A testing publish leaves the client alone.
 
+The same publish sets the client's `pnpm.overrides["@noir-lang/noir_js"]` to the exact `noir_js`
+version in `packages/crisp-sdk/package.json`. The override keeps the client's tree on the Noir
+runtime that the SDK proves with, so change the version in the SDK and the next production publish
+carries it to the client. The publish fails if the SDK's version is a range or the client has no
+override to move.
+
 The pin cannot be a `workspace:` range, because the same `client/package.json` also serves the
 standalone Vercel deploy, which installs with `ignore-workspace=true` (see `client/.npmrc`) and
 cannot resolve one. So it is an exact version, and that has a consequence worth stating plainly:

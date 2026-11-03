@@ -9,13 +9,11 @@ use crisp::config::CONFIG;
 use crisp::deployments::{self, LOCALHOST_CHAIN_ID};
 use crisp::e3_request::{self, ComputeProviderParams};
 use crisp::server::rpc;
-use e3_sdk::evm::contracts::{InterfoldContract, InterfoldRead, InterfoldWrite};
+use e3_sdk::evm::contracts::{InterfoldContract, InterfoldWrite};
 use evm_helpers::CRISPContract;
 use eyre::{bail, eyre, Result};
 use log::info;
 use serde_json::json;
-
-use super::approve;
 
 const ZERO_ADDRESS: &str = "0x0000000000000000000000000000000000000000";
 
@@ -159,24 +157,18 @@ pub async fn initialize_crisp_round(
     )
     .await?;
 
-    info!("Getting fee quote...");
-    let quote_window = e3_request::voting_window(&crisp_program).await?;
-    let fee_amount = contract
-        .get_e3_quote(
-            committee.size,
-            quote_window,
-            e3_program,
-            CONFIG.e3_param_set,
-            compute_provider_params.clone(),
-        )
-        .await?;
-    info!("Fee required: {fee_amount} tokens");
-
-    info!("Approving fee token...");
-    approve::approve_fee_token(fee_amount).await?;
-
-    // The quote and the approval take time: schedule the window from a fresh timestamp.
     let input_window = e3_request::voting_window(&crisp_program).await?;
+    info!("Approving fee token...");
+    e3_request::approve_e3_fee(
+        &contract,
+        committee,
+        input_window,
+        e3_program,
+        CONFIG.e3_param_set,
+        &compute_provider_params,
+    )
+    .await?;
+
     info!("Requesting E3 on contract: {}", CONFIG.interfold_address);
     info!(
         "Requesting E3 with input_window [{}, {}] (buffer {}s)",
