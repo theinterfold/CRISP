@@ -66,7 +66,13 @@ const getBBApi = async (): Promise<Barretenberg> => {
       } else {
         // The browser selects the (multi-threaded) worker backend.
         api = await Barretenberg.new({ skipSrsInit: true })
-        await initBrowserSrs(api)
+        try {
+          await initBrowserSrs(api)
+        } catch (error) {
+          // The instance never reaches `_bbApi`, so `destroyBBApi` could not free its workers.
+          await api.destroy()
+          throw error
+        }
       }
       _bbApi = api
       return api
