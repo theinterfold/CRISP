@@ -10,7 +10,6 @@ types
 deployments
 .cargo
 .next
-.cache-synpress
 .interfold
 packages/crisp-contracts/lib
 

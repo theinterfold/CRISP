@@ -41,7 +41,6 @@ types
 deployments
 test-results/
 playwright-report/
-.cache-synpress/
 .interfold/data/ 
 .interfold/config/ 
 .interfold/caches/

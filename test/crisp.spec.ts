@@ -5,9 +5,7 @@
 // or FITNESS FOR A PARTICULAR PURPOSE.
 
 import { ConsoleMessage, Page } from '@playwright/test'
-import { testWithSynpress } from '@synthetixio/synpress'
-import { MetaMask, metaMaskFixtures } from '@synthetixio/synpress/playwright'
-import basicSetup from './wallet-setup/basic.setup'
+import { test, expect } from './fixtures/injectedWallet'
 import { execFileSync } from 'child_process'
 import { readFileSync } from 'fs'
 import { config } from 'dotenv'
@@ -200,9 +198,6 @@ async function waitForE3Completion(e3id: string): Promise<void> {
   throw new Error(`E3 ${e3id} did not complete within ${E3_COMPLETION_WAIT}ms. Last stage: ${stage}.${detail}`)
 }
 
-const test = testWithSynpress(metaMaskFixtures(basicSetup))
-const { expect } = test
-
 async function ensureHomePageLoaded(page: Page) {
   await page.goto(CRISP_APP_URL, { waitUntil: 'domcontentloaded' })
   await page.waitForLoadState('load')
@@ -236,7 +231,7 @@ async function waitForWalletSession(page: Page) {
   log('wallet session ready')
 }
 
-async function reconnectWalletIfNeeded(page: Page, metamask: MetaMask) {
+async function reconnectWalletIfNeeded(page: Page) {
   const connectWalletBtn = page.locator('button:has-text("Connect Wallet")')
   if (!(await connectWalletBtn.isVisible({ timeout: 3_000 }).catch(() => false))) return
 
@@ -252,13 +247,10 @@ async function reconnectWalletIfNeeded(page: Page, metamask: MetaMask) {
   }
 
   log('wallet disconnected — reconnecting...')
-  const connectionRequested = await connectWalletWithRetry(page)
-  if (connectionRequested) {
-    await metamask.connectToDapp()
-  }
+  await connectWalletWithRetry(page)
 }
 
-async function castVoteWithSignature(page: Page, metamask: MetaMask) {
+async function castVoteWithSignature(page: Page) {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       log(`clicking first vote card (attempt ${attempt})...`)
@@ -270,9 +262,8 @@ async function castVoteWithSignature(page: Page, metamask: MetaMask) {
       await expect(castBtn).toBeEnabled({ timeout: 30_000 })
 
       log(`clicking Cast Vote (attempt ${attempt})...`)
+      // The injected wallet signs without a confirmation step.
       await castBtn.click()
-      log(`confirming MetaMask signature request...`)
-      await metamask.confirmSignature()
       return
     } catch (error) {
       if (attempt === 3) throw error
@@ -325,11 +316,7 @@ async function connectWalletWithRetry(page: Page, maxAttempts = 3): Promise<bool
   return false
 }
 
-test('CRISP smoke test', async ({ context, metamaskPage, extensionId }) => {
-  // The persistent browser's first page belongs to MetaMask. Create a separate
-  // page so extension navigation cannot replace the CRISP application under test.
-  const page = await context.newPage()
-
+test('CRISP smoke test', async ({ page }) => {
   page.on('console', (msg: ConsoleMessage) => {
     console.log(msg.text())
   })
@@ -342,9 +329,6 @@ test('CRISP smoke test', async ({ context, metamaskPage, extensionId }) => {
   log('============================================')
   const testStart = Date.now()
 
-  log('Creating new Metamask...')
-  const metamask = new MetaMask(context, metamaskPage, basicSetup.walletPassword, extensionId)
-
   log('runCliInit()...')
   const e3id = await runCliInit()
   log(`Got e3 id: ${e3id}`)
@@ -354,11 +338,7 @@ test('CRISP smoke test', async ({ context, metamaskPage, extensionId }) => {
   await ensureHomePageLoaded(page)
 
   log(`connecting wallet via ConnectKit...`)
-  const connectionRequested = await connectWalletWithRetry(page)
-  if (connectionRequested) {
-    log(`connecting to dapp...`)
-    await metamask.connectToDapp()
-  }
+  await connectWalletWithRetry(page)
   log(`clicking try demo...`)
   await page.locator('a:has-text("Try the demo")').click()
 
@@ -369,14 +349,10 @@ test('CRISP smoke test', async ({ context, metamaskPage, extensionId }) => {
   log(`forcing page reload...`)
   await page.reload()
   await page.waitForLoadState('load')
-  // The wallet fixture starts on localwallet, and reloading the application does
-  // not change the wallet network. Opening the extension here steals focus from
-  // the application while its round state is being restored.
-  await page.bringToFront()
   await waitForDemoPollReady(page)
-  await reconnectWalletIfNeeded(page, metamask)
+  await reconnectWalletIfNeeded(page)
   await waitForWalletSession(page)
-  await castVoteWithSignature(page, metamask)
+  await castVoteWithSignature(page)
   await waitForVotePublication(e3id)
   await closeInputWindow(e3id)
   await waitForE3Completion(e3id)

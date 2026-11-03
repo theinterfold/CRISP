@@ -528,9 +528,6 @@ jobs:
           sudo chmod -R 777 $GITHUB_WORKSPACE/test-results
           mkdir -p $GITHUB_WORKSPACE/playwright-report
           sudo chmod -R 777 $GITHUB_WORKSPACE/playwright-report
-          mkdir -p $GITHUB_WORKSPACE/.cache-synpress
-          sudo chown -R "$(id -u):$(id -g)" $GITHUB_WORKSPACE/.cache-synpress
-          sudo chmod -R 777 $GITHUB_WORKSPACE/.cache-synpress
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1
@@ -589,7 +586,6 @@ jobs:
       - name: Run Playwright tests
         env:
           PLAYWRIGHT_WORKERS: 4
-          METAMASK_VERSION: 11.8.2
         run: pnpm test:e2e
 
       - name: Upload test results
