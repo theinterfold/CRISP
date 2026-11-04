@@ -37,7 +37,7 @@ fn format_request_e3_revert(err: impl std::fmt::Display) -> eyre::Report {
         );
     }
     eyre!(
-        "Requesting the E3 failed: {msg}. Common causes: stale E3_PROGRAM_ADDRESS in server/.env \
+        "request_e3 reverted: {msg}. Common causes: stale E3_PROGRAM_ADDRESS in server/.env \
          (must match deployed CRISPProgram), inputWindow start in the past, or no registered \
          ciphernodes on the chain."
     )
@@ -168,7 +168,11 @@ pub async fn initialize_crisp_round(
         &custom_params,
     )
     .await
-    .map_err(format_request_e3_revert)?;
+    // Only a failed request gets the request advice; a fee settlement error is returned as it is
+    .map_err(|err| match err.downcast::<e3_request::RequestE3Error>() {
+        Ok(request) => format_request_e3_revert(request),
+        Err(err) => err,
+    })?;
     info!("E3 request sent. TxHash: {:?}", res.transaction_hash);
     info!("E3 ID: {e3_id}");
 

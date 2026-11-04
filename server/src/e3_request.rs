@@ -213,15 +213,27 @@ where
     )
 }
 
-/// Selector of `CRISPProgram.VotingStartsBeforeKeyDeadline(uint256,uint256,uint256)`.
-const VOTING_STARTS_BEFORE_KEY_DEADLINE_SELECTOR: &str = "0x56d12960";
+/// A failure of the `request_e3` transaction itself, as opposed to settling its fee and window.
+#[derive(Debug, thiserror::Error)]
+#[error("{0:#}")]
+pub struct RequestE3Error(eyre::Report);
+
+/// How one attempt at requesting a round failed.
+enum Attempt {
+    /// The program refuses the window, so the round can be requested again with a fresh one.
+    Refused(eyre::Report),
+    /// Anything else, returned as it is.
+    Failed(eyre::Report),
+}
 
 /// Settle the fee and window of a round, then request it.
 ///
 /// Reads stand between the window and the request, and the request takes time to mine; all of it
-/// is spent from the start buffer. When the program refuses the window with
-/// `VotingStartsBeforeKeyDeadline`, the refused request left no round behind, so the fee and window
-/// are settled again and the round is requested with the fresh window.
+/// is spent from the start buffer. A request that fails, while estimating or once mined, is checked
+/// against the program's earliest voting start: when the window now starts too early, the program
+/// refuses it with `VotingStartsBeforeKeyDeadline` and no round was created, so the fee and window
+/// are settled again and the round is requested with the fresh window. Failures of the request
+/// itself are returned as `RequestE3Error`.
 pub async fn request_round(
     contract: &InterfoldContract<ReadWrite>,
     program: &CRISPContract,
@@ -240,12 +252,13 @@ pub async fn request_round(
             param_set,
             compute_provider_params,
         )
-        .await?;
+        .await
+        .map_err(Attempt::Failed)?;
         info!(
             "Requesting E3 with input window [{}, {}] (buffer {}s)",
             window[0], window[1], CONFIG.voting_start_buffer_seconds
         );
-        contract
+        let err = match contract
             .request_e3(
                 committee.size,
                 window,
@@ -255,26 +268,48 @@ pub async fn request_round(
                 custom_params.clone(),
             )
             .await
+        {
+            Ok(requested) => return Ok(requested),
+            Err(err) => eyre::Report::new(RequestE3Error(err)),
+        };
+        match window_refused(program, window).await {
+            Ok(true) => Err(Attempt::Refused(err)),
+            Ok(false) => Err(Attempt::Failed(err)),
+            Err(check) => {
+                warn!("Could not check the voting window of the failed request: {check:#}");
+                Err(Attempt::Failed(err))
+            }
+        }
     })
     .await
+}
+
+/// Whether the program now refuses `window` because it starts before the worst-case key deadline.
+/// The deadline only moves later, so a window refused when the request was sent is refused now.
+async fn window_refused(program: &CRISPContract, window: [U256; 2]) -> eyre::Result<bool> {
+    // Without a finalization window the program does not check the start
+    if program.availability_finalization_window().await?.is_zero() {
+        return Ok(false);
+    }
+    let now = rpc::latest_timestamp(rpc::provider().await?).await?;
+    let (earliest, _) = program.earliest_voting_start_compatible(now).await?;
+    Ok(window[0] < earliest)
 }
 
 async fn retry_refused_windows<R, F, Fut>(mut request: F) -> eyre::Result<R>
 where
     F: FnMut() -> Fut,
-    Fut: Future<Output = eyre::Result<R>>,
+    Fut: Future<Output = Result<R, Attempt>>,
 {
     let mut attempt = 1;
     loop {
         match request().await {
-            Err(err)
-                if attempt < MAX_WINDOW_ATTEMPTS
-                    && format!("{err:#}").contains(VOTING_STARTS_BEFORE_KEY_DEADLINE_SELECTOR) =>
-            {
-                warn!("The voting window started before the key deadline (attempt {attempt}/{MAX_WINDOW_ATTEMPTS}); requesting with a fresh window");
+            Ok(result) => return Ok(result),
+            Err(Attempt::Refused(err)) if attempt < MAX_WINDOW_ATTEMPTS => {
+                warn!("The voting window started before the key deadline (attempt {attempt}/{MAX_WINDOW_ATTEMPTS}): {err}; requesting with a fresh window");
                 attempt += 1;
             }
-            result => return result,
+            Err(Attempt::Refused(err) | Attempt::Failed(err)) => return Err(err),
         }
     }
 }
@@ -604,18 +639,16 @@ mod tests {
         assert!(err.to_string().contains("new approval"), "{err}");
     }
 
-    /// A request that the program refuses `refusals` times with `VotingStartsBeforeKeyDeadline`.
+    /// A request that the program refuses `refusals` times.
     fn refusing(
         refusals: usize,
         calls: &std::cell::Cell<usize>,
-    ) -> impl FnMut() -> std::future::Ready<eyre::Result<u8>> + '_ {
+    ) -> impl FnMut() -> std::future::Ready<Result<u8, Attempt>> + '_ {
         move || {
             let call = calls.get();
             calls.set(call + 1);
             std::future::ready(if call < refusals {
-                Err(eyre::eyre!(
-                    "execution reverted: custom error {VOTING_STARTS_BEFORE_KEY_DEADLINE_SELECTOR}"
-                ))
+                Err(Attempt::Refused(eyre::eyre!("refused")))
             } else {
                 Ok(7)
             })
@@ -638,13 +671,13 @@ mod tests {
 
         let err = retry_refused_windows(|| {
             calls.set(calls.get() + 1);
-            std::future::ready(Err::<u8, _>(eyre::eyre!("execution reverted: 0x44ec930f")))
+            std::future::ready(Err::<u8, _>(Attempt::Failed(eyre::eyre!("failed"))))
         })
         .await
         .unwrap_err();
 
         assert_eq!(calls.get(), 1);
-        assert!(err.to_string().contains("0x44ec930f"), "{err}");
+        assert_eq!(err.to_string(), "failed");
     }
 
     #[tokio::test]
@@ -656,10 +689,6 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(calls.get(), MAX_WINDOW_ATTEMPTS);
-        assert!(
-            err.to_string()
-                .contains(VOTING_STARTS_BEFORE_KEY_DEADLINE_SELECTOR),
-            "{err}"
-        );
+        assert_eq!(err.to_string(), "refused");
     }
 }
