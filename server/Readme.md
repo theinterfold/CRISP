@@ -83,7 +83,10 @@ The server exposes several RESTful API endpoints:
 - `GET /rounds/current`: Get the current round information
 - `POST /rounds/public-key`: Get the public key for a specific round
 - `POST /rounds/ciphertext`: Get the ciphertext for a specific round
-- `POST /rounds/request`: Request a new E3 round (protected by API key)
+- `POST /rounds/request`: Request a new E3 round (protected by API key). The server key is the
+  requester, so it pays the E3 fee in the Interfold fee token. Before each request the server quotes
+  the fee and, if its allowance to Interfold is short, approves exactly the quoted fee. The key
+  needs a fee-token balance, but no manual `approve`.
 - `POST /state/result`: Get the result for a specific round
 - `GET /state/all`: Get results for all rounds
 - `POST /state/lite`: Get a lite version of the state for a specific round

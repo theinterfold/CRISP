@@ -15,6 +15,7 @@ import {
 } from '@interfold/contracts/scripts'
 import { Interfold__factory as InterfoldFactory } from '@interfold/contracts/types'
 
+import type { BaseContract } from 'ethers'
 import hre from 'hardhat'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -24,6 +25,37 @@ import { verifierNames } from '../scripts/verifiers'
 
 export interface CRISPDeploymentResult {
   governanceComplete: boolean
+}
+
+/**
+ * The block that mined the deployment transaction of `contract`. The recorded block is where an
+ * indexer starts reading the contract's events, so it must not be a later head that the chain has
+ * reached since the deployment.
+ */
+const deploymentBlock = async (contract: BaseContract): Promise<number> => {
+  const receipt = await contract.deploymentTransaction()?.wait()
+  if (!receipt) {
+    throw new Error(`No deployment transaction for ${await contract.getAddress()}`)
+  }
+  return receipt.blockNumber
+}
+
+/**
+ * The first block in `(from, to]` at which `address` has code, or `undefined` when it already had
+ * code at `from`. Only for a contract whose deployment the caller cannot reach, as with the Halo2
+ * verifier that `deployOpenVmReceiptVerifier` deploys inside the helper. Reading code instead of
+ * creation transactions also finds contracts deployed through a factory.
+ */
+const creationBlock = async (ethers: any, address: string, from: number, to: number): Promise<number | undefined> => {
+  const hasCode = async (block: number) => (await ethers.provider.getCode(address, block)) !== '0x'
+  if (await hasCode(from)) return undefined
+  let [low, high] = [from + 1, to]
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2)
+    if (await hasCode(middle)) high = middle
+    else low = middle + 1
+  }
+  return low
 }
 
 export const deployCRISPContracts = async (): Promise<CRISPDeploymentResult> => {
@@ -91,7 +123,7 @@ export const deployCRISPContracts = async (): Promise<CRISPDeploymentResult> => 
   storeDeploymentArgs(
     {
       address: ciphertextVerifierAddress,
-      blockNumber: await ethers.provider.getBlockNumber(),
+      blockNumber: await deploymentBlock(ciphertextVerifier),
       constructorArgs: { verifier, imageId: IMAGE_ID },
     },
     'OpenVmBfvCiphertextVerifier',
@@ -105,7 +137,7 @@ export const deployCRISPContracts = async (): Promise<CRISPDeploymentResult> => 
     storeDeploymentArgs(
       {
         address: poseidonT3Address,
-        blockNumber: await ethers.provider.getBlockNumber(),
+        blockNumber: await deploymentBlock(poseidonT3),
       },
       'PoseidonT3',
       chain,
@@ -137,7 +169,7 @@ export const deployCRISPContracts = async (): Promise<CRISPDeploymentResult> => 
   storeDeploymentArgs(
     {
       address: honkVerifierAddress,
-      blockNumber: await ethers.provider.getBlockNumber(),
+      blockNumber: await deploymentBlock(honkVerifier),
     },
     'HonkVerifier',
     chain,
@@ -165,7 +197,7 @@ export const deployCRISPContracts = async (): Promise<CRISPDeploymentResult> => 
   storeDeploymentArgs(
     {
       address: onchainHonkVerifierAddress,
-      blockNumber: await ethers.provider.getBlockNumber(),
+      blockNumber: await deploymentBlock(onchainHonkVerifier),
     },
     'OnchainHonkVerifier',
     chain,
@@ -187,7 +219,7 @@ export const deployCRISPContracts = async (): Promise<CRISPDeploymentResult> => 
   storeDeploymentArgs(
     {
       address: dataAvailabilityVerifierAddress,
-      blockNumber: await ethers.provider.getBlockNumber(),
+      blockNumber: await deploymentBlock(dataAvailabilityVerifier),
       constructorArgs: useMockDataAvailability
         ? {}
         : {
@@ -223,7 +255,7 @@ export const deployCRISPContracts = async (): Promise<CRISPDeploymentResult> => 
   storeDeploymentArgs(
     {
       address: crispAddress,
-      blockNumber: await ethers.provider.getBlockNumber(),
+      blockNumber: await deploymentBlock(crisp),
       constructorArgs: {
         initialOwner,
         verifierAddress: verifier,
@@ -278,7 +310,7 @@ export const deployCRISPContracts = async (): Promise<CRISPDeploymentResult> => 
     storeDeploymentArgs(
       {
         address: tokenAddress,
-        blockNumber: await ethers.provider.getBlockNumber(),
+        blockNumber: await deploymentBlock(token),
       },
       'MockVotingToken',
       chain,
@@ -295,7 +327,7 @@ export const deployCRISPContracts = async (): Promise<CRISPDeploymentResult> => 
   storeDeploymentArgs(
     {
       address: selfRegistryAddress,
-      blockNumber: await ethers.provider.getBlockNumber(),
+      blockNumber: await deploymentBlock(selfRegistry),
     },
     'SelfRegistry',
     chain,
@@ -352,12 +384,13 @@ export const deployVerifier = async (connectedEthers?: any): Promise<string> => 
     const mock = await ethers.deployContract('MockOpenVmReceiptVerifier')
     await mock.waitForDeployment()
     const address = await mock.getAddress()
-    storeDeploymentArgs({ address, blockNumber: await ethers.provider.getBlockNumber() }, 'MockOpenVmReceiptVerifier', chain)
+    storeDeploymentArgs({ address, blockNumber: await deploymentBlock(mock) }, 'MockOpenVmReceiptVerifier', chain)
     return address
   }
   // The identity `interfold program compile` wrote for the CRISP repository root, unless OPENVM_*
   // settings name one.
   const crispRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
+  const headBeforeDeploy = await ethers.provider.getBlockNumber()
   const {
     receipt: verifier,
     halo2Verifier,
@@ -365,16 +398,19 @@ export const deployVerifier = async (connectedEthers?: any): Promise<string> => 
     appExeCommit,
     appVmCommit,
   } = await deployOpenVmReceiptVerifier(ethers, compiledOpenVmEnvironment(crispRoot))
-  storeDeploymentArgs(
-    { address: halo2Verifier, blockNumber: await ethers.provider.getBlockNumber(), bytecodeHash: halo2RuntimeCodeHash },
-    'OpenVmHalo2Verifier',
-    chain,
-  )
+  const receiptVerifierBlock = await deploymentBlock(verifier)
+  // A verifier the helper deployed has no code at `headBeforeDeploy`. An `OPENVM_HALO2_VERIFIER`
+  // that existed before keeps the block of its earlier record, and no block when there is none.
+  const previousHalo2 = readDeploymentArgs('OpenVmHalo2Verifier', chain)
+  const halo2Block =
+    (await creationBlock(ethers, halo2Verifier, headBeforeDeploy, receiptVerifierBlock)) ??
+    (previousHalo2?.address.toLowerCase() === halo2Verifier.toLowerCase() ? previousHalo2.blockNumber : null)
+  storeDeploymentArgs({ address: halo2Verifier, blockNumber: halo2Block, bytecodeHash: halo2RuntimeCodeHash }, 'OpenVmHalo2Verifier', chain)
   const address = await verifier.getAddress()
   storeDeploymentArgs(
     {
       address,
-      blockNumber: await ethers.provider.getBlockNumber(),
+      blockNumber: receiptVerifierBlock,
       constructorArgs: { verifier: halo2Verifier, appExeCommit, appVmCommit },
     },
     'OpenVmReceiptVerifier',

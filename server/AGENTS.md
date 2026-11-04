@@ -18,12 +18,12 @@ procedure, and `.env.example` is the configuration reference that CI copies for 
   field, an event signature, or a digest is a coordinated change with `packages/crisp-contracts`,
   the SDK, and the deployed program; the server and program tests also embed
   `packages/crisp-contracts/deployed_contracts.json`.
-- `PRIVATE_KEY` signs every server transaction (`setMerkleRoot`, relayed inputs, finalization) and
-  must be the `INPUT_AVAILABILITY_SIGNER` stored in `CRISPProgram`. `AVAIL_SEED`, `CRON_API_KEY`,
-  and `ETHERSCAN_API_KEY` are secrets; the key in `.env.example` is only the local Anvil account.
-  Keep secrets out of logs, the browser, and committed files. The cron client and
-  `POST /rounds/request` fail closed without a key, and an empty `INDEX_CONTRACTS` denies every
-  `/chain/*` read on purpose.
+- `PRIVATE_KEY` signs every server transaction (`setMerkleRoot`, relayed inputs, finalization, and
+  the fee-token `approve` before each round request) and must be the `INPUT_AVAILABILITY_SIGNER`
+  stored in `CRISPProgram`. `AVAIL_SEED`, `CRON_API_KEY`, and `ETHERSCAN_API_KEY` are secrets; the
+  key in `.env.example` is only the local Anvil account. Keep secrets out of logs, the browser, and
+  committed files. The cron client and `POST /rounds/request` fail closed without a key, and an
+  empty `INDEX_CONTRACTS` denies every `/chain/*` read on purpose.
 - Backfill and replay run the live handlers. `INDEX_START_BLOCK` on a fresh database re-broadcasts
   `setMerkleRoot` for historical rounds from the server key. Relay limits count only this instance's
   own relays in its own database, so a lost database or a second instance weakens them.

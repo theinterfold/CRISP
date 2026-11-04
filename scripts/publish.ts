@@ -18,6 +18,13 @@ interface PackageJson {
   version: string
 }
 
+/**
+ * The Noir runtime the client must run. The SDK's own dependency defines it: the SDK's proofs are
+ * made with that `noir_js` and the Barretenberg backend built for it. The client keeps the same
+ * version as a pnpm override, so no other dependency can pull a second copy into its tree.
+ */
+const NOIR_JS = '@noir-lang/noir_js'
+
 /** The packages this script versions and publishes, in workspace order. */
 const PACKAGE_DIRS = ['packages/crisp-sdk', 'packages/crisp-contracts', 'packages/crisp-zk-inputs']
 
@@ -172,7 +179,14 @@ class CRISPPublisher {
 
         const steps: string[][] = [
           ['Update package versions in:', ...packages],
-          ...(this.tracksClient ? [['Update @crisp-e3/sdk dependency in client/package.json']] : []),
+          ...(this.tracksClient
+            ? [
+                [
+                  `Update @crisp-e3/sdk dependency and the ${NOIR_JS} override in client/package.json`,
+                  `${NOIR_JS} ${this.sdkNoirVersion()}`,
+                ],
+              ]
+            : []),
           ['Update pnpm-lock.yaml'],
           [`Build packages against ${channel.presets.join(', ')}`],
           [`Publish to npm under the "${this.options.tag || channel.tag}" tag:`, ...packages],
@@ -211,6 +225,7 @@ class CRISPPublisher {
         // Update client dependency when the selected channel owns the deployable client pin.
         if (this.tracksClient) {
           this.updateClientDependency()
+          this.updateClientNoirOverride()
         }
 
         // Update lock files
@@ -672,6 +687,46 @@ class CRISPPublisher {
       console.warn('   ⚠️  Could not update client dependency:', error)
     }
   }
+
+  /**
+   * The `noir_js` version the SDK depends on. It must be exact: the client override is an exact
+   * version, and a range here would leave nothing to copy.
+   */
+  private sdkNoirVersion(): string {
+    const sdkPackagePath = join(this.crispDir, 'packages/crisp-sdk/package.json')
+    const version: unknown = JSON.parse(readFileSync(sdkPackagePath, 'utf-8')).dependencies?.[NOIR_JS]
+
+    if (typeof version !== 'string' || !/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(version)) {
+      throw new Error(`packages/crisp-sdk/package.json must depend on an exact ${NOIR_JS} version; got ${JSON.stringify(version)}`)
+    }
+
+    return version
+  }
+
+  /**
+   * Keep the client's `noir_js` override on the version the SDK uses.
+   *
+   * Unlike the dependency update above, this fails the publish when the client has no override to
+   * move: a client left on another `noir_js` than the SDK it ships fails at proving time, not in
+   * any build.
+   */
+  private updateClientNoirOverride(): void {
+    console.log(`\n📝 Updating the client ${NOIR_JS} override...`)
+
+    const clientPackagePath = join(this.crispDir, 'client/package.json')
+    const packageJson = JSON.parse(readFileSync(clientPackagePath, 'utf-8'))
+    const overrides = packageJson.pnpm?.overrides
+    const sdkVersion = this.sdkNoirVersion()
+
+    if (!overrides || typeof overrides[NOIR_JS] !== 'string') {
+      throw new Error(`client/package.json has no pnpm.overrides["${NOIR_JS}"] to keep on the SDK's ${sdkVersion}`)
+    }
+
+    const oldVersion = overrides[NOIR_JS]
+    overrides[NOIR_JS] = sdkVersion
+    writeFileSync(clientPackagePath, JSON.stringify(packageJson, null, 2) + '\n')
+    console.log(oldVersion === sdkVersion ? `   ✓ Already ${sdkVersion}` : `   ✓ Updated ${NOIR_JS} from ${oldVersion} to ${sdkVersion}`)
+  }
 }
 
 // CLI interface
@@ -781,7 +836,8 @@ The script will:
   1. Check for uncommitted changes
   2. Update versions in @crisp-e3/sdk, @crisp-e3/contracts, @crisp-e3/zk-inputs
   2b. Build the SDK against the channel's preset set
-  3. Update @crisp-e3/sdk dependency in client/package.json   (prod only)
+  3. Update @crisp-e3/sdk dependency and the @noir-lang/noir_js override in client/package.json
+                                                               (prod only)
   4. Update pnpm-lock.yaml
   5. Build packages
   6. Publish to npm in dependency order (zk-inputs, then sdk, then contracts)

@@ -9,13 +9,11 @@ use crisp::config::CONFIG;
 use crisp::deployments::{self, LOCALHOST_CHAIN_ID};
 use crisp::e3_request::{self, ComputeProviderParams};
 use crisp::server::rpc;
-use e3_sdk::evm::contracts::{InterfoldContract, InterfoldRead, InterfoldWrite};
+use e3_sdk::evm::contracts::InterfoldContract;
 use evm_helpers::CRISPContract;
 use eyre::{bail, eyre, Result};
 use log::info;
 use serde_json::json;
-
-use super::approve;
 
 const ZERO_ADDRESS: &str = "0x0000000000000000000000000000000000000000";
 
@@ -159,41 +157,22 @@ pub async fn initialize_crisp_round(
     )
     .await?;
 
-    info!("Getting fee quote...");
-    let quote_window = e3_request::voting_window(&crisp_program).await?;
-    let fee_amount = contract
-        .get_e3_quote(
-            committee.size,
-            quote_window,
-            e3_program,
-            CONFIG.e3_param_set,
-            compute_provider_params.clone(),
-        )
-        .await?;
-    info!("Fee required: {fee_amount} tokens");
-
-    info!("Approving fee token...");
-    approve::approve_fee_token(fee_amount).await?;
-
-    // The quote and the approval take time: schedule the window from a fresh timestamp.
-    let input_window = e3_request::voting_window(&crisp_program).await?;
     info!("Requesting E3 on contract: {}", CONFIG.interfold_address);
-    info!(
-        "Requesting E3 with input_window [{}, {}] (buffer {}s)",
-        input_window[0], input_window[1], CONFIG.voting_start_buffer_seconds
-    );
-
-    let (res, e3_id) = contract
-        .request_e3(
-            committee.size,
-            input_window,
-            e3_program,
-            CONFIG.e3_param_set,
-            compute_provider_params,
-            custom_params,
-        )
-        .await
-        .map_err(format_request_e3_revert)?;
+    let (res, e3_id) = e3_request::request_round(
+        &contract,
+        &crisp_program,
+        committee,
+        e3_program,
+        CONFIG.e3_param_set,
+        &compute_provider_params,
+        &custom_params,
+    )
+    .await
+    // Only a failed request gets the request advice; a fee settlement error is returned as it is
+    .map_err(|err| match err.downcast::<e3_request::RequestE3Error>() {
+        Ok(request) => format_request_e3_revert(request),
+        Err(err) => err,
+    })?;
     info!("E3 request sent. TxHash: {:?}", res.transaction_hash);
     info!("E3 ID: {e3_id}");
 
