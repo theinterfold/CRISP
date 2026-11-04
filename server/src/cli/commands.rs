@@ -157,12 +157,11 @@ pub async fn initialize_crisp_round(
     )
     .await?;
 
-    let input_window = e3_request::voting_window(&crisp_program).await?;
     info!("Approving fee token...");
-    e3_request::approve_e3_fee(
+    let input_window = e3_request::settle_fee_and_window(
         &contract,
+        &crisp_program,
         committee,
-        input_window,
         e3_program,
         CONFIG.e3_param_set,
         &compute_provider_params,

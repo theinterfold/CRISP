@@ -366,16 +366,15 @@ async fn initialize_crisp_round(
         &CONFIG.e3_program_address,
     )
     .await?;
-    let input_window = e3_request::voting_window(&crisp_program).await?;
     let compute_provider_params =
         Bytes::from(bincode::serialize(&ComputeProviderParams::from_config())?);
 
     // The server key is the requester, so it pays the E3 fee. The request goes out with the window
-    // that the fee was quoted for.
-    e3_request::approve_e3_fee(
+    // that the fee was approved for.
+    let input_window = e3_request::settle_fee_and_window(
         &contract,
+        &crisp_program,
         committee,
-        input_window,
         e3_program,
         CONFIG.e3_param_set,
         &compute_provider_params,
