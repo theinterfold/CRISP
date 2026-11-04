@@ -12,7 +12,7 @@ use actix_web::{web, HttpRequest, HttpResponse};
 use alloy::primitives::{Address, Bytes, U256};
 use alloy::sol;
 use alloy::sol_types::SolEvent;
-use e3_sdk::evm::contracts::{InterfoldContract, InterfoldWrite};
+use e3_sdk::evm::contracts::InterfoldContract;
 use evm_helpers::CRISPContract;
 use log::{error, info};
 use serde::{Deserialize, Serialize};
@@ -371,26 +371,16 @@ async fn initialize_crisp_round(
 
     // The server key is the requester, so it pays the E3 fee. The request goes out with the window
     // that the fee was approved for.
-    let input_window = e3_request::settle_fee_and_window(
+    let (receipt, e3_id) = e3_request::request_round(
         &contract,
         &crisp_program,
         committee,
         e3_program,
         CONFIG.e3_param_set,
         &compute_provider_params,
+        &custom_params,
     )
     .await?;
-
-    let (receipt, e3_id) = contract
-        .request_e3(
-            committee.size,
-            input_window,
-            e3_program,
-            CONFIG.e3_param_set,
-            compute_provider_params,
-            custom_params,
-        )
-        .await?;
     info!(
         "E3 request sent. TxHash: {:?}, E3 ID: {}",
         receipt.transaction_hash, e3_id

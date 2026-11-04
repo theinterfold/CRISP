@@ -7,9 +7,10 @@
 //! The parts of an E3 round request that the `/rounds/request` route and the CLI share.
 //!
 //! Each caller still owns its compute-provider-params encoding (bincode on the server, JSON in
-//! the CLI) and the transaction itself.
+//! the CLI).
 
 use alloy::primitives::{Address, Bytes, U256};
+use alloy::rpc::types::TransactionReceipt;
 use alloy::sol;
 use alloy::sol_types::SolValue;
 use e3_sdk::evm::contracts::{
@@ -169,7 +170,7 @@ const MAX_WINDOW_ATTEMPTS: usize = 3;
 /// window is taken again and its fee is checked against the allowance again: the new window needs
 /// a new approval only if its quote is higher. The window returned is one whose fee needed no
 /// transaction, so only reads stand between it and `request_e3`.
-pub async fn settle_fee_and_window(
+async fn settle_fee_and_window(
     contract: &InterfoldContract<ReadWrite>,
     program: &CRISPContract,
     committee: Committee,
@@ -210,6 +211,72 @@ where
     eyre::bail!(
         "the fee needed a new approval for each of {MAX_WINDOW_ATTEMPTS} voting windows; try again"
     )
+}
+
+/// Selector of `CRISPProgram.VotingStartsBeforeKeyDeadline(uint256,uint256,uint256)`.
+const VOTING_STARTS_BEFORE_KEY_DEADLINE_SELECTOR: &str = "0x56d12960";
+
+/// Settle the fee and window of a round, then request it.
+///
+/// Reads stand between the window and the request, and the request takes time to mine; all of it
+/// is spent from the start buffer. When the program refuses the window with
+/// `VotingStartsBeforeKeyDeadline`, the refused request left no round behind, so the fee and window
+/// are settled again and the round is requested with the fresh window.
+pub async fn request_round(
+    contract: &InterfoldContract<ReadWrite>,
+    program: &CRISPContract,
+    committee: Committee,
+    e3_program: Address,
+    param_set: u8,
+    compute_provider_params: &Bytes,
+    custom_params: &Bytes,
+) -> eyre::Result<(TransactionReceipt, U256)> {
+    retry_refused_windows(|| async {
+        let window = settle_fee_and_window(
+            contract,
+            program,
+            committee,
+            e3_program,
+            param_set,
+            compute_provider_params,
+        )
+        .await?;
+        info!(
+            "Requesting E3 with input window [{}, {}] (buffer {}s)",
+            window[0], window[1], CONFIG.voting_start_buffer_seconds
+        );
+        contract
+            .request_e3(
+                committee.size,
+                window,
+                e3_program,
+                param_set,
+                compute_provider_params.clone(),
+                custom_params.clone(),
+            )
+            .await
+    })
+    .await
+}
+
+async fn retry_refused_windows<R, F, Fut>(mut request: F) -> eyre::Result<R>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = eyre::Result<R>>,
+{
+    let mut attempt = 1;
+    loop {
+        match request().await {
+            Err(err)
+                if attempt < MAX_WINDOW_ATTEMPTS
+                    && format!("{err:#}").contains(VOTING_STARTS_BEFORE_KEY_DEADLINE_SELECTOR) =>
+            {
+                warn!("The voting window started before the key deadline (attempt {attempt}/{MAX_WINDOW_ATTEMPTS}); requesting with a fresh window");
+                attempt += 1;
+            }
+            result => return result,
+        }
+    }
 }
 
 /// The ABI-encoded custom params of a CRISP round.
@@ -535,5 +602,64 @@ mod tests {
 
         assert_eq!(reads.get(), MAX_WINDOW_ATTEMPTS as u64);
         assert!(err.to_string().contains("new approval"), "{err}");
+    }
+
+    /// A request that the program refuses `refusals` times with `VotingStartsBeforeKeyDeadline`.
+    fn refusing(
+        refusals: usize,
+        calls: &std::cell::Cell<usize>,
+    ) -> impl FnMut() -> std::future::Ready<eyre::Result<u8>> + '_ {
+        move || {
+            let call = calls.get();
+            calls.set(call + 1);
+            std::future::ready(if call < refusals {
+                Err(eyre::eyre!(
+                    "execution reverted: custom error {VOTING_STARTS_BEFORE_KEY_DEADLINE_SELECTOR}"
+                ))
+            } else {
+                Ok(7)
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn a_refused_window_is_requested_again_with_a_fresh_one() {
+        let calls = std::cell::Cell::new(0);
+
+        let result = retry_refused_windows(refusing(1, &calls)).await.unwrap();
+
+        assert_eq!(result, 7);
+        assert_eq!(calls.get(), 2);
+    }
+
+    #[tokio::test]
+    async fn other_request_errors_are_not_retried() {
+        let calls = std::cell::Cell::new(0);
+
+        let err = retry_refused_windows(|| {
+            calls.set(calls.get() + 1);
+            std::future::ready(Err::<u8, _>(eyre::eyre!("execution reverted: 0x44ec930f")))
+        })
+        .await
+        .unwrap_err();
+
+        assert_eq!(calls.get(), 1);
+        assert!(err.to_string().contains("0x44ec930f"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn refused_windows_are_not_retried_forever() {
+        let calls = std::cell::Cell::new(0);
+
+        let err = retry_refused_windows(refusing(usize::MAX, &calls))
+            .await
+            .unwrap_err();
+
+        assert_eq!(calls.get(), MAX_WINDOW_ATTEMPTS);
+        assert!(
+            err.to_string()
+                .contains(VOTING_STARTS_BEFORE_KEY_DEADLINE_SELECTOR),
+            "{err}"
+        );
     }
 }

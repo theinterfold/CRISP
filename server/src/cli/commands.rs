@@ -9,7 +9,7 @@ use crisp::config::CONFIG;
 use crisp::deployments::{self, LOCALHOST_CHAIN_ID};
 use crisp::e3_request::{self, ComputeProviderParams};
 use crisp::server::rpc;
-use e3_sdk::evm::contracts::{InterfoldContract, InterfoldWrite};
+use e3_sdk::evm::contracts::InterfoldContract;
 use evm_helpers::CRISPContract;
 use eyre::{bail, eyre, Result};
 use log::info;
@@ -37,7 +37,7 @@ fn format_request_e3_revert(err: impl std::fmt::Display) -> eyre::Report {
         );
     }
     eyre!(
-        "request_e3 reverted: {msg}. Common causes: stale E3_PROGRAM_ADDRESS in server/.env \
+        "Requesting the E3 failed: {msg}. Common causes: stale E3_PROGRAM_ADDRESS in server/.env \
          (must match deployed CRISPProgram), inputWindow start in the past, or no registered \
          ciphernodes on the chain."
     )
@@ -157,34 +157,18 @@ pub async fn initialize_crisp_round(
     )
     .await?;
 
-    info!("Approving fee token...");
-    let input_window = e3_request::settle_fee_and_window(
+    info!("Requesting E3 on contract: {}", CONFIG.interfold_address);
+    let (res, e3_id) = e3_request::request_round(
         &contract,
         &crisp_program,
         committee,
         e3_program,
         CONFIG.e3_param_set,
         &compute_provider_params,
+        &custom_params,
     )
-    .await?;
-
-    info!("Requesting E3 on contract: {}", CONFIG.interfold_address);
-    info!(
-        "Requesting E3 with input_window [{}, {}] (buffer {}s)",
-        input_window[0], input_window[1], CONFIG.voting_start_buffer_seconds
-    );
-
-    let (res, e3_id) = contract
-        .request_e3(
-            committee.size,
-            input_window,
-            e3_program,
-            CONFIG.e3_param_set,
-            compute_provider_params,
-            custom_params,
-        )
-        .await
-        .map_err(format_request_e3_revert)?;
+    .await
+    .map_err(format_request_e3_revert)?;
     info!("E3 request sent. TxHash: {:?}", res.transaction_hash);
     info!("E3 ID: {e3_id}");
 
