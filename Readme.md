@@ -231,6 +231,15 @@ Avail Turing is unavailable, it uses `MockCrispDataAvailabilityVerifier`
 and `ALLOW_SEPOLIA_MOCK_DATA_AVAILABILITY=true`, and point the ciphernodes at the server's
 `/availability` route with `mode: mock_http`. Its two Noir verifiers come from the circuits in this
 directory, built with Noir `v1.0.0-rc.3` and bb `6.0.0`.
+
+Those nodes read every E3 output from this server, so another E3 program on the same mock must
+have its output here too. With `EXTERNAL_OUTPUTS_MAX_BYTES` set, its server uploads the output
+after `publishCiphertextOutput` with `PUT /availability/objects/<keccak256>?e3_id=<id>` and the raw
+bytes as the body. The CRISP server stores only the hash that Interfold holds as the output of an
+E3 in `CiphertextReady`, before its decryption deadline, so the route needs no credentials. It
+drops each output after that deadline. Nodes retry a missing output, so an upload after the
+publication is in time.
+
 Before starting the CRISP server with Avail:
 
 1. Register an Avail App ID for CRISP.
