@@ -26,7 +26,6 @@ use alloy::rpc::types::TransactionRequest;
 use alloy::sol;
 use alloy::sol_types::{Revert, SolCall, SolError, SolInterface};
 use alloy::transports::RpcError;
-use e3_sdk::evm::nonce::send_with_next_nonce;
 use log::{info, warn};
 
 use super::chain::identify;
@@ -188,14 +187,20 @@ async fn relay(
         .from(sender)
         .to(registrar)
         .with_input(calldata.clone());
-    if let Err(error) = provider.call(simulation).await {
+    if let Err(error) = provider.call(simulation.clone()).await {
         return simulation_failure(&error);
     }
+    // The estimate is the least gas the call succeeds with now. Sent with exactly that, a relayed registration ran out of
+    // gas on the local network (the registrar reaches the Aztec Inbox through the program), which burns the server key's
+    // fee and sends no MEMBER message, so leave a third of headroom.
+    let gas = match provider.estimate_gas(simulation).await {
+        Ok(gas) => gas,
+        Err(error) => return simulation_failure(&error),
+    };
 
-    let relay = alloy::contract::CallBuilder::new_raw(provider, calldata).to(registrar);
-    match send_with_next_nonce(relay, sender).await {
-        Ok(pending) => {
-            let tx_hash = encode_prefixed(pending.tx_hash());
+    match broadcast(provider, sender, registrar, calldata, gas.saturating_add(gas / 3)).await {
+        Ok(hash) => {
+            let tx_hash = encode_prefixed(hash);
             info!(
                 "[e3_id={}] Relayed the registration of slot {} to {registrar}: {tx_hash}",
                 call.e3Id, call.slot
@@ -207,6 +212,39 @@ async fn relay(
             super::upstream_unavailable()
         }
     }
+}
+
+/// Registrations broadcast one at a time, so that two of them never read the same pending nonce.
+static RELAY_TURN: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// Broadcast `calldata` to `registrar` with exactly `gas`, and return the transaction hash.
+///
+/// `send_with_next_nonce` is not used: it replaces the gas limit with the bare estimate, which is what ran a relayed
+/// registration out of gas. The nonce is the node's pending count, and `RELAY_TURN` keeps registrations from racing each
+/// other for it; a send from elsewhere in this process at the same instant could still take the same nonce, and the
+/// relay then answers 503 and the voter submits again.
+async fn broadcast(
+    provider: &DynProvider,
+    sender: Address,
+    registrar: Address,
+    calldata: Bytes,
+    gas: u64,
+) -> eyre::Result<alloy::primitives::B256> {
+    let _turn = RELAY_TURN.lock().await;
+    let fees = provider.estimate_eip1559_fees().await?;
+    let chain_id = provider.get_chain_id().await?;
+    let nonce = provider.get_transaction_count(sender).pending().await?;
+    let pending = alloy::contract::CallBuilder::new_raw(provider, calldata)
+        .from(sender)
+        .to(registrar)
+        .gas(gas)
+        .max_fee_per_gas(fees.max_fee_per_gas)
+        .max_priority_fee_per_gas(fees.max_priority_fee_per_gas)
+        .chain_id(chain_id)
+        .nonce(nonce)
+        .send()
+        .await?;
+    Ok(*pending.tx_hash())
 }
 
 #[cfg(test)]

@@ -276,4 +276,5 @@ Private gate counts (`aztec profile gates target`):
 The ZKPassport proof itself is verified by the registry (`assert_proof_valid`, 25,175 gates) and the
 fold proof by `verify_honk_proof` inside `cast`. `register_with_nationality` and
 `register_with_age_and_nationality` add one subproof each to the proof the registry verifies (outer
-circuits `outer_count_5` / `outer_count_6`); see `e2e/` for measured proving and registration times.
+circuits `outer_count_5` / `outer_count_6`). The e2e harness registers four voters with `register_with_age_and_nationality`
+(`outer_count_6`) on the local network; each mock-document proof took 43 to 71 seconds.

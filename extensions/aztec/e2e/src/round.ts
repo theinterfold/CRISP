@@ -28,8 +28,8 @@ import {
   createPublicClient,
   createWalletClient,
   encodeAbiParameters,
-  pad,
-  toHex,
+  keccak256,
+  stringToHex,
   zeroAddress,
   zeroHash,
   http,
@@ -159,7 +159,7 @@ const roundRules = async (path: Path, d: Deployment): Promise<RoundRules> => {
 /** What the ZKPassport mock verifier of `MockZKPassport.sol` reads from a proof (the registrar's own checks run for real). */
 type MockL1Proof = { identifier: Hex; age: bigint; nationality: string; boundTo: Address | undefined }
 
-const l1Identifier = (e3Id: bigint, index: number): Hex => pad(toHex(e3Id * 1000n + BigInt(index)), { size: 32 })
+const l1Identifier = (e3Id: bigint, index: number): Hex => keccak256(stringToHex(`${e3Id}:${index}`))
 
 const mockL1Proof = (slot: Address, mock: MockL1Proof): ZKPassportProofParams => ({
   version: zeroHash,
