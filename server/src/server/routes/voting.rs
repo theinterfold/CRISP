@@ -5,12 +5,12 @@
 // or FITNESS FOR A PARTICULAR PURPOSE.
 
 use super::{
-    chain::{admit, identify},
+    chain::{admit, charge, identify},
     state::job_response,
 };
 use crate::server::{
     app_data::AppData,
-    data_availability::{input_rejection_message, AvailabilityService},
+    data_availability::{input_rejection_message, AvailabilityService, ExternalOutputError},
     models::{
         canonical_e3_id, e3_id_to_u256, InputSelectionRequest, VoteRequest, VoteResponse,
         VoteResponseStatus, VoteStatusRequest, VoteStatusResponse,
@@ -22,16 +22,24 @@ use crate::server::{
 use actix_web::{web, HttpRequest, HttpResponse, Responder};
 use alloy::primitives::B256;
 use log::{error, info, warn};
+use serde::Deserialize;
 use std::str::FromStr;
 
 /// Cost of one selection read in the caller's read window. The server answers from its own index
 /// and makes no upstream call.
 const SELECTION_READ_COST: usize = 1;
+/// Upstream reads before an external output is stored: the E3 stage, the E3, its deadlines, and
+/// the chain time.
+const EXTERNAL_OUTPUT_READ_COST: usize = 4;
 
 pub fn setup_routes(config: &mut web::ServiceConfig) {
-    config.route(
-        "/availability/objects/{content_hash}",
-        web::get().to(get_available_object),
+    config.service(
+        web::resource("/availability/objects/{content_hash}")
+            .app_data(web::PayloadConfig::new(
+                e3_data_availability::MAX_OBJECT_BYTES,
+            ))
+            .route(web::get().to(get_available_object))
+            .route(web::put().to(put_external_output)),
     );
     config.service(
         web::scope("/voting")
@@ -89,6 +97,58 @@ async fn get_available_object(
         Err(error) => {
             error!("Failed to read an availability object: {error}");
             HttpResponse::InternalServerError().body("Availability storage is unavailable")
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct ExternalOutputQuery {
+    e3_id: String,
+}
+
+/// Store the aggregate ciphertext of another E3 program, so ciphernodes that read this server
+/// can fetch it. See `AvailabilityService::store_external_output` for what is accepted.
+async fn put_external_output(
+    request: HttpRequest,
+    content_hash: web::Path<String>,
+    query: web::Query<ExternalOutputQuery>,
+    body: web::Bytes,
+    availability: web::Data<AvailabilityService>,
+    limiter: web::Data<ChainRateLimiter>,
+) -> impl Responder {
+    let Ok(content_hash) = B256::from_str(&content_hash) else {
+        return HttpResponse::BadRequest().body("Invalid content hash");
+    };
+    if let Err(refusal) = charge(
+        &request,
+        &limiter,
+        EXTERNAL_OUTPUT_READ_COST,
+        "/availability/objects",
+    ) {
+        return refusal;
+    }
+    match availability
+        .store_external_output(&query.e3_id, content_hash, &body)
+        .await
+    {
+        Ok(()) => {
+            info!(
+                "[e3_id={}] Stored external output {content_hash}",
+                query.e3_id
+            );
+            HttpResponse::Ok().finish()
+        }
+        Err(ExternalOutputError::Disabled) => HttpResponse::NotFound().finish(),
+        Err(ExternalOutputError::Invalid(message)) => HttpResponse::BadRequest().body(message),
+        Err(ExternalOutputError::NotReferenced(message)) => HttpResponse::Conflict().body(message),
+        Err(ExternalOutputError::Full) => HttpResponse::InsufficientStorage()
+            .body("External output storage is full; retry after a decryption deadline passes"),
+        Err(ExternalOutputError::Unavailable(error)) => {
+            error!(
+                "[e3_id={}] Could not store an external output: {error}",
+                query.e3_id
+            );
+            HttpResponse::ServiceUnavailable().body("Availability storage is unavailable")
         }
     }
 }

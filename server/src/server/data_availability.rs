@@ -65,6 +65,9 @@ const RELAY_LEDGER_EPOCH_KEY: &[u8] = b"ledger-epoch";
 const RELAY_FUNDING_GRACE_SECONDS: u64 = 300;
 /// The deadline of a job on the mock backend, which has none.
 const NO_DEADLINE: u64 = u64::MAX;
+/// Bytes before the object in an external-output record: the decryption deadline of its E3, so
+/// an expired record can be dropped without a chain read.
+const EXTERNAL_OUTPUT_HEADER_LEN: usize = 8;
 
 /// Process-wide, because the limit protects the processor, and one process can serve more than
 /// one round.
@@ -116,6 +119,52 @@ fn duration_u64(value: U256, name: &str) -> anyhow::Result<u64> {
     value
         .try_into()
         .map_err(|_| anyhow::anyhow!("{name} does not fit in u64"))
+}
+
+/// Why `store_external_output` did not store an object.
+#[derive(Debug)]
+pub enum ExternalOutputError {
+    /// The server does not accept external outputs: it is not in mock mode, or it has no
+    /// allowance for them.
+    Disabled,
+    /// The request cannot succeed as sent.
+    Invalid(&'static str),
+    /// Ethereum does not, or no longer, reference this object as the output of the E3.
+    NotReferenced(&'static str),
+    /// Outputs that ciphernodes may still fetch fill the allowance.
+    Full,
+    /// A chain read or the database failed.
+    Unavailable(anyhow::Error),
+}
+
+impl From<anyhow::Error> for ExternalOutputError {
+    fn from(error: anyhow::Error) -> Self {
+        Self::Unavailable(error)
+    }
+}
+
+impl From<sled::Error> for ExternalOutputError {
+    fn from(error: sled::Error) -> Self {
+        Self::Unavailable(error.into())
+    }
+}
+
+/// Why Interfold's state for an E3 in `CiphertextReady` does not let `content_hash` be served,
+/// if it does not.
+fn external_output_refusal(
+    ciphertext_output: B256,
+    content_hash: B256,
+    decryption_deadline: u64,
+    now: u64,
+) -> Option<&'static str> {
+    if ciphertext_output != content_hash {
+        return Some("the E3 published a different output");
+    }
+    // `publishPlaintextOutput` accepts a decryption up to and including the deadline.
+    if now > decryption_deadline {
+        return Some("the decryption deadline of the E3 has passed");
+    }
+    None
 }
 
 /// Return a stable client message only when the caller's ballot was conclusively rejected.
@@ -710,6 +759,14 @@ pub struct AvailabilityService {
     input_duration_seconds: u64,
     proof_lead_seconds: u64,
     max_pending_bytes: u64,
+    /// Aggregate ciphertexts of other E3 programs, served beside CRISP's objects in mock mode
+    /// (`store_external_output`). Kept apart from `objects`, so they never use the allowance of
+    /// CRISP's own jobs. Each value is `decryptionDeadline (u64, big-endian) || bytes`.
+    external_outputs: Tree,
+    /// Serializes external-output admissions, so concurrent uploads cannot pass the limit together.
+    external_outputs_lock: Arc<Mutex<()>>,
+    /// Zero turns `store_external_output` off.
+    external_outputs_max_bytes: u64,
 }
 
 struct ActiveJobGuard<'a> {
@@ -778,6 +835,13 @@ impl AvailabilityService {
                 input_duration_seconds: config.e3_duration,
                 proof_lead_seconds: config.avail_proof_lead(),
                 max_pending_bytes: config.data_availability_max_pending_bytes,
+                external_outputs: db.open_tree("data-availability-external-outputs")?,
+                external_outputs_lock: Arc::default(),
+                external_outputs_max_bytes: if config.data_availability_mode() == "mock" {
+                    config.external_outputs_max_bytes
+                } else {
+                    0
+                },
             };
         service.validate_storage()?;
         Ok(service)
@@ -1238,7 +1302,107 @@ impl AvailabilityService {
 
     pub fn object(&self, hash: &str) -> anyhow::Result<Option<Vec<u8>>> {
         let key = hex::decode(hash.strip_prefix("0x").unwrap_or(hash))?;
-        Ok(self.objects.get(key)?.map(|value| value.to_vec()))
+        if let Some(value) = self.objects.get(&key)? {
+            return Ok(Some(value.to_vec()));
+        }
+        Ok(self
+            .external_outputs
+            .get(&key)?
+            .and_then(|value| value.get(EXTERNAL_OUTPUT_HEADER_LEN..).map(<[u8]>::to_vec)))
+    }
+
+    /// Keep the aggregate ciphertext of another E3 program so ciphernodes can fetch it here.
+    ///
+    /// Accepts only the exact output that Interfold already references for an E3 that still waits
+    /// for its decryption. `publishCiphertextOutput` records that hash only after the program's
+    /// compute proof and availability check pass, and only a registered program reaches it, so the
+    /// caller needs no identity: valid bytes are the same whoever sends them. Uploading after the
+    /// publication is enough, because ciphernodes retry a missing output.
+    pub async fn store_external_output(
+        &self,
+        e3_id: &str,
+        content_hash: B256,
+        bytes: &[u8],
+    ) -> Result<(), ExternalOutputError> {
+        if self.external_outputs_max_bytes == 0 {
+            return Err(ExternalOutputError::Disabled);
+        }
+        let e3_id = e3_id_to_u256(e3_id)
+            .map_err(|_| ExternalOutputError::Invalid("e3_id must be a decimal E3 identifier"))?;
+        if e3_data_availability::validate_object_bytes(bytes).is_err() {
+            return Err(ExternalOutputError::Invalid(
+                "the object must hold between 1 byte and the data-availability object limit",
+            ));
+        }
+        if keccak256(bytes) != content_hash {
+            return Err(ExternalOutputError::Invalid(
+                "the body does not hash to the content hash in the path",
+            ));
+        }
+        if self.external_outputs.contains_key(content_hash)? {
+            return Ok(());
+        }
+
+        if self.e3_stage(e3_id, BlockId::latest()).await? != StoredE3Stage::CiphertextReady {
+            return Err(ExternalOutputError::NotReferenced(
+                "the E3 is not waiting for the decryption of a published output",
+            ));
+        }
+        let interfold = self.interfold_read().await?;
+        let e3 = interfold.get_e3(e3_id).await.map_err(from_eyre)?;
+        let deadlines = interfold.get_deadlines(e3_id).await.map_err(from_eyre)?;
+        let decryption_deadline =
+            duration_u64(deadlines.decryptionDeadline, "decryption deadline")?;
+        let now = self.chain_timestamp().await?;
+        if let Some(reason) =
+            external_output_refusal(e3.ciphertextOutput, content_hash, decryption_deadline, now)
+        {
+            return Err(ExternalOutputError::NotReferenced(reason));
+        }
+        self.admit_external_output(content_hash, decryption_deadline, now, bytes)
+    }
+
+    /// Store a referenced external output after dropping every record whose decryption deadline
+    /// has passed: ciphernodes cannot use those any more. Refuses only when live outputs fill the
+    /// allowance.
+    fn admit_external_output(
+        &self,
+        content_hash: B256,
+        decryption_deadline: u64,
+        now: u64,
+        bytes: &[u8],
+    ) -> Result<(), ExternalOutputError> {
+        let _admission = lock(&self.external_outputs_lock);
+        let mut used: u64 = 0;
+        for entry in self.external_outputs.iter() {
+            let (key, value) = entry?;
+            let deadline = value
+                .get(..EXTERNAL_OUTPUT_HEADER_LEN)
+                .and_then(|header| header.try_into().ok())
+                .map(u64::from_be_bytes);
+            match deadline {
+                Some(deadline) if deadline >= now => {
+                    used = used.saturating_add((value.len() - EXTERNAL_OUTPUT_HEADER_LEN) as u64);
+                }
+                _ => {
+                    self.external_outputs.remove(key)?;
+                }
+            }
+        }
+        if self.external_outputs.contains_key(content_hash)? {
+            self.external_outputs.flush()?;
+            return Ok(());
+        }
+        if used.saturating_add(bytes.len() as u64) > self.external_outputs_max_bytes {
+            self.external_outputs.flush()?;
+            return Err(ExternalOutputError::Full);
+        }
+        let mut record = Vec::with_capacity(EXTERNAL_OUTPUT_HEADER_LEN + bytes.len());
+        record.extend_from_slice(&decryption_deadline.to_be_bytes());
+        record.extend_from_slice(bytes);
+        self.external_outputs.insert(content_hash, record)?;
+        self.external_outputs.flush()?;
+        Ok(())
     }
 
     fn object_required(&self, content_hash: [u8; 32]) -> anyhow::Result<Vec<u8>> {
@@ -2579,6 +2743,9 @@ mod tests {
             input_duration_seconds: 0,
             proof_lead_seconds: 0,
             max_pending_bytes,
+            external_outputs: db.open_tree("external-outputs").unwrap(),
+            external_outputs_lock: Arc::default(),
+            external_outputs_max_bytes: 0,
         }
     }
 
@@ -4200,5 +4367,93 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(rejection(error), Some("The E3 identifier is invalid"));
+    }
+
+    fn external_service(max_bytes: u64) -> AvailabilityService {
+        let mut service = test_service(1024);
+        service.external_outputs_max_bytes = max_bytes;
+        service
+    }
+
+    fn hash_hex(bytes: &[u8]) -> String {
+        format!("0x{}", hex::encode(keccak256(bytes)))
+    }
+
+    #[test]
+    fn an_external_output_must_be_the_referenced_one_before_its_decryption_deadline() {
+        let hash = keccak256(b"output");
+        assert_eq!(external_output_refusal(hash, hash, 100, 100), None);
+        assert_eq!(
+            external_output_refusal(hash, hash, 100, 101),
+            Some("the decryption deadline of the E3 has passed")
+        );
+        assert_eq!(
+            external_output_refusal(keccak256(b"other"), hash, 100, 0),
+            Some("the E3 published a different output")
+        );
+    }
+
+    #[test]
+    fn an_admitted_external_output_is_served_as_its_exact_bytes() {
+        let service = external_service(1024);
+        service
+            .admit_external_output(keccak256(b"output"), 100, 0, b"output")
+            .unwrap();
+        assert_eq!(
+            service.object(&hash_hex(b"output")).unwrap(),
+            Some(b"output".to_vec())
+        );
+    }
+
+    #[test]
+    fn expired_external_outputs_free_the_allowance_and_live_ones_hold_it() {
+        let service = external_service(8);
+        service
+            .admit_external_output(keccak256(b"first"), 10, 0, b"first")
+            .unwrap();
+        assert!(matches!(
+            service.admit_external_output(keccak256(b"second"), 20, 10, b"second"),
+            Err(ExternalOutputError::Full)
+        ));
+        assert_eq!(
+            service.object(&hash_hex(b"first")).unwrap(),
+            Some(b"first".to_vec())
+        );
+
+        service
+            .admit_external_output(keccak256(b"second"), 20, 11, b"second")
+            .unwrap();
+        assert_eq!(service.object(&hash_hex(b"first")).unwrap(), None);
+        assert_eq!(
+            service.object(&hash_hex(b"second")).unwrap(),
+            Some(b"second".to_vec())
+        );
+    }
+
+    #[tokio::test]
+    async fn external_outputs_are_refused_without_an_allowance_or_with_other_bytes() {
+        let off = external_service(0);
+        assert!(matches!(
+            off.store_external_output("1", keccak256(b"output"), b"output")
+                .await,
+            Err(ExternalOutputError::Disabled)
+        ));
+
+        // The test service has no RPC, so these refusals come before any chain read.
+        let on = external_service(1024);
+        assert!(matches!(
+            on.store_external_output("1", keccak256(b"output"), b"swapped")
+                .await,
+            Err(ExternalOutputError::Invalid(_))
+        ));
+        assert!(matches!(
+            on.store_external_output("1", keccak256(b""), b"").await,
+            Err(ExternalOutputError::Invalid(_))
+        ));
+        assert!(matches!(
+            on.store_external_output("not-an-e3", keccak256(b"output"), b"output")
+                .await,
+            Err(ExternalOutputError::Invalid(_))
+        ));
     }
 }

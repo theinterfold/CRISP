@@ -63,6 +63,12 @@ pub struct Config {
     /// Maximum bytes the service accepts for unfinished availability jobs.
     #[serde(default = "default_da_pending_bytes")]
     pub data_availability_max_pending_bytes: u64,
+    /// Bytes this server keeps for the aggregate ciphertexts of other E3 programs on the same
+    /// Interfold. Their servers upload them to `PUT /availability/objects/{hash}`, so ciphernodes
+    /// that read this server in `mock_http` mode can fetch them. Mock data availability only;
+    /// zero (the default) turns the upload route off.
+    #[serde(default)]
+    pub external_outputs_max_bytes: u64,
     /// Shared secret for the round-scheduler endpoint. Absent disables the endpoint.
     #[serde(default)]
     pub cron_api_key: Option<String>,
@@ -200,6 +206,10 @@ impl Config {
             config.avail_proof_lead(),
             config.data_availability_max_pending_bytes,
         )?;
+        Self::validate_external_outputs(
+            &config.data_availability_mode(),
+            config.external_outputs_max_bytes,
+        )?;
         Self::validate_relay(
             config.chain_id,
             config.mainnet_relay,
@@ -314,6 +324,26 @@ impl Config {
         Ok(())
     }
 
+    /// Refuse an external-output allowance outside mock data availability, where ciphernodes read
+    /// Avail and never this server, and one too small for a single object.
+    fn validate_external_outputs(mode: &str, max_bytes: u64) -> Result<(), ConfigError> {
+        if max_bytes == 0 {
+            return Ok(());
+        }
+        if mode != "mock" {
+            return Err(invalid(
+                "EXTERNAL_OUTPUTS_MAX_BYTES requires DATA_AVAILABILITY_MODE=mock",
+            ));
+        }
+        if max_bytes < e3_data_availability::MAX_OBJECT_BYTES as u64 {
+            return Err(invalid(format!(
+                "EXTERNAL_OUTPUTS_MAX_BYTES must be 0 or at least {}",
+                e3_data_availability::MAX_OBJECT_BYTES
+            )));
+        }
+        Ok(())
+    }
+
     fn validate_e3_param_set(chain_id: u64, param_set: u8) -> Result<(), ConfigError> {
         if param_set != 0 && param_set != 2 {
             return Err(invalid(format!(
@@ -406,6 +436,15 @@ mod tests {
         assert!(Config::validate_data_availability(11_155_111, "mock", true, 0, 0).is_ok());
         assert!(Config::validate_data_availability(1_337, "mock", false, 0, 0).is_ok());
         assert!(Config::validate_data_availability(31_337, "mock", false, 0, 0).is_ok());
+    }
+
+    #[test]
+    fn external_outputs_need_mock_data_availability_and_room_for_one_object() {
+        let object = e3_data_availability::MAX_OBJECT_BYTES as u64;
+        assert!(Config::validate_external_outputs("avail", 0).is_ok());
+        assert!(Config::validate_external_outputs("avail", object).is_err());
+        assert!(Config::validate_external_outputs("mock", object - 1).is_err());
+        assert!(Config::validate_external_outputs("mock", object).is_ok());
     }
 
     #[test]
