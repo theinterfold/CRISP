@@ -6,16 +6,19 @@
 
 // Registers voters on a local network with REAL mock-document ZKPassport proofs: seeds the vendored registry, deploys a
 // CrispAztec whose L1 program is an anvil account standing in for CRISPAztecProgram, opens rounds through the real Inbox
-// with the real scope hash, and lands `register` (no age) and `register_with_age`.
+// with the real scope hash, and lands `register` (no age), `register_with_age`, `register_with_nationality` (in / not in a list)
+// and `register_with_age_and_nationality`.
 //
 //   tsx src/demo.ts            (AZTEC_NODE_URL, L1_RPC_URL override the local-network defaults)
 import {
   CrispAztec,
   SECRET_HASH,
   connectAztec,
+  NATIONALITY_MODE,
   deployCrispAztec,
   e3IdOf,
   encodeRoundMessage,
+  nationalityCommitment,
   roundContent,
   scopeHashOf,
   scopeOf,
@@ -102,8 +105,16 @@ const main = async () => {
     return { content, leaf: result[0], index: result[1] }
   }
 
-  const results: { e3Id: bigint; minAge: number; circuit: string; txHash: string; logs: unknown[] }[] = []
-  for (const [roundId, minAge] of [[9001n, 0], [9002n, 18]] as const) {
+  type Rule = { mode: 1 | 2; countries: string[] }
+  const results: { e3Id: bigint; minAge: number; nationality?: Rule; circuit: string; txHash: string; logs: unknown[] }[] = []
+  // The mock document's nationality is ZKR: it is in [ZKR, DEU], and not in [PRK, IRN].
+  const rounds: [bigint, number, Rule | undefined][] = [
+    [9001n, 0, undefined],
+    [9002n, 18, undefined],
+    [9003n, 0, { mode: NATIONALITY_MODE.IN, countries: ['ZKR', 'DEU'] }],
+    [9004n, 18, { mode: NATIONALITY_MODE.OUT, countries: ['PRK', 'IRN'] }],
+  ]
+  for (const [roundId, minAge, nationality] of rounds) {
     const e3Id = e3IdOf(INTERFOLD, roundId)
     const now = await chainTime(deployer.node)
     const config: RoundConfig = {
@@ -116,9 +127,12 @@ const main = async () => {
       scopeHash: scopeHashOf(info.l1ChainId, program.address, e3Id),
       minAge: BigInt(minAge),
       allowMockDocuments: true,
+      l1Registration: false,
+      nationalityMode: nationality?.mode ?? NATIONALITY_MODE.NONE,
+      nationalityCommitment: nationality ? await nationalityCommitment(nationality.mode, nationality.countries) : 0n,
     }
     await crisp.openRound(config, await sendRound(config))
-    log(`round ${roundId} (e3 ${e3Id}) open on Aztec (min age ${minAge})`)
+    log(`round ${roundId} (e3 ${e3Id}) open on Aztec (min age ${minAge}, nationality ${JSON.stringify(nationality ?? null)})`)
 
     // The voter: a fresh account; the proof is bound to it and to this round's scope.
     const voter = await connectAztec(NODE_URL)
@@ -130,6 +144,7 @@ const main = async () => {
         domain: domainHash(DOMAIN),
         scope: scopeOf(info.l1ChainId, program.address, e3Id),
         minAge,
+        nationality,
         now: await chainTime(voter.node),
         documentNumber: `ZKR${roundId}`,
       })
@@ -139,7 +154,7 @@ const main = async () => {
       const sent = await client.register({ e3Id, slot, proof })
       const logs = await client.logs('MemberRegistered', { e3Id })
       log(`registered slot ${slot} for e3 ${e3Id}: tx ${sent.txHash} block ${sent.blockNumber}`)
-      results.push({ e3Id, minAge, circuit: proof.circuit, txHash: sent.txHash, logs })
+      results.push({ e3Id, minAge, nationality, circuit: proof.circuit, txHash: sent.txHash, logs })
     } finally {
       await voter.stop()
     }
@@ -200,6 +215,19 @@ const main = async () => {
     await expectRefused('the document that already registered', async (voter, client) => {
       const proof = await prove(voter, { documentNumber: 'ZKR9001' })
       await client.register({ e3Id, slot: slot(4), proof })
+    })
+    await expectRefused('a proof for another nationality list', async (voter, client) => {
+      // Round 9003 asks for a nationality in [ZKR, DEU]; this proof is for [ZKR] alone.
+      const e3 = e3IdOf(INTERFOLD, 9003n)
+      const proof = await generateMockRegistrationProof({
+        aztecAddress: voter.address.toString(),
+        domain,
+        scope: scopeOf(info.l1ChainId, program.address, e3),
+        nationality: { mode: 1, countries: ['ZKR'] },
+        now: await chainTime(voter.node),
+        documentNumber: 'ZKRBAD005',
+      })
+      await client.register({ e3Id: e3, slot: slot(5), proof })
     })
     console.log(JSON.stringify(refused, null, 2))
   }

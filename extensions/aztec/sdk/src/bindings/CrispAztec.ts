@@ -140,6 +140,9 @@ input_ids: {
   /** Type-safe wrappers for the public methods exposed by the contract. */
   public declare methods: {
     
+    /** add_member_from_l1(round_id: field, slot: field, leaf_index: field) */
+    add_member_from_l1: ((round_id: FieldLike, slot: FieldLike, leaf_index: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+
     /** cast(round_id: field, vk: array, proof: array, slot: field, ct_commitment: field, encrypted_vote_hash: array, parent_index_plus_one: integer, prev_commitment: field, census_root: field, expires_at: integer, signature: array) */
     cast: ((round_id: FieldLike, vk: FieldLike[], proof: FieldLike[], slot: FieldLike, ct_commitment: FieldLike, encrypted_vote_hash: (bigint | number)[], parent_index_plus_one: (bigint | number), prev_commitment: FieldLike, census_root: FieldLike, expires_at: (bigint | number), signature: (bigint | number)[]) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
@@ -182,8 +185,8 @@ input_ids: {
     /** offchain_receive(messages: struct) */
     offchain_receive: ((messages: { ciphertext: FieldLike[], recipient: AztecAddressLike, tx_hash: OptionLike<FieldLike>, anchor_block_timestamp: (bigint | number) }[]) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
-    /** open_round(round_id: field, num_options: field, credits: field, input_start: integer, input_end: integer, input_limit: integer, scope_hash: field, min_age: integer, allow_mock_documents: boolean, leaf_index: field) */
-    open_round: ((round_id: FieldLike, num_options: FieldLike, credits: FieldLike, input_start: (bigint | number), input_end: (bigint | number), input_limit: (bigint | number), scope_hash: FieldLike, min_age: (bigint | number), allow_mock_documents: boolean, leaf_index: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+    /** open_round(round_id: field, num_options: field, credits: field, input_start: integer, input_end: integer, input_limit: integer, scope_hash: field, min_age: integer, allow_mock_documents: boolean, l1_registration: boolean, nationality_mode: integer, nationality_commitment: field, leaf_index: field) */
+    open_round: ((round_id: FieldLike, num_options: FieldLike, credits: FieldLike, input_start: (bigint | number), input_end: (bigint | number), input_limit: (bigint | number), scope_hash: FieldLike, min_age: (bigint | number), allow_mock_documents: boolean, l1_registration: boolean, nationality_mode: (bigint | number), nationality_commitment: FieldLike, leaf_index: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** public_dispatch(selector: field) */
     public_dispatch: ((selector: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
@@ -196,6 +199,12 @@ input_ids: {
 
     /** register_with_age(round_id: field, slot: field) */
     register_with_age: ((round_id: FieldLike, slot: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+
+    /** register_with_age_and_nationality(round_id: field, slot: field) */
+    register_with_age_and_nationality: ((round_id: FieldLike, slot: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+
+    /** register_with_nationality(round_id: field, slot: field) */
+    register_with_nationality: ((round_id: FieldLike, slot: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** sync_state(scope: struct) */
     sync_state: ((scope: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;

@@ -49,8 +49,12 @@ const config: HardhatUserConfig = {
   },
   solidity: {
     version: '0.8.28',
-    // Interfold's own mocks, built here so the tests can stand in for Interfold and the OpenVM and data-availability verifiers.
-    npmFilesToBuild: ['@interfold/contracts/contracts/test/MockDataAvailabilityVerifier.sol'],
+    // Interfold's own mocks, built here so the tests can stand in for Interfold and the OpenVM and data-availability verifiers,
+    // and the registrar, which no contract of this package imports but the deploy script deploys.
+    npmFilesToBuild: [
+      '@interfold/contracts/contracts/test/MockDataAvailabilityVerifier.sol',
+      '@crisp-e3/extension-core/contracts/ZKPassportRegistrar.sol',
+    ],
     settings: {
       evmVersion: 'paris',
       optimizer: { enabled: true, runs: 1 },

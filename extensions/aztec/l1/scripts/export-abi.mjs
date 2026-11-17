@@ -4,12 +4,16 @@
 // without even the implied warranty of MERCHANTABILITY
 // or FITNESS FOR A PARTICULAR PURPOSE.
 
-// Writes `abi/CRISPAztecProgram.json` (the ABI the SDK, keeper and server consume) from the compiled artifact.
-// `tests/abi.test.ts` fails when the tracked file drifts from the contract.
+// Writes `abi/CRISPAztecProgram.json` and `abi/ZKPassportRegistrar.json` (the ABIs the SDK, keeper and server consume)
+// from the compiled artifacts. `tests/abi.test.ts` fails when a tracked file drifts from its contract.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 
-const artifact = JSON.parse(
-  readFileSync(new URL('../artifacts/contracts/CRISPAztecProgram.sol/CRISPAztecProgram.json', import.meta.url), 'utf8'),
-)
+const artifacts = {
+  CRISPAztecProgram: '../artifacts/contracts/CRISPAztecProgram.sol/CRISPAztecProgram.json',
+  ZKPassportRegistrar: '../artifacts/@crisp-e3/extension-core/contracts/ZKPassportRegistrar.sol/ZKPassportRegistrar.json',
+}
 mkdirSync(new URL('../abi/', import.meta.url), { recursive: true })
-writeFileSync(new URL('../abi/CRISPAztecProgram.json', import.meta.url), `${JSON.stringify(artifact.abi, null, 2)}\n`)
+for (const [name, artifact] of Object.entries(artifacts)) {
+  const { abi } = JSON.parse(readFileSync(new URL(artifact, import.meta.url), 'utf8'))
+  writeFileSync(new URL(`../abi/${name}.json`, import.meta.url), `${JSON.stringify(abi, null, 2)}\n`)
+}

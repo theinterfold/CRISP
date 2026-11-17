@@ -9,10 +9,12 @@ import { describe, expect, it } from 'vitest'
 
 import {
   encodeKeyMessage,
+  encodeMemberMessage,
   encodeRootMessage,
   encodeRoundMessage,
   e3IdOf,
   keyContent,
+  memberContent,
   rootContent,
   roundContent,
   roundIdOf,
@@ -28,21 +30,39 @@ import { computeSecretHash } from '@aztec-labs/stdlib/hash'
 const vectors = JSON.parse(readFileSync(new URL('../../l1/tests/fixtures/message-vectors.json', import.meta.url), 'utf8'))
 
 describe('L1 message vectors', () => {
-  it('encodes and hashes the ROUND message like CRISPRemoteMessages.round', () => {
-    const f = vectors.round.fields
-    const config = {
-      roundId: BigInt(f.roundId),
-      numOptions: BigInt(f.numOptions),
-      credits: BigInt(f.credits),
-      inputStart: BigInt(f.inputStart),
-      inputEnd: BigInt(f.inputEnd),
-      inputLimit: BigInt(f.inputLimit),
-      scopeHash: BigInt(f.scopeHash),
-      minAge: BigInt(f.minAge),
-      allowMockDocuments: f.allowMockDocuments,
-    }
-    expect(encodeRoundMessage(config)).toBe(vectors.round.abiEncoded)
-    expect(roundContent(config)).toBe(BigInt(vectors.round.contentDecimal))
+  const roundConfig = (f: Record<string, string | number | boolean>) => ({
+    roundId: BigInt(f.roundId as string),
+    numOptions: BigInt(f.numOptions as string),
+    credits: BigInt(f.credits as string),
+    inputStart: BigInt(f.inputStart as string),
+    inputEnd: BigInt(f.inputEnd as string),
+    inputLimit: BigInt(f.inputLimit as string),
+    scopeHash: BigInt(f.scopeHash as string),
+    minAge: BigInt(f.minAge as string),
+    allowMockDocuments: f.allowMockDocuments as boolean,
+    l1Registration: f.l1Registration as boolean,
+    nationalityMode: Number(f.nationalityMode),
+    nationalityCommitment: BigInt(f.nationalityCommitment as string),
+  })
+
+  it.each(['round', 'roundL1'] as const)('encodes and hashes the 13-word ROUND message like CRISPRemoteMessages.round (%s)', (name) => {
+    const config = roundConfig(vectors[name].fields)
+    expect(encodeRoundMessage(config)).toBe(vectors[name].abiEncoded)
+    expect(roundContent(config)).toBe(BigInt(vectors[name].contentDecimal))
+  })
+
+  it('covers both registration paths and a nationality commitment in the vectors', () => {
+    expect(vectors.round.fields.l1Registration).toBe(false)
+    expect(BigInt(vectors.round.fields.nationalityCommitment)).toBeGreaterThan(0n)
+    expect(vectors.roundL1.fields.l1Registration).toBe(true)
+    expect(BigInt(vectors.roundL1.fields.nationalityCommitment)).toBe(0n)
+  })
+
+  it('encodes and hashes the MEMBER message like CRISPRemoteMessages.member', () => {
+    const { roundId, slotAddress, slot } = vectors.member.fields
+    expect(BigInt(slotAddress)).toBe(BigInt(slot))
+    expect(encodeMemberMessage(BigInt(roundId), slotAddress)).toBe(vectors.member.abiEncoded)
+    expect(memberContent(BigInt(roundId), slotAddress)).toBe(BigInt(vectors.member.contentDecimal))
   })
 
   it('encodes and hashes the KEY message like CRISPRemoteMessages.committeeKey', () => {

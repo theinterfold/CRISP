@@ -94,6 +94,10 @@ The server exposes several RESTful API endpoints:
 - `POST /voting/remote-input`, `GET /voting/remote-input/config`: only with `PROGRAM_KIND=aztec`;
   they stage a ciphertext and sign an availability attestation, and say where to submit it. In that
   mode `/voting/broadcast` and `/rounds/request` refuse. See `../extensions/aztec/README.md`.
+- `POST /registration/l1`: only with `PROGRAM_KIND=aztec` and `ZKPASSPORT_REGISTRAR_ADDRESS` set; relays
+  `ZKPassportRegistrar.register` calldata from the server key, so a voter needs no Ethereum wallet. The
+  call is simulated first and a refusal comes back as 400 with the registrar's error; the answer is
+  `{ "txHash": "0x…" }`. `GET /voting/remote-input/config` lists the registrar as `zkpassport_registrar`.
 
 ## Upgrading across an input-format change
 

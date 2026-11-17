@@ -1,26 +1,37 @@
 # CRISP on Aztec: end-to-end round
 
-One full round of the Aztec program on a local Aztec v6 network, with real components throughout:
+One full round per registration path of the Aztec program on a local Aztec v6 network, with real components throughout:
 
-1. deploys the Interfold + CRISP stack, `CRISPAztecProgram` (L1) and `CrispAztec` (L2, with the vendored ZKPassport
-   registry), and binds the two;
-2. starts five ciphernodes, the program server, the CRISP server (`PROGRAM_KIND=aztec`) and the keeper;
-3. `Interfold.request`s an E3 with the Aztec program: the creator sends one transaction;
-4. waits for the DKG (stage `KeyPublished`); the keeper opens the round and relays the key to L2;
-5. registers four voters with real mock-document ZKPassport proofs, then casts four votes and adds one mask (a zero ballot on a slot that already voted: it must not change the tally)
-   (`@crisp-e3/aztec`);
-6. warps the network clock past the input window; the keeper closes the round and submits the root on L1;
-7. the server computes, the ciphernodes decrypt, and the decoded tally must equal `[20, 20]` (voters 1-2 pick option 0, voters 3-4 option 1, ten credits each).
+1. deploys the Interfold + CRISP stack, `CRISPAztecProgram` (L1) with its `ZKPassportRegistrar`, and `CrispAztec` (L2, with
+   the vendored ZKPassport registry), and binds them. ZKPassport's root verifier does not exist on the local chain: the
+   harness deploys `MockZKPassportVerifier` (`extensions/aztec/l1/contracts/test/MockZKPassport.sol`) and builds the
+   registrar on it, so the registrar's own checks run for real and only the proof verification is mocked;
+2. starts five ciphernodes, the program server, the CRISP server (`PROGRAM_KIND=aztec`, relaying L1 registrations through
+   `ZKPASSPORT_REGISTRAR_ADDRESS`) and the keeper;
+3. runs a round on each path, one after the other (`pnpm test:e2e:aztec:round aztec|l1` runs one):
+   - **Aztec path**: voters prove age 18+ and a nationality in `[ZKR, DEU]` with real mock-document ZKPassport proofs
+     (`outer_count_6`, `register_with_age_and_nationality`);
+   - **L1 path**: voters have no Aztec registration step at all: the harness builds mock-verifier proof parameters bound to each
+     slot and the CRISP server relays them to the registrar (`POST /registration/l1`); the round asks for age 18+ and a
+     nationality not in `[PRK, IRN]`. First, the registrar's refusals are checked through the server (an excluded
+     nationality, a voter under the age, a proof bound to another slot, a document registered twice), then the keeper turns
+     each MEMBER message into `add_member_from_l1`;
+4. each round: `Interfold.request` (the creator sends one transaction), the DKG (stage `KeyPublished`), the keeper opens the
+   round and relays the key to L2, four voters register, then four votes are cast and one mask added (a zero ballot on a slot
+   that already voted: it must not change the tally) (`@crisp-e3/aztec`);
+5. the network clock is warped past the input window; the keeper closes the round and submits the root on L1;
+6. the server computes, the ciphernodes decrypt, and the decoded tally must equal `[20, 20]` in both rounds (voters 1-2 pick
+   option 0, voters 3-4 option 1, ten credits each).
 
 ```sh
 pnpm test:e2e:aztec           # up, round, down (down also on failure; CRISP_E2E_KEEP=1 leaves the stack up)
 pnpm test:e2e:aztec:up        # deploy and start the services
-pnpm test:e2e:aztec:round     # one round against a running stack (repeatable: each run is a new E3)
+pnpm test:e2e:aztec:round     # a round per path against a running stack (`:round l1` or `:round aztec` runs one; repeatable: each run is new E3s)
 pnpm test:e2e:aztec:down      # stop everything and restore the repo files the deploy scripts rewrite
 ```
 
 Logs of every service and deploy step are in `extensions/aztec/e2e/.work/logs/`, the state (addresses, pids) in
-`.work/state.json`, and the result of a round (tally, every transaction hash) in `.work/report.json`.
+`.work/state.json`, and the result of each round (tally, every transaction hash) in `.work/report-aztec.json` and `.work/report-l1.json`.
 
 ## Prerequisites
 
@@ -67,6 +78,9 @@ with the deployer's key. Voters' slot keys are random and need no funds.
 - **The clock is warped.** The ZKPassport registry seeding warps the network 24h (once, then persistent). `Interfold.request`
   requires the window to start after a worst-case key setup (2h), so the harness warps to `inputStart` once the key is in,
   and to `inputEnd` once the votes are in, instead of waiting. Chain time therefore runs ahead of wall-clock time.
+- **The L1 path's proofs are mock.** A voter's real ZKPassport proof cannot be made for the local chain (no root verifier
+  there), and the proof is the only thing mocked: the registrar still enforces the binding, the chain id, the age and
+  nationality rules, the nullifier type and one registration per document.
 - **Repo files are snapshotted and restored.** The deploy scripts rewrite `interfold.config.yaml`,
   `packages/crisp-contracts/deployed_contracts.json`, `extensions/aztec/l1/deployed_contracts.json`, `server/.env` and
   `client/.env`; `down` puts them back (or removes them if they did not exist).
@@ -75,5 +89,5 @@ with the deployer's key. Voters' slot keys are random and need no funds.
 ## Knobs
 
 `CRISP_E2E_VOTING_SECONDS` (3600), `CRISP_E2E_PUMP_MS` (8000), `CRISP_E2E_KEEPER_POLL_MS` (5000),
-`CRISP_E2E_DKG_TIMEOUT_S` (1200), `CRISP_E2E_ROOT_TIMEOUT_S` (1500), `CRISP_E2E_COMPUTE_TIMEOUT_S` (1800),
+`CRISP_E2E_DKG_TIMEOUT_S` (1200), `CRISP_E2E_MEMBERS_TIMEOUT_S` (1200, registration and, on the L1 path, the keeper's MEMBER relay), `CRISP_E2E_ROOT_TIMEOUT_S` (1500), `CRISP_E2E_COMPUTE_TIMEOUT_S` (1800),
 `AZTEC_NODE_URL`, `L1_RPC_URL`, `CRISP_E2E_WORK`, `RUST_LOG`.

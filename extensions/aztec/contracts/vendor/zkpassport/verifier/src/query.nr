@@ -143,6 +143,28 @@ impl<let K: u32, let D: u32> Query<K, D> {
         )
     }
 
+    /// Ask for a nationality in (`exclusion` false) or not in (`exclusion` true) a list given by its ZKPassport
+    /// parameter commitment, `nationality_inclusion_commitment` or `nationality_exclusion_commitment` of that list,
+    /// computed elsewhere.
+    ///
+    /// CRISP patch to the vendored library: a contract whose lists are chosen per round at run time cannot name them
+    /// as the compile-time `[str<3>; N]` the other methods take.
+    pub fn nationality_committed(self, exclusion: bool, commitment: Field) -> Query<K + 1, D> {
+        if exclusion {
+            self.with_commitment(
+                CHECK_NATIONALITY_EXCLUSION,
+                "nationality exclusion requested twice",
+                commitment,
+            )
+        } else {
+            self.with_commitment(
+                CHECK_NATIONALITY_INCLUSION,
+                "nationality inclusion requested twice",
+                commitment,
+            )
+        }
+    }
+
     /// Ask for an issuing country in `countries`, listed in the order the SDK request lists them.
     pub fn issuing_country_in<let N: u32>(self, countries: [str<3>; N]) -> Query<K + 1, D> {
         self.with_commitment(
@@ -542,6 +564,33 @@ mod test {
             query.expected_commitments(Option::none(), Option::some(0xabc)),
             [sanctions_commitment(0xabc, false)],
         );
+    }
+
+    #[test]
+    fn a_committed_nationality_is_the_same_check_as_a_listed_one() {
+        assert_eq(
+            commitments_without_payloads(
+                Query::new().nationality_committed(false, nationality_inclusion_commitment(["FRA", "DEU"])),
+            ),
+            commitments_without_payloads(Query::new().nationality_in(["FRA", "DEU"])),
+        );
+        assert_eq(
+            commitments_without_payloads(
+                Query::new().nationality_committed(true, nationality_exclusion_commitment(["PRK", "IRN"])),
+            ),
+            commitments_without_payloads(Query::new().nationality_out(["PRK", "IRN"])),
+        );
+        assert_eq(subproofs(Query::new().nationality_committed(false, 1)), 4);
+    }
+
+    #[test(should_fail_with = "nationality inclusion requested twice")]
+    fn rejects_a_committed_inclusion_after_a_listed_one() {
+        let _ = Query::new().nationality_in(["FRA"]).nationality_committed(false, 1);
+    }
+
+    #[test(should_fail_with = "nationality exclusion requested twice")]
+    fn rejects_a_committed_exclusion_after_a_listed_one() {
+        let _ = Query::new().nationality_out(["FRA"]).nationality_committed(true, 1);
     }
 
     #[test(should_fail_with = "age requested twice")]

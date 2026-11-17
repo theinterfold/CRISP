@@ -1,2 +1,2 @@
 [workspace]
-members = ["crisp_aztec", "crisp_aztec_test", "vendor/zkpassport/registry_contract"]
+members = ["crisp_aztec", "crisp_aztec_test", "vendor/zkpassport/registry_contract", "vendor/zkpassport/verifier"]

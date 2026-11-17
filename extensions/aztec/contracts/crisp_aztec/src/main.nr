@@ -15,19 +15,19 @@ pub contract CrispAztec {
     use crate::{
         constants::{
             LOG_INPUT_COMMITTED, LOG_KEY_PUBLISHED, LOG_MEMBER_REGISTERED, LOG_ROUND_CLOSED, LOG_ROUND_OPENED,
-            MAX_LEAVES,
+            MAX_LEAVES, NATIONALITY_NONE, NATIONALITY_OUT,
         },
         hashing::{
-            availability_digest, ballot_digest, from_halves, full_e3_id, input_id, input_leaf, key_content, round_content,
-            root_content, to_halves, bytes_to_field,
+            availability_digest, ballot_digest, from_halves, full_e3_id, input_id, input_leaf, key_content,
+            member_content, round_content, root_content, to_halves, bytes_to_field,
         },
-        identity::service_config,
+        identity::{assert_registration_shape, service_config},
         nodes::PublicNodes,
         tree::{ceil_log2, lazy_insert, lazy_root, lean_insert},
         types::{Config, InputEntry, RoundConfig},
     };
     use aztec::{
-        macros::{functions::{external, initializer, only_self}, storage::storage},
+        macros::{functions::{external, initializer, internal, only_self}, storage::storage},
         protocol::address::{AztecAddress, EthAddress},
         state_vars::{Map, PublicImmutable, PublicMutable},
     };
@@ -106,11 +106,22 @@ pub contract CrispAztec {
         scope_hash: Field,
         min_age: u8,
         allow_mock_documents: bool,
+        l1_registration: bool,
+        nationality_mode: u8,
+        nationality_commitment: Field,
         leaf_index: Field,
     ) {
         round_id.assert_max_bit_size::<96>();
         assert((input_limit != 0) & (input_limit <= MAX_LEAVES), "input limit out of range");
         assert(input_start < input_end, "empty input window");
+        assert(nationality_mode <= NATIONALITY_OUT, "invalid nationality mode");
+        // Only an Aztec-path round with a nationality rule carries the list's commitment: an L1-path round's list is
+        // checked by the registrar.
+        if l1_registration | (nationality_mode == NATIONALITY_NONE) {
+            assert(nationality_commitment == 0, "unexpected nationality commitment");
+        } else {
+            assert(nationality_commitment != 0, "missing nationality commitment");
+        }
 
         let config = self.storage.config.read();
         let content = round_content(
@@ -123,6 +134,9 @@ pub contract CrispAztec {
             scope_hash,
             min_age,
             allow_mock_documents,
+            l1_registration,
+            nationality_mode,
+            nationality_commitment,
         );
         self.context.consume_l1_to_l2_message(content, [0], config.l1_program, leaf_index);
 
@@ -135,6 +149,9 @@ pub contract CrispAztec {
             scope_hash,
             min_age,
             allow_mock_documents,
+            l1_registration,
+            nationality_mode,
+            nationality_commitment,
         });
         self.context.emit_public_log_unsafe(LOG_ROUND_OPENED, [round_id]);
     }
@@ -158,13 +175,15 @@ pub contract CrispAztec {
     // Registration
     // ---------------------------------------------------------------------------------------------------------
 
-    /// Registers `slot` for a round that sets no minimum age. The caller proves, with a ZKPassport proof bound to its
-    /// own address and delivered in the proof capsule, that it holds a document nobody registered in this round.
+    /// Registers `slot` for an Aztec-path round with no age and no nationality rule. The caller proves, with a ZKPassport
+    /// proof bound to its own address and delivered in the proof capsule, that it holds a document nobody registered in
+    /// this round. The four `register*` entry points differ only in the query they verify: a query's size is a
+    /// compile-time constant, so each rule shape needs its own.
     #[external("private")]
     fn register(round_id: Field, slot: Field) {
         let config = self.storage.config.read();
         let round = self.storage.rounds.at(round_id).read();
-        assert(round.min_age == 0, "round requires an age proof");
+        assert_registration_shape(round, false, false);
 
         let user = self.msg_sender();
         let query = Query::new().bind_user_address(user);
@@ -181,12 +200,13 @@ pub contract CrispAztec {
         self.enqueue_self._add_member(round_id, slot, census_leaf);
     }
 
-    /// Registers `slot` for a round with a minimum age: the proof must also show the holder is at least that old.
+    /// Registers `slot` for an Aztec-path round with a minimum age: the proof must also show the holder is at least
+    /// that old.
     #[external("private")]
     fn register_with_age(round_id: Field, slot: Field) {
         let config = self.storage.config.read();
         let round = self.storage.rounds.at(round_id).read();
-        assert(round.min_age != 0, "round has no age requirement");
+        assert_registration_shape(round, true, false);
 
         let user = self.msg_sender();
         let query = Query::new().age_min(round.min_age).bind_user_address(user);
@@ -203,9 +223,81 @@ pub contract CrispAztec {
         self.enqueue_self._add_member(round_id, slot, census_leaf);
     }
 
+    /// Registers `slot` for an Aztec-path round with a nationality rule: the proof must show the holder's nationality is
+    /// in (or, for mode 2, not in) the list whose ZKPassport parameter commitment the round carries.
+    #[external("private")]
+    fn register_with_nationality(round_id: Field, slot: Field) {
+        let config = self.storage.config.read();
+        let round = self.storage.rounds.at(round_id).read();
+        assert_registration_shape(round, false, true);
+
+        let user = self.msg_sender();
+        let query = Query::new()
+            .nationality_committed(round.nationality_mode == NATIONALITY_OUT, round.nationality_commitment)
+            .bind_user_address(user);
+        let verified = verify_zkpassport_proof_with_registry(
+            self.context,
+            config.zkpassport_registry,
+            user,
+            service_config(config, round),
+            query,
+        );
+        emit_uniqueness_nullifier(self.context, verified.unique_identifier);
+
+        let census_leaf = hash_2([slot, round.credits]);
+        self.enqueue_self._add_member(round_id, slot, census_leaf);
+    }
+
+    /// Registers `slot` for an Aztec-path round with both a minimum age and a nationality rule.
+    #[external("private")]
+    fn register_with_age_and_nationality(round_id: Field, slot: Field) {
+        let config = self.storage.config.read();
+        let round = self.storage.rounds.at(round_id).read();
+        assert_registration_shape(round, true, true);
+
+        let user = self.msg_sender();
+        let query = Query::new()
+            .age_min(round.min_age)
+            .nationality_committed(round.nationality_mode == NATIONALITY_OUT, round.nationality_commitment)
+            .bind_user_address(user);
+        let verified = verify_zkpassport_proof_with_registry(
+            self.context,
+            config.zkpassport_registry,
+            user,
+            service_config(config, round),
+            query,
+        );
+        emit_uniqueness_nullifier(self.context, verified.unique_identifier);
+
+        let census_leaf = hash_2([slot, round.credits]);
+        self.enqueue_self._add_member(round_id, slot, census_leaf);
+    }
+
+    /// Adds `slot` to the census of an L1-path round from the MEMBER message `registerMember` sent: the L1 registrar
+    /// has verified the voter's ZKPassport proof there. Anyone may call it; consuming the message makes it happen once
+    /// per message, and the slot and window checks are those of the Aztec path.
+    #[external("public")]
+    fn add_member_from_l1(round_id: Field, slot: Field, leaf_index: Field) {
+        let config = self.storage.config.read();
+        let round = self.storage.rounds.at(round_id).read();
+        assert(round.l1_registration, "round registers on Aztec");
+
+        self.context.consume_l1_to_l2_message(member_content(round_id, slot), [0], config.l1_program, leaf_index);
+
+        let census_leaf = hash_2([slot, round.credits]);
+        self.internal.insert_member(round_id, slot, census_leaf);
+    }
+
     #[external("public")]
     #[only_self]
     fn _add_member(round_id: Field, slot: Field, census_leaf: Field) {
+        self.internal.insert_member(round_id, slot, census_leaf);
+    }
+
+    /// The census insert both registration paths end in: window, slot uniqueness, capacity, LeanIMT insert, root
+    /// history, `MEMBER_REGISTERED` log.
+    #[internal("public")]
+    fn insert_member(round_id: Field, slot: Field, census_leaf: Field) {
         let round = self.storage.rounds.at(round_id).read();
         assert(self.context.timestamp() < round.input_end, "registration closed");
 

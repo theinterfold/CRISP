@@ -54,7 +54,11 @@ async function main() {
   await (await program.setL2Program(L2_PROGRAM)).wait()
 
   const now = (await ethers.provider.getBlock('latest'))!.timestamp
-  const customParams = ethers.AbiCoder.defaultAbiCoder().encode(['uint256', 'uint256', 'uint256', 'bool'], [3, 100, 18, true])
+  // numOptions, credits, minAge, allowMockDocuments, registrar (none: voters register on Aztec), nationalityMode, countries, commitment
+  const customParams = ethers.AbiCoder.defaultAbiCoder().encode(
+    ['uint256', 'uint256', 'uint256', 'bool', 'address', 'uint8', 'string[]', 'uint256'],
+    [3, 100, 18, true, ethers.ZeroAddress, 0, [], 0],
+  )
   const before = await inbox.getTotalMessagesInserted()
   const programAddress = await program.getAddress()
   const e3Id = await interfold.request.staticCall(programAddress, [now + 600, now + 4200], customParams)

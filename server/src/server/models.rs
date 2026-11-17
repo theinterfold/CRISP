@@ -166,6 +166,24 @@ pub struct RemoteInputConfig {
     /// The signer's uncompressed secp256k1 public key, `x || y`, 64 bytes hex. The Aztec contract
     /// is deployed with it.
     pub signer_public_key: String,
+    /// The `ZKPassportRegistrar` that `POST /registration/l1` relays to. Absent when this
+    /// server does not relay L1 registrations.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub zkpassport_registrar: Option<String>,
+}
+
+/// `ZKPassportRegistrar.register` calldata to relay to the configured registrar.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct RegistrationRelayRequest {
+    /// The ABI-encoded call, `0x`-prefixed hex, selector first.
+    pub calldata: String,
+}
+
+/// The transaction the server sent for a relayed registration.
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegistrationRelayResponse {
+    pub tx_hash: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

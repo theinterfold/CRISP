@@ -149,7 +149,7 @@ export type SeedRegistryOptions = {
   /** Roots a proof commits to (`MockRegistrationProof.certificateRoot` / `circuitRoot`). Default: those of the mock proofs. */
   certificateRoot?: string
   circuitRoot?: string
-  /** Outer circuit verification key hashes to accept (`MockRegistrationProof.vkeyHash`). Default: `outer_count_4` and `outer_count_5`. */
+  /** Outer circuit verification key hashes to accept (`MockRegistrationProof.vkeyHash`). Default: `outer_count_4`, `outer_count_5` and `outer_count_6`. */
   vkeyHashes?: string[]
   /** Circuits release the keys belong to; default the one the proofs are generated for. */
   circuitsVersion?: string
@@ -174,7 +174,7 @@ export const seedLocalRegistry = async (context: RegistryContext, options: SeedR
   const mock = await mockRegistryRoots()
   const certificateRoot = options.certificateRoot ?? mock.certificateRoot
   const circuitRoot = options.circuitRoot ?? mock.circuitRoot
-  const vkeyHashes = options.vkeyHashes ?? [mock.vkeyHashes.outer_count_4, mock.vkeyHashes.outer_count_5]
+  const vkeyHashes = options.vkeyHashes ?? [mock.vkeyHashes.outer_count_4, mock.vkeyHashes.outer_count_5, mock.vkeyHashes.outer_count_6]
   await deployLocalRegistry(context)
   const registry = await registryContract(context, LOCAL_NETWORK_REGISTRY_ADDRESS)
   const version = packCircuitVersion(options.circuitsVersion ?? CIRCUITS_VERSION)

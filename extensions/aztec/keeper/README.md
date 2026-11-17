@@ -12,12 +12,14 @@ state:
 | `openRound`  | the round is not open on Aztec                               | consumes the ROUND message (`open_round`)         |
 | `relayKey`   | Interfold published the key, the program has not relayed it  | L1 `publishCommitteeKey`                          |
 | `publishKey` | the key was relayed, Aztec has not consumed it               | consumes the KEY message (`publish_key`)          |
+| `addMembers` | the round registers on L1, is open on Aztec and its window has not ended, and the L1 program sent a MEMBER message for a slot Aztec has not registered | consumes each MEMBER message (`add_member_from_l1`) |
 | `closeRound` | the input window has ended on Aztec, the round is not closed | `close_round`, which sends the root to the Outbox |
 | `submitRoot` | the round is closed, L1 has no root                          | L1 `submitInputRoot` with the Outbox witness      |
 
-State is never kept on disk: every pass re-reads L1 and the Aztec logs, so a restart, or a second
-keeper, repeats nothing. A step that fails (a message not yet in a block, a witness not yet on L1)
-is retried on the next pass.
+State is never kept on disk: every pass re-reads L1 and the Aztec logs (`MemberSent` against
+`MemberRegistered` for members), so a restart, or a second keeper, repeats nothing. A step that fails (a
+message not yet in a block, a witness not yet on L1, one member's message) is retried on the next pass;
+one failing member does not hold back the others.
 
 ## Run
 

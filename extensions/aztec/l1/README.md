@@ -2,11 +2,13 @@
 
 `CRISPAztecProgram` is the Interfold E3 program for rounds whose ballots are cast on Aztec
 (`../contracts`). It is `CRISPRemoteProgram` (see [`../../core`](../../core/README.md)) plus the
-Aztec Inbox/Outbox transport. The poll creator makes one L1 transaction (`Interfold.request`);
+Aztec Inbox/Outbox transport. A round registers its voters on Aztec or, when its custom parameters
+name a `ZKPassportRegistrar`, on L1 (below). The poll creator makes one L1 transaction (`Interfold.request`);
 everything else is a permissionless call that a keeper makes.
 
 ```
 Interfold.request ─ validate ──ROUND──▶ Inbox ─▶ crisp_aztec.open_round (L2)
+ZKPassportRegistrar.register ─ registerMember ──MEMBER──▶ Inbox ─▶ crisp_aztec.add_member_from_l1 (L1 path only)
 Interfold key published ─ publishCommitteeKey ──KEY──▶ Inbox ─▶ crisp_aztec.publish_key
                               ballots and registrations on L2 (SponsoredFPC pays)
 crisp_aztec.close_round ──ROOT──▶ Outbox ─ submitInputRoot ─▶ verify(root)
@@ -30,7 +32,8 @@ crisp_aztec.close_round ──ROOT──▶ Outbox ─ submitInputRoot ─▶ ve
   ```
 
 - **Message contents** are `sha256ToField(abi.encode(...))`: the first 31 bytes of the sha256, as a
-  field. `tests/fixtures/message-vectors.json` holds the ROUND, KEY and ROOT bytes and contents the
+  field. `tests/fixtures/message-vectors.json` holds the ROUND (13 words; `round` is an Aztec-path round with a
+  nationality commitment, `roundL1` an L1-registration round), KEY, ROOT and MEMBER bytes and contents the
   L2 contract and the SDK assert against (`node scripts/generate-message-vectors.mjs` regenerates it). Word 2 of
   every message is the `roundId` (the low 96 bits of the E3 id, see `remoteRoundId`/`e3IdOf`): a real
   Interfold E3 id is `interfold << 96 | sequence`, above the BN254 modulus. The scope a ZKPassport proof binds to is
@@ -53,8 +56,20 @@ crisp_aztec.close_round ──ROOT──▶ Outbox ─ submitInputRoot ─▶ ve
   before paying instead of timing out afterwards. Deploy default: 10800 s on Sepolia (two
   epoch-proof windows plus margin), 0 locally; override with `CRISP_REMOTE_FINALITY_WINDOW`.
   `minAge` is at most 99 (ZKPassport's `age_min` asserts `min < 100`).
-- The ABI the SDK, keeper and server read is tracked at `abi/CRISPAztecProgram.json`; regenerate it
-  with `pnpm export:abi` after any contract change (a test fails on drift).
+- **L1 registration (`ZKPassportRegistrar`).** A round with `registrar != 0` takes no registration on
+  Aztec; its voters prove a ZKPassport `compressed-evm` proof on L1 against ZKPassport's root verifier
+  (`0x1D000001000EFD9a6371f4d90bB8920D5431c0D8`, which verifies proofs of the circuits that ZKPassport's
+  app emits today), and the registrar sends MEMBER with the voter's slot through `registerMember`
+  (event `MemberSent(e3Id, slot, index)`, `index` the Inbox leaf the keeper consumes it with). Anyone may
+  submit the proof: it binds the slot and the chain, and the CRISP server relays it so that voters need
+  no Ethereum wallet. One document registers once per round (`used[e3Id][identifier]`). The
+  nationality list is read from the `RoundRules` event; the registrar refuses a list other than the
+  one the round was created with. `tests/registration.test.ts` runs the registrar against a mock
+  ZKPassport verifier and helper (`contracts/test/MockZKPassport.sol`): that proves this package's
+  logic, not that ZKPassport accepts any proof.
+- The ABIs the SDK, keeper and server read are tracked at `abi/CRISPAztecProgram.json` and
+  `abi/ZKPassportRegistrar.json`; regenerate them with `pnpm export:abi` after any contract change (a
+  test fails on drift).
 
 ## Commands
 
@@ -76,7 +91,12 @@ nullifier behaviour are the protocol's. It does not prove an Aztec rollup proof 
 recorded by the CRISP deploy (`pnpm deploy:contracts` in `packages/crisp-contracts`) in
 `packages/crisp-contracts/deployed_contracts.json`, deploys the program, registers it with Interfold
 and binds it, as the CRISP deploy does for `CRISPProgram`. Run the CRISP deploy first. See the
-header of the script for the environment variables. Local flow:
+header of the script for the environment variables. It also deploys the program's `ZKPassportRegistrar`
+(Sepolia: ZKPassport's root verifier, domain `poll.theinterfold.com`, seven-day proof validity; override with
+`ZKPASSPORT_ROOT_VERIFIER`, `ZKPASSPORT_DOMAIN`, `ZKPASSPORT_PROOF_VALIDITY`; on localhost only when
+`ZKPASSPORT_ROOT_VERIFIER` is set) and prints `ZKPASSPORT_REGISTRAR_ADDRESS` for the server. The registrar is
+bound to its program, so a redeployed program (`REDEPLOY=true`) needs a new one, which the script deploys.
+Local flow:
 
 ```bash
 pnpm deploy:localhost                              # prints CRISP_AZTEC_L1_PROGRAM

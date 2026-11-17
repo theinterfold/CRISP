@@ -7,6 +7,7 @@
 mod chain;
 mod members;
 mod proposals;
+mod registration;
 mod rounds;
 mod scan;
 mod state;
@@ -35,4 +36,5 @@ pub fn setup_routes(config: &mut web::ServiceConfig) {
     chain::setup_routes(config);
     members::setup_routes(config);
     proposals::setup_routes(config);
+    registration::setup_routes(config);
 }

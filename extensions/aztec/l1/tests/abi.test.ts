@@ -9,9 +9,11 @@ import { expect } from 'chai'
 import { artifacts } from 'hardhat'
 
 describe('exported ABI', function () {
-  it('abi/CRISPAztecProgram.json matches the compiled contract (run `pnpm export:abi`)', async function () {
-    const { abi } = await artifacts.readArtifact('CRISPAztecProgram')
-    const tracked = JSON.parse(readFileSync(new URL('../abi/CRISPAztecProgram.json', import.meta.url), 'utf8'))
-    expect(tracked).to.deep.equal(abi)
-  })
+  for (const name of ['CRISPAztecProgram', 'ZKPassportRegistrar']) {
+    it(`abi/${name}.json matches the compiled contract (run \`pnpm export:abi\`)`, async function () {
+      const { abi } = await artifacts.readArtifact(name)
+      const tracked = JSON.parse(readFileSync(new URL(`../abi/${name}.json`, import.meta.url), 'utf8'))
+      expect(tracked).to.deep.equal(abi)
+    })
+  }
 })

@@ -4,9 +4,10 @@
 // without even the implied warranty of MERCHANTABILITY
 // or FITNESS FOR A PARTICULAR PURPOSE.
 
-import { decodeAbiParameters, parseAbi, type Address, type Hex, type PublicClient, type WalletClient } from 'viem'
+import { parseAbi, type Address, type Hex, type PublicClient, type WalletClient } from 'viem'
 
-import { type RoundConfig, roundContent, roundIdOf } from './messages'
+import { type RoundConfig, memberContent, roundContent, roundIdOf } from './messages'
+import { decodeCustomParams, registersOnL1, type RoundRules } from './rules'
 
 /** The part of `CRISPAztecProgram` and `CRISPRemoteProgram` this package calls or reads. */
 export const programAbi = parseAbi([
@@ -21,6 +22,7 @@ export const programAbi = parseAbi([
   'event CommitteeKeyRelayed(uint256 indexed e3Id, bytes32 committeePublicKey)',
   'event InputRootSubmitted(uint256 indexed e3Id, uint256 inputRoot, uint256 numInputs)',
   'event L1ToL2MessageSent(uint256 indexed e3Id, bytes32 content, bytes32 leaf, uint256 index)',
+  'event MemberSent(uint256 indexed e3Id, address indexed slot, uint256 index)',
 ])
 
 /** The part of the Interfold controller this package reads. */
@@ -63,28 +65,33 @@ export const getL1Round = async (client: PublicClient, program: Address, e3Id: b
  * program announced. A keeper opens the round on L2 from this, so a mismatch means L1 and this package disagree
  * on the message layout, and the L2 contract would refuse the consumption anyway.
  */
-export const getRoundConfig = async (client: PublicClient, program: Address, e3Id: bigint): Promise<RoundConfig & { e3Id: bigint }> => {
+export const getRoundConfig = async (
+  client: PublicClient,
+  program: Address,
+  e3Id: bigint,
+): Promise<RoundConfig & { e3Id: bigint; rules: RoundRules }> => {
   const [interfold, scopeHash, round] = await Promise.all([
     client.readContract({ address: program, abi: programAbi, functionName: 'interfold' }),
     client.readContract({ address: program, abi: programAbi, functionName: 'scopeHashOf', args: [e3Id] }),
     getL1Round(client, program, e3Id),
   ])
   const e3 = await client.readContract({ address: interfold, abi: interfoldAbi, functionName: 'getE3', args: [e3Id] })
-  const [numOptions, credits, minAge, allowMockDocuments] = decodeAbiParameters(
-    [{ type: 'uint256' }, { type: 'uint256' }, { type: 'uint256' }, { type: 'bool' }],
-    e3.customParams,
-  )
-  const config: RoundConfig & { e3Id: bigint } = {
+  const rules = decodeCustomParams(e3.customParams)
+  const config: RoundConfig & { e3Id: bigint; rules: RoundRules } = {
     e3Id,
     roundId: roundIdOf(e3Id),
-    numOptions,
-    credits,
+    numOptions: rules.numOptions,
+    credits: rules.credits,
     inputStart: e3.inputWindow[0],
     inputEnd: e3.inputWindow[1],
     inputLimit: round.inputLimit,
     scopeHash,
-    minAge,
-    allowMockDocuments,
+    minAge: rules.minAge,
+    allowMockDocuments: rules.allowMockDocuments,
+    l1Registration: registersOnL1(rules),
+    nationalityMode: rules.nationalityMode,
+    nationalityCommitment: rules.nationalityCommitment,
+    rules,
   }
 
   const [sent] = await client.getContractEvents({
@@ -112,6 +119,28 @@ export const getSentMessages = async (client: PublicClient, program: Address, e3
   })
 
   return logs.map(({ args }) => ({ content: args.content as Hex, leaf: args.leaf as Hex, index: args.index as bigint }))
+}
+
+/** A MEMBER message the L1 registrar's program sent: the voter's slot and the Inbox message that carries it. */
+export type SentMember = { slot: Address; message: L1ToL2Message }
+
+/**
+ * Every MEMBER message the program sent for a round (one per `registerMember`), oldest first. The message of a member is
+ * the `L1ToL2MessageSent` with the `MemberSent` event's Inbox index, and must hash to the content of `(roundId, slot)`.
+ */
+export const getSentMembers = async (client: PublicClient, program: Address, e3Id: bigint, fromBlock = 0n): Promise<SentMember[]> => {
+  const [members, messages] = await Promise.all([
+    client.getContractEvents({ address: program, abi: programAbi, eventName: 'MemberSent', args: { e3Id }, fromBlock }),
+    getSentMessages(client, program, e3Id, fromBlock),
+  ])
+
+  return members.map(({ args }) => {
+    const slot = args.slot as Address
+    const message = messages.find((m) => m.index === args.index && BigInt(m.content) === memberContent(roundIdOf(e3Id), slot))
+    if (!message) throw new Error(`Round ${e3Id}: no MEMBER message at Inbox index ${args.index} for slot ${slot}`)
+
+    return { slot, message }
+  })
 }
 
 /** Relay the committee key to Aztec. Permissionless; the key is read from Interfold. */

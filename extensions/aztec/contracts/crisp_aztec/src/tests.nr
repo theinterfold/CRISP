@@ -8,8 +8,8 @@
 use crate::{
     constants::{BALLOT_TYPEHASH, INPUT_AVAILABILITY_TYPEHASH, LAZY_ZEROS},
     hashing::{
-        availability_digest, ballot_digest, from_halves, full_e3_id, input_id, input_leaf, key_content, root_content,
-        round_content, to_halves,
+        availability_digest, ballot_digest, from_halves, full_e3_id, input_id, input_leaf, key_content, member_content,
+        root_content, round_content, to_halves,
     },
     tree::{lazy_insert, lazy_root, lean_insert, lean_root, NodeStore},
 };
@@ -339,10 +339,42 @@ fn single_input_leaf_matches_crisp_program() {
 // Contents of the L1 messages, from extensions/aztec/l1/tests/fixtures/message-vectors.json.
 #[test]
 fn round_content_matches_l1() {
+    // `round` of the vectors: an Aztec-path round with a nationality-inclusion rule.
     let scope_hash = 250599715960339284498530861402620333660067521173639798116098273223811287878;
     assert_eq(
-        round_content(ROUND_ID, 3, 100, 1700000000, 1700003600, 65536, scope_hash, 18, true),
-        402702314238532945291488421539808913329562704235900228895021911526649866247,
+        round_content(
+            ROUND_ID,
+            3,
+            100,
+            1700000000,
+            1700003600,
+            65536,
+            scope_hash,
+            18,
+            true,
+            false,
+            1,
+            5081652588602725151884571709550774784856152446387414599336402627759404397508,
+        ),
+        74101163532718080398196683297380123920879333911422899556716520424291174479,
+    );
+}
+
+#[test]
+fn round_content_of_an_l1_path_round_matches_l1() {
+    // `roundL1` of the vectors: registration on L1, nationality-exclusion checked by the registrar (no commitment).
+    let scope_hash = 250599715960339284498530861402620333660067521173639798116098273223811287878;
+    assert_eq(
+        round_content(ROUND_ID, 3, 100, 1700000000, 1700003600, 65536, scope_hash, 18, true, true, 2, 0),
+        434971336939939864762618776303326839132755445852048529245015100673720537795,
+    );
+}
+
+#[test]
+fn member_content_matches_l1() {
+    assert_eq(
+        member_content(ROUND_ID, 517705355260207604495801938720638392742277016301),
+        205767067657831882089728157755994261127864509155302219962746501326915950318,
     );
 }
 

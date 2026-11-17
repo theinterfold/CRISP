@@ -194,7 +194,7 @@ describe('CRISPAztecProgram', function () {
       const [message] = inboxMessages(f, receipt)
       const sent = message.args.message
       const scopeHash = await f.program.scopeHashOf(e3Id)
-      const expectedBytes = abiCoder.encode(Array(10).fill('uint256'), [
+      const expectedBytes = abiCoder.encode(Array(13).fill('uint256'), [
         1,
         roundIdOf(e3Id),
         3,
@@ -205,6 +205,9 @@ describe('CRISPAztecProgram', function () {
         scopeHash,
         18,
         1,
+        0,
+        0,
+        0,
       ])
       const expectedContent = sha256ToField(expectedBytes)
 
@@ -218,6 +221,7 @@ describe('CRISPAztecProgram', function () {
       expect(message.args.hash).to.equal(l1ToL2Leaf(sent))
 
       await expect(tx).to.emit(f.program, 'RoundConfigSent').withArgs(e3Id, expectedContent)
+      await expect(tx).to.emit(f.program, 'RoundRules').withArgs(e3Id, ethers.ZeroAddress, 18, true, 0, [], 0)
       await expect(tx).to.emit(f.program, 'L1ToL2MessageSent').withArgs(e3Id, expectedContent, message.args.hash, sent.index)
 
       const round = await f.program.getRound(e3Id)
@@ -235,7 +239,7 @@ describe('CRISPAztecProgram', function () {
       // The remote contract is told the same limit.
       const [message] = inboxMessages(f, limited.receipt)
       const scopeHash = await f.program.scopeHashOf(limited.e3Id)
-      const bytes = abiCoder.encode(Array(10).fill('uint256'), [
+      const bytes = abiCoder.encode(Array(13).fill('uint256'), [
         1,
         roundIdOf(limited.e3Id),
         3,
@@ -246,6 +250,9 @@ describe('CRISPAztecProgram', function () {
         scopeHash,
         18,
         1,
+        0,
+        0,
+        0,
       ])
       expect(message.args.message.content).to.equal(sha256ToField(bytes))
 
@@ -504,7 +511,9 @@ describe('CRISPAztecProgram', function () {
       const { e3Id } = await request(f)
       await toKeyPublished(f, e3Id)
       const chainId = (await ethers.provider.getNetwork()).chainId
-      const content = sha256ToField(abiCoder.encode(['uint256', 'uint256', 'uint256', 'uint256'], [3, roundIdOf(e3Id), INPUT_ROOT, numInputs]))
+      const content = sha256ToField(
+        abiCoder.encode(['uint256', 'uint256', 'uint256', 'uint256'], [3, roundIdOf(e3Id), INPUT_ROOT, numInputs]),
+      )
       const leaf = l2ToL1Leaf(f.l2Program, ROLLUP_VERSION, await f.program.getAddress(), chainId, content)
       const tree = outboxTree([leaf, leaf, leaf, leaf])
       await (await f.outbox.connect(f.rollup).insert(1, 4, tree.root)).wait()

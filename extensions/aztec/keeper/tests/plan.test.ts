@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { dueActions, type RoundState } from '../src/plan'
+import { dueActions, pendingMembers, type RoundState } from '../src/plan'
 
 const KEY_PUBLISHED = 3
 const base: RoundState = {
@@ -17,6 +17,8 @@ const base: RoundState = {
   l2Opened: false,
   l2KeyPublished: false,
   l2Closed: false,
+  l1Registration: false,
+  pendingMembers: 0,
   inputEnd: 1_000n,
   l2Now: 500n,
 }
@@ -55,3 +57,46 @@ describe('dueActions', () => {
     expect(dueActions(afterOpenAndRelay)).toEqual(['publishKey', 'closeRound'])
   })
 })
+
+describe('members registered on L1', () => {
+  const live = { ...base, l2Opened: true, l1Registration: true, l1KeyRelayed: true, l2KeyPublished: true, pendingMembers: 2 }
+
+  it('carries pending MEMBER messages to Aztec while registration is open', () => {
+    expect(dueActions(live)).toEqual(['addMembers'])
+    expect(dueActions({ ...live, pendingMembers: 0 })).toEqual([])
+  })
+
+  it('waits for the round to be open on Aztec', () => {
+    expect(dueActions({ ...live, l2Opened: false })).toEqual(['openRound'])
+  })
+
+  it('stops once registration closed: the window is over or the round is closed', () => {
+    expect(dueActions({ ...live, l2Now: 1_000n })).toEqual(['closeRound'])
+    expect(dueActions({ ...live, l2Closed: true })).toEqual(['submitRoot'])
+  })
+
+  it('never carries members of a round that registers on Aztec', () => {
+    expect(dueActions({ ...live, l1Registration: false })).toEqual([])
+  })
+
+  it('carries members before closing, in the same pass that notices an old window', () => {
+    expect(dueActions({ ...live, l1KeyRelayed: false, stage: KEY_PUBLISHED })).toEqual(['relayKey', 'addMembers'])
+  })
+})
+
+describe('pendingMembers', () => {
+  const a = { slot: '0xA' }
+  const b = { slot: '0xB' }
+  const c = { slot: '0xC' }
+
+  it('keeps the messages whose slot Aztec has not registered, oldest first', () => {
+    expect(pendingMembers([a, b, c], ['0xB'])).toEqual([a, c])
+    expect(pendingMembers([a, b], ['0xA', '0xB'])).toEqual([])
+  })
+
+  it('keeps only the first message of a slot sent twice', () => {
+    const again = { slot: '0xA', again: true }
+    expect(pendingMembers([a, again, b], [])).toEqual([a, b])
+  })
+})
+

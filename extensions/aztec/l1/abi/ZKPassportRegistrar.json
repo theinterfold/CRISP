@@ -1,0 +1,313 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "contract IZKPassportVerifier",
+        "name": "rootVerifier_",
+        "type": "address"
+      },
+      {
+        "internalType": "contract CRISPRemoteProgram",
+        "name": "program_",
+        "type": "address"
+      },
+      {
+        "internalType": "string",
+        "name": "domain_",
+        "type": "string"
+      },
+      {
+        "internalType": "uint256",
+        "name": "validityPeriod_",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "minAge",
+        "type": "uint256"
+      }
+    ],
+    "name": "AgeNotProven",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "CountriesMismatch",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "identifier",
+        "type": "bytes32"
+      }
+    ],
+    "name": "DocumentAlreadyRegistered",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidConfig",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidProof",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "MissingIdentifier",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "NationalityNotProven",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      }
+    ],
+    "name": "NotRoundRegistrar",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      }
+    ],
+    "name": "RegistrationClosed",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "UnexpectedNullifierType",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "senderAddress",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "chainId",
+        "type": "uint256"
+      }
+    ],
+    "name": "WrongBinding",
+    "type": "error"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "slot",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "identifier",
+        "type": "bytes32"
+      }
+    ],
+    "name": "Registered",
+    "type": "event"
+  },
+  {
+    "inputs": [],
+    "name": "domain",
+    "outputs": [
+      {
+        "internalType": "string",
+        "name": "",
+        "type": "string"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "program",
+    "outputs": [
+      {
+        "internalType": "contract CRISPRemoteProgram",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "slot",
+        "type": "address"
+      },
+      {
+        "components": [
+          {
+            "internalType": "bytes32",
+            "name": "version",
+            "type": "bytes32"
+          },
+          {
+            "components": [
+              {
+                "internalType": "bytes32",
+                "name": "vkeyHash",
+                "type": "bytes32"
+              },
+              {
+                "internalType": "bytes",
+                "name": "proof",
+                "type": "bytes"
+              },
+              {
+                "internalType": "bytes32[]",
+                "name": "publicInputs",
+                "type": "bytes32[]"
+              }
+            ],
+            "internalType": "struct IZKPassportVerifier.ProofVerificationData",
+            "name": "proofVerificationData",
+            "type": "tuple"
+          },
+          {
+            "internalType": "bytes",
+            "name": "committedInputs",
+            "type": "bytes"
+          },
+          {
+            "components": [
+              {
+                "internalType": "uint256",
+                "name": "validityPeriodInSeconds",
+                "type": "uint256"
+              },
+              {
+                "internalType": "string",
+                "name": "domain",
+                "type": "string"
+              },
+              {
+                "internalType": "string",
+                "name": "scope",
+                "type": "string"
+              },
+              {
+                "internalType": "bool",
+                "name": "devMode",
+                "type": "bool"
+              }
+            ],
+            "internalType": "struct IZKPassportVerifier.ServiceConfig",
+            "name": "serviceConfig",
+            "type": "tuple"
+          }
+        ],
+        "internalType": "struct IZKPassportVerifier.ProofVerificationParams",
+        "name": "params",
+        "type": "tuple"
+      },
+      {
+        "internalType": "string[]",
+        "name": "countries",
+        "type": "string[]"
+      }
+    ],
+    "name": "register",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "rootVerifier",
+    "outputs": [
+      {
+        "internalType": "contract IZKPassportVerifier",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "identifier",
+        "type": "bytes32"
+      }
+    ],
+    "name": "used",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "validityPeriod",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  }
+]

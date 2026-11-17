@@ -8,13 +8,30 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { createAztecNodeDebugClient } from '@aztec-labs/stdlib/interfaces/client'
-import { CrispAztec, buildCast, connectAztec, scopeOf, type AztecSession } from '@crisp-e3/aztec'
+import {
+  CrispAztec,
+  NATIONALITY_MODE,
+  buildCast,
+  connectAztec,
+  encodeCustomParams,
+  nationalityCommitment,
+  registerOnL1Calldata,
+  relayRegistrationOnL1,
+  scopeOf,
+  type AztecSession,
+  type RoundRules,
+  type ZKPassportProofParams,
+} from '@crisp-e3/aztec'
 import { CrispSDK, decodeTally, destroyBBApi, setCircuits } from '@crisp-e3/sdk'
 import { loadCircuits } from '@crisp-e3/sdk/insecure-64'
 import {
   createPublicClient,
   createWalletClient,
   encodeAbiParameters,
+  pad,
+  toHex,
+  zeroAddress,
+  zeroHash,
   http,
   parseAbi,
   parseEventLogs,
@@ -25,7 +42,21 @@ import {
 import { generatePrivateKey, privateKeyToAccount, sign } from 'viem/accounts'
 import { foundry } from 'viem/chains'
 
-import { AZTEC_NODE_URL, COMMITTEE_SIZE, E3_PARAM_SET, INSECURE_CONFIG_ID, L1_CHAIN_ID, L1_RPC_URL, SERVER_URL, WORK, ZKPASSPORT_DOMAIN, accounts, envInt, paths } from './config'
+import {
+  AZTEC_NODE_URL,
+  COMMITTEE_SIZE,
+  E3_PARAM_SET,
+  INSECURE_CONFIG_ID,
+  L1_CHAIN_ID,
+  L1_RPC_URL,
+  SERVER_URL,
+  WORK,
+  ZKPASSPORT_DOMAIN,
+  ZKPASSPORT_VALIDITY_SECONDS,
+  accounts,
+  envInt,
+  paths,
+} from './config'
 import { isRunning, loadState, log, sleep, tail, waitFor } from './proc'
 import type { Deployment } from './stack'
 import { chainTime, domainHash, generateMockRegistrationProof, warpTo } from '../zkpassport/src/index'
@@ -105,11 +136,57 @@ const requireServices = (names: string[]): void => {
   }
 }
 
-export const round = async (): Promise<void> => {
+export type Path = 'aztec' | 'l1'
+
+/** The two rounds: Aztec-path voters prove age and a nationality in a list, L1-path ones age and a nationality not in a list. */
+const roundRules = async (path: Path, d: Deployment): Promise<RoundRules> => {
+  const mode = path === 'l1' ? NATIONALITY_MODE.OUT : NATIONALITY_MODE.IN
+  const countries = path === 'l1' ? ['PRK', 'IRN'] : ['ZKR', 'DEU']
+
+  return {
+    numOptions: BigInt(NUM_OPTIONS),
+    credits: CREDITS,
+    minAge: 18n,
+    allowMockDocuments: true,
+    registrar: path === 'l1' ? (d.registrar as Address) : zeroAddress,
+    nationalityMode: mode,
+    countries,
+    // The Aztec contract verifies the proofs against this commitment; on the L1 path the registrar checks the list itself.
+    nationalityCommitment: path === 'l1' ? 0n : await nationalityCommitment(mode, countries),
+  }
+}
+
+/** What the ZKPassport mock verifier of `MockZKPassport.sol` reads from a proof (the registrar's own checks run for real). */
+type MockL1Proof = { identifier: Hex; age: bigint; nationality: string; boundTo: Address | undefined }
+
+const l1Identifier = (e3Id: bigint, index: number): Hex => pad(toHex(e3Id * 1000n + BigInt(index)), { size: 32 })
+
+const mockL1Proof = (slot: Address, mock: MockL1Proof): ZKPassportProofParams => ({
+  version: zeroHash,
+  proofVerificationData: { vkeyHash: zeroHash, proof: '0x01', publicInputs: [mock.identifier] },
+  committedInputs: encodeAbiParameters(
+    [{ type: 'address' }, { type: 'uint256' }, { type: 'uint256' }, { type: 'string' }],
+    [mock.boundTo ?? slot, BigInt(L1_CHAIN_ID), mock.age, mock.nationality],
+  ),
+  serviceConfig: { validityPeriodInSeconds: ZKPASSPORT_VALIDITY_SECONDS, domain: ZKPASSPORT_DOMAIN, scope: '', devMode: true },
+})
+
+/** Runs both paths, one round each, against the running stack (`which` runs one of them). */
+export const round = async (which?: Path): Promise<void> => {
   const state = loadState()
-  const d = state.deployment as Deployment | undefined
-  if (!d) throw new Error('No deployment: run `up` first')
+  if (!state.deployment) throw new Error('No deployment: run `up` first')
   requireServices(['ciphernodes', 'program', 'server', 'keeper', 'randomness'])
+  try {
+    setCircuits(await loadCircuits())
+    for (const path of which ? [which] : (['aztec', 'l1'] as const)) await roundOnPath(path)
+  } finally {
+    await Promise.resolve(destroyBBApi()).catch(() => undefined)
+  }
+}
+
+const roundOnPath = async (path: Path): Promise<void> => {
+  const state = loadState()
+  const d = state.deployment as Deployment
 
   const txs: Tx[] = []
   const t0 = Date.now()
@@ -120,9 +197,9 @@ export const round = async (): Promise<void> => {
   const debugging = () => requireServices(['ciphernodes', 'program', 'server', 'keeper'])
   const pump = startPump(envInt('CRISP_E2E_PUMP_MS', 8000))
   const sessions: AztecSession[] = []
+  log(`==== round on the ${path === 'l1' ? 'L1 (ZKPassport registrar, relayed by the CRISP server)' : 'Aztec'} registration path ====`)
 
   try {
-    setCircuits(await loadCircuits())
     const aztecChainNow = async () => {
       const probe = await connectAztec(AZTEC_NODE_URL)
       try {
@@ -133,6 +210,7 @@ export const round = async (): Promise<void> => {
     }
 
     // ---- 1. The request: one transaction by the creator ----
+    const rules = await roundRules(path, d)
     const creator = createWalletClient({ account: accounts.creator.account, chain: foundry, transport: http(L1_RPC_URL) })
     const deployer = createWalletClient({ account: accounts.deployer.account, chain: foundry, transport: http(L1_RPC_URL) })
     const votingSeconds = envInt('CRISP_E2E_VOTING_SECONDS', 3600)
@@ -149,10 +227,7 @@ export const round = async (): Promise<void> => {
 
       return `0x${Buffer.concat([head, name, Buffer.from([0]), batch]).toString('hex')}` as Hex
     })()
-    const customParams = encodeAbiParameters(
-      [{ type: 'uint256' }, { type: 'uint256' }, { type: 'uint256' }, { type: 'bool' }],
-      [BigInt(NUM_OPTIONS), CREDITS, 0n, true],
-    )
+    const customParams = encodeCustomParams(rules)
     const requestParams = {
       committeeSize: COMMITTEE_SIZE,
       inputWindow: [inputStart, inputEnd] as [bigint, bigint],
@@ -225,6 +300,9 @@ export const round = async (): Promise<void> => {
       { timeoutMs: 900_000, intervalMs: 5000 },
     )
     log(`${stamp()} round open on Aztec: window ${opened.inputStart}..${opened.inputEnd}, limit ${opened.inputLimit}, scope ${opened.scopeHash}`)
+    if (opened.l1Registration !== (path === 'l1') || opened.nationalityMode !== rules.nationalityMode || opened.nationalityCommitment !== rules.nationalityCommitment) {
+      throw new Error(`The round opened on Aztec with other rules than requested: ${JSON.stringify(opened, (_, v) => (typeof v === 'bigint' ? v.toString() : v))}`)
+    }
     const committeeKeyCommitment = await waitFor(
       'the committee key on Aztec (KeyPublished)',
       async () => {
@@ -242,30 +320,76 @@ export const round = async (): Promise<void> => {
       intervalMs: 3000,
     })
 
-    // ---- 4. Registration with real mock-document ZKPassport proofs ----
+    // ---- 4. Registration ----
     const voters = PLAN.map((entry) => ({ ...entry, slotKey: generatePrivateKey() }))
     const slotOf = (voter: (typeof voters)[number]) => privateKeyToAccount(voter.slotKey).address
     const clients: CrispAztec[] = []
     for (const [index, voter] of voters.entries()) {
       const session = await connectAztec(AZTEC_NODE_URL)
       sessions.push(session)
-      const client = await CrispAztec.connect(session, d.aztecContract)
-      clients.push(client)
+      clients.push(await CrispAztec.connect(session, d.aztecContract))
+      if (path === 'l1') continue
+      // Aztec path: a real mock-document proof (age and nationality) bound to this Aztec account and this round's scope.
       const started = Date.now()
       const proof = await generateMockRegistrationProof({
         aztecAddress: session.address.toString(),
         domain: domainHash(ZKPASSPORT_DOMAIN),
         scope: scopeOf(L1_CHAIN_ID, d.program, e3Id),
-        minAge: 0,
+        minAge: Number(rules.minAge),
+        nationality: { mode: rules.nationalityMode as 1 | 2, countries: rules.countries },
         now: await chainTime(session.node),
         documentNumber: `E2E${e3Id}${index}`.padEnd(9, '0').slice(-9),
       })
       log(`${stamp()} ${voter.name}: ${proof.circuit} proof in ${((Date.now() - started) / 1000).toFixed(0)}s`)
-      const sent = await client.register({ e3Id, slot: slotOf(voter), proof })
+      const sent = await clients[index].register({ e3Id, slot: slotOf(voter), proof })
       txs.push({ layer: 'L2', what: `${voter.name} register (slot ${slotOf(voter)})`, hash: sent.txHash })
       log(`${stamp()} ${voter.name}: registered, tx ${sent.txHash} (block ${sent.blockNumber})`)
     }
-    const census = await crispWatcher.getCensus(e3Id)
+    if (path === 'l1') {
+      // L1 path: no Aztec account, no wallet: the proof is bound to the slot and the CRISP server relays it to the registrar.
+      const registerThroughServer = async (slot: Address, mock: MockL1Proof) => {
+        const calldata = registerOnL1Calldata({ e3Id, slot, params: mockL1Proof(slot, mock), countries: rules.countries })
+        const { txHash } = await relayRegistrationOnL1(SERVER_URL, calldata)
+        const receipt = await l1.waitForTransactionReceipt({ hash: txHash })
+        if (receipt.status !== 'success') throw new Error(`The registration ${txHash} reverted on L1`)
+
+        return txHash
+      }
+      const good = (index: number): MockL1Proof => ({ identifier: l1Identifier(e3Id, index), age: 30n, nationality: 'ZKR', boundTo: undefined })
+      // The server simulates a registration first and answers 400 with the registrar's error: the rules are enforced on L1.
+      const slotOne = slotOf(voters[0])
+      const refused = async (control: string, expected: string, mock: MockL1Proof, slot = slotOne) => {
+        try {
+          await registerThroughServer(slot, mock)
+        } catch (error) {
+          if (!String(error).includes(expected)) throw new Error(`Control "${control}" failed with ${String(error)}, expected ${expected}`)
+          log(`${stamp()} control "${control}" refused: ${expected}`)
+
+          return
+        }
+        throw new Error(`Control "${control}" was accepted`)
+      }
+      await refused('a nationality on the excluded list', 'NationalityNotProven', { ...good(90), nationality: 'PRK' })
+      await refused('a voter under the minimum age', 'AgeNotProven', { ...good(91), age: 17n })
+      await refused('a proof bound to another slot', 'WrongBinding', { ...good(92), boundTo: slotOf(voters[1]) })
+      for (const [index, voter] of voters.entries()) {
+        const hash = await registerThroughServer(slotOf(voter), good(index))
+        txs.push({ layer: 'L1', what: `${voter.name} registration (relayed by the server, slot ${slotOf(voter)})`, hash })
+        log(`${stamp()} ${voter.name}: registered on L1 through the server, tx ${hash}`)
+      }
+      await refused('a document that already registered', 'DocumentAlreadyRegistered', good(0), slotOf(voters[1]))
+    }
+    // L1 path: the keeper carries each MEMBER message to `add_member_from_l1`; the census is complete when all are in.
+    const census = await waitFor(
+      path === 'l1' ? 'the keeper to add every L1 registration to the census' : 'the census',
+      async () => {
+        debugging()
+        const current = await crispWatcher.getCensus(e3Id)
+
+        return current.leaves.length === voters.length ? current : undefined
+      },
+      { timeoutMs: envInt('CRISP_E2E_MEMBERS_TIMEOUT_S', 1200) * 1000, intervalMs: 5000 },
+    )
     log(`${stamp()} census: ${census.leaves.length} members`)
 
     // The input window opens after the worst-case key setup the program reserves; the key is in, so skip the wait.
@@ -356,7 +480,9 @@ export const round = async (): Promise<void> => {
     log(`server result: ${JSON.stringify(serverResult, (_, v) => (typeof v === 'bigint' ? v.toString() : v)).slice(0, 400)}`)
 
     const report = {
+      path,
       e3Id: e3Id.toString(),
+      rules,
       expectedTally: EXPECTED_TALLY.map(String),
       tally: tally.map(String),
       decodedWithSdk: decodeTally(await sdkPlaintext(l1, interfold, e3Id), NUM_OPTIONS).map(String),
@@ -364,16 +490,16 @@ export const round = async (): Promise<void> => {
       transactions: txs,
       seconds: Math.round((Date.now() - t0) / 1000),
     }
-    writeFileSync(join(WORK, 'report.json'), `${JSON.stringify(report, (_, v) => (typeof v === 'bigint' ? v.toString() : v), 2)}\n`)
+    const reportFile = join(WORK, `report-${path}.json`)
+    writeFileSync(reportFile, `${JSON.stringify(report, (_, v) => (typeof v === 'bigint' ? v.toString() : v), 2)}\n`)
     if (tally.length !== EXPECTED_TALLY.length || tally.some((value, i) => value !== EXPECTED_TALLY[i])) {
       throw new Error(`Tally mismatch: expected [${EXPECTED_TALLY}], decoded [${tally}]`)
     }
-    log(`PASS: tally [${tally}] equals the cast votes [${EXPECTED_TALLY}] in ${report.seconds}s; report at ${join(WORK, 'report.json')}`)
+    log(`PASS (${path} path): tally [${tally}] equals the cast votes [${EXPECTED_TALLY}] in ${report.seconds}s; report at ${reportFile}`)
     for (const tx of txs) log(`  ${tx.layer} ${tx.hash} ${tx.what}`)
   } finally {
     await pump.stop()
     for (const session of sessions) await Promise.resolve(session.stop()).catch(() => undefined)
-    await Promise.resolve(destroyBBApi()).catch(() => undefined)
   }
 }
 

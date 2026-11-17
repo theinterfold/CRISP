@@ -42,6 +42,11 @@ export type MockRegistrationProofOptions = {
   scope: string
   /** Minimum age to prove (`register_with_age`, outer_count_5). Leave 0 to prove only the binding (`register`, outer_count_4). */
   minAge?: number
+  /**
+   * A nationality rule to prove (adds a subproof): `mode` 1 = nationality in `countries`, 2 = not in them; alpha-3 codes, the order
+   * the round's commitment was made with. The mock document's nationality is `ZKR`. Omit for none.
+   */
+  nationality?: { mode: 1 | 2; countries: string[] }
   /** `current_date` of the proof, Unix seconds. The contract accepts it between `anchor - validity` and `anchor + 1h`. */
   now: number | bigint
   /**
@@ -55,10 +60,10 @@ export type MockRegistrationProofOptions = {
 
 /** A proof as the ZKPassport SDK's `compressed` mode returns it, with what seeding the registry and debugging need. */
 export type MockRegistrationProof = {
-  /** `outer_count_4` (bind) or `outer_count_5` (age and bind). */
-  circuit: 'outer_count_4' | 'outer_count_5'
-  /** The subproof count `CrispAztec.register`/`register_with_age` expects: 4 or 5. */
-  subproofs: 4 | 5
+  /** `outer_count_4` (bind), `outer_count_5` (age or nationality, and bind) or `outer_count_6` (age, nationality and bind). */
+  circuit: 'outer_count_4' | 'outer_count_5' | 'outer_count_6'
+  /** The subproof count the `CrispAztec.register*` entry point expects: 4, 5 or 6. */
+  subproofs: 4 | 5 | 6
   /** `ProofResult.proof`: public inputs then proof, one 32-byte field each, as bare hex. Feed it to `CrispAztec.register({ proof })`. */
   proof: string
   /** `ProofResult.vkeyHash`: the outer circuit's verification key hash, which the registry has to accept. */
@@ -78,7 +83,7 @@ export type MockRegistrationProof = {
 }
 
 type ProverResult = {
-  circuit: 'outer_count_4' | 'outer_count_5'
+  circuit: 'outer_count_4' | 'outer_count_5' | 'outer_count_6'
   circuitVersion: string
   now: number
   certificateRegistryRoot: string
@@ -138,8 +143,8 @@ export type MockRegistryRoots = {
   circuitsVersion: string
   certificateRoot: string
   circuitRoot: string
-  /** The `outer_count_4` (`register`) and `outer_count_5` (`register_with_age`) verification key hashes. */
-  vkeyHashes: { outer_count_4: string; outer_count_5: string }
+  /** The `outer_count_4` (`register`), `outer_count_5` (`register_with_age`, `register_with_nationality`) and `outer_count_6` (both) verification key hashes. */
+  vkeyHashes: { outer_count_4: string; outer_count_5: string; outer_count_6: string }
 }
 
 /**
@@ -176,6 +181,7 @@ export const generateMockRegistrationProof = async (options: MockRegistrationPro
     domain: options.domain.toString(),
     scope: scopeHash(options.scope).toString(),
     minAge: options.minAge ?? 0,
+    nationality: options.nationality,
     now,
     documentNumber: (options.documentNumber ?? 'ZKR000001').padEnd(9, '<'),
     birthDate: options.birthDate ?? '881112',
@@ -186,7 +192,7 @@ export const generateMockRegistrationProof = async (options: MockRegistrationPro
 
   return {
     circuit: result.circuit,
-    subproofs: result.circuit === 'outer_count_5' ? 5 : 4,
+    subproofs: Number(result.circuit.slice('outer_count_'.length)) as 4 | 5 | 6,
     proof: [...result.publicInputs, ...result.proofFields].map(bare).join(''),
     vkeyHash: result.vkeyHash,
     vkeyFields: result.vkeyFields,

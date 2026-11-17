@@ -14,3 +14,19 @@ pub fn service_config(config: Config, round: RoundConfig) -> ServiceConfig {
         dev_mode: round.allow_mock_documents,
     }
 }
+
+/// What an `Aztec`-path `register*` entry point may be called for: a round that registers on Aztec whose age and
+/// nationality rules are exactly the ones the entry point proves.
+pub fn assert_registration_shape(round: RoundConfig, with_age: bool, with_nationality: bool) {
+    assert(!round.l1_registration, "round registers on L1");
+    if with_age {
+        assert(round.min_age != 0, "round has no age requirement");
+    } else {
+        assert(round.min_age == 0, "round requires an age proof");
+    }
+    if with_nationality {
+        assert(round.nationality_mode != 0, "round has no nationality requirement");
+    } else {
+        assert(round.nationality_mode == 0, "round requires a nationality proof");
+    }
+}

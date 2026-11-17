@@ -29,6 +29,7 @@ export const paths = {
   releaseScript: join(REPO, 'scripts', 'interfold-release.mjs'),
   randomnessScript: join(REPO, 'scripts', 'anvil-randomness.mjs'),
   serverBinary: join(REPO, 'target', 'debug', 'server'),
+  mockRootVerifierArtifact: join(REPO, 'extensions', 'aztec', 'l1', 'artifacts', 'contracts', 'test', 'MockZKPassport.sol', 'MockZKPassportVerifier.json'),
   keeperMain: join(REPO, 'extensions', 'aztec', 'keeper', 'dist', 'main.js'),
   contractArtifact: join(REPO, 'extensions', 'aztec', 'contracts', 'target', 'crisp_aztec-CrispAztec.json'),
   interfoldBin: join(WORK, 'bin', 'interfold'),

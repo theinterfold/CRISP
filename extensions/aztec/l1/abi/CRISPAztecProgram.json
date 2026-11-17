@@ -61,6 +61,22 @@
         "internalType": "uint256",
         "name": "e3Id",
         "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "caller",
+        "type": "address"
+      }
+    ],
+    "name": "CallerNotRegistrar",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
       }
     ],
     "name": "CommitteeKeyAlreadyRelayed",
@@ -221,6 +237,11 @@
   },
   {
     "inputs": [],
+    "name": "InvalidCountries",
+    "type": "error"
+  },
+  {
+    "inputs": [],
     "name": "InvalidDataAvailabilityVerifier",
     "type": "error"
   },
@@ -262,8 +283,41 @@
     "type": "error"
   },
   {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "commitment",
+        "type": "uint256"
+      }
+    ],
+    "name": "InvalidNationalityCommitment",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "mode",
+        "type": "uint256"
+      }
+    ],
+    "name": "InvalidNationalityMode",
+    "type": "error"
+  },
+  {
     "inputs": [],
     "name": "InvalidNumOptions",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "registrar",
+        "type": "address"
+      }
+    ],
+    "name": "InvalidRegistrar",
     "type": "error"
   },
   {
@@ -338,6 +392,17 @@
   {
     "inputs": [],
     "name": "ProgramNotRegistered",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      }
+    ],
+    "name": "RegistrationClosed",
     "type": "error"
   },
   {
@@ -530,6 +595,31 @@
     "inputs": [
       {
         "indexed": true,
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "slot",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      }
+    ],
+    "name": "MemberSent",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
         "internalType": "address",
         "name": "previousOwner",
         "type": "address"
@@ -564,6 +654,55 @@
     "type": "event"
   },
   {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "registrar",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "minAge",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "bool",
+        "name": "allowMockDocuments",
+        "type": "bool"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint8",
+        "name": "nationalityMode",
+        "type": "uint8"
+      },
+      {
+        "indexed": false,
+        "internalType": "string[]",
+        "name": "countries",
+        "type": "string[]"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "nationalityCommitment",
+        "type": "uint256"
+      }
+    ],
+    "name": "RoundRules",
+    "type": "event"
+  },
+  {
     "inputs": [],
     "name": "ENCRYPTION_SCHEME_ID",
     "outputs": [
@@ -571,6 +710,32 @@
         "internalType": "bytes32",
         "name": "",
         "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "FIELD_MODULUS",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "MAX_COUNTRIES",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
       }
     ],
     "stateMutability": "view",
@@ -807,6 +972,57 @@
     "type": "function"
   },
   {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      }
+    ],
+    "name": "getRules",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "registrar",
+            "type": "address"
+          },
+          {
+            "internalType": "bool",
+            "name": "allowMockDocuments",
+            "type": "bool"
+          },
+          {
+            "internalType": "uint8",
+            "name": "nationalityMode",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint256",
+            "name": "minAge",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "countriesHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "uint256",
+            "name": "inputEnd",
+            "type": "uint256"
+          }
+        ],
+        "internalType": "struct CRISPRemoteProgram.Rules",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [],
     "name": "imageId",
     "outputs": [
@@ -939,6 +1155,24 @@
     "name": "publishInput",
     "outputs": [],
     "stateMutability": "pure",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "slotAddress",
+        "type": "address"
+      }
+    ],
+    "name": "registerMember",
+    "outputs": [],
+    "stateMutability": "nonpayable",
     "type": "function"
   },
   {

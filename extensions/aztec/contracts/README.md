@@ -9,10 +9,11 @@ L1 program ──KEY────▶ publish_key                 cast ───�
 close_round ──ROOT──▶ L1 program         (input root and count, through the Outbox)
 ```
 
-Voters register a slot (an Ethereum address) with a ZKPassport proof, then cast ballots with a fold proof
-(`noir-recursive` proof of the CRISP fold circuit) plus an attestation from the availability service. The
-contract is the on-chain ledger: it checks the proofs, builds both Merkle trees with the same hashing as
-the Solidity code and the circuits, and sends the final input root to L1.
+Voters register a slot (an Ethereum address) either with a ZKPassport proof on Aztec or, on a round that
+registers on L1, through the L1 `ZKPassportRegistrar` and a MEMBER message (see `../README.md`), then cast
+ballots with a fold proof (`noir-recursive` proof of the CRISP fold circuit) plus an attestation from the
+availability service. The contract is the on-chain ledger: it checks the proofs, builds both Merkle trees
+with the same hashing as the Solidity code and the circuits, and sends the final input root to L1.
 
 ## Build and test
 
@@ -35,7 +36,7 @@ aztec-nr and the vendored ZKPassport verifier, not from this contract.
 - `crisp_aztec/src/tests.nr` (`aztec-nargo test --package crisp_aztec`): pure functions against the
   Solidity code they replace, see [Agreement with Solidity](#agreement-with-solidity).
 - `crisp_aztec_test` (TXE): the contract end to end, see [What the TXE tests cover](#what-the-txe-tests-cover).
-- The vendored ZKPassport registry's tests.
+- The vendored ZKPassport registry's and verifier's tests (the verifier crate is a workspace member for this).
 
 ## Layout
 
@@ -53,13 +54,24 @@ aztec-nr and the vendored ZKPassport verifier, not from this contract.
 
 ### Vendored ZKPassport
 
-`vendor/zkpassport/{core,registry_contract,verifier}` are copied unchanged from
+`vendor/zkpassport/{core,registry_contract,verifier}` are copied from
 [`zkpassport/zkpassport-packages`](https://github.com/zkpassport/zkpassport-packages)
-`packages/aztec/noir` at commit `bc1c080fb56e3c2679f8b396056a0679637a3308` (Apache-2.0). They are
-vendored because Nargo can only pin a git dependency to a tag and the upstream repository has no tag for
-these packages. The only things they pull from the network are `aztec-nr` v6.0.0 and the tag
-`noir-v1.0.0` of `zkpassport/circuits`. The registry is a workspace member so that TXE can deploy it.
-Replace the directory with a tagged dependency once upstream publishes one.
+`packages/aztec/noir` at commit `bc1c080fb56e3c2679f8b396056a0679637a3308` (Apache-2.0), with one
+patch (below). They are vendored because Nargo can only pin a git dependency to a tag and the upstream
+repository has no tag for these packages. The only things they pull from the network are `aztec-nr`
+v6.0.0 and the tag `noir-v1.0.0` of `zkpassport/circuits`. The registry is a workspace member so that TXE
+can deploy it, and the verifier is one so that `aztec test` runs its tests. Replace the directory with a
+tagged dependency once upstream publishes one.
+
+**CRISP patch: `Query::nationality_committed(exclusion, commitment)`** (`vendor/zkpassport/verifier/src/query.nr`).
+Upstream's `nationality_in` / `nationality_out` take the country list as an argument and compute its
+commitment in the circuit, which is the only thing the verifier needs. A CRISP round stores the
+commitment of its list in ROUND (`nationality_commitment`) rather than the list, so the contract asks the
+verifier for a nationality subproof with that exact commitment. The method builds the same
+`ParamCommitment` the list-taking ones do (inclusion or exclusion variant) from a commitment given as is.
+Three unit tests in `query.nr` cover it, and the SDK computes the commitment with
+`@zkpassport/utils` `getCountryParameterCommitment`, checked against the Noir fixtures. Drop the patch
+when upstream exposes the same.
 
 ## Storage
 
@@ -78,10 +90,10 @@ bytes)` wherever the full id is hashed or signed: the EIP-712 `Ballot` and `Inpu
 | `rounds[round]`                    | `PublicImmutable<RoundConfig>`       | `open_round`                   |
 | `committee_keys[round]`            | `PublicImmutable<Field>`             | `publish_key`                  |
 | `closed[round]`                    | `PublicMutable<bool>`                | `close_round`                  |
-| `census_count[round]`              | `PublicMutable<u32>`                 | `_add_member`                  |
-| `census_nodes[round][level]`       | `PublicMutable<Field>`               | `_add_member`                  |
-| `census_roots[round][root]`        | `PublicMutable<bool>`                | `_add_member`                  |
-| `registered_slots[round][slot]`    | `PublicMutable<bool>`                | `_add_member`                  |
+| `census_count[round]`              | `PublicMutable<u32>`                 | `insert_member`                |
+| `census_nodes[round][level]`       | `PublicMutable<Field>`               | `insert_member`                |
+| `census_roots[round][root]`        | `PublicMutable<bool>`                | `insert_member`                |
+| `registered_slots[round][slot]`    | `PublicMutable<bool>`                | `insert_member`                |
 | `input_count[round]`               | `PublicMutable<u32>`                 | `_append_input`                |
 | `input_frontier[round][level]`     | `PublicMutable<Field>`               | `_append_input`                |
 | `inputs[round][index]`             | `PublicMutable<InputEntry>`          | `_append_input`                |
@@ -91,7 +103,7 @@ bytes)` wherever the full id is hashed or signed: the EIP-712 `Ballot` and `Inpu
   availability signer's secp256k1 key (x, y), the fold verification-key hash, the ZKPassport domain hash,
   circuits version, validity period and registry address. Bytes32 values are stored as two 128-bit halves.
 - `RoundConfig`: `num_options`, `credits`, `input_start`, `input_end`, `input_limit`, `scope_hash`,
-  `min_age`, `allow_mock_documents`.
+  `min_age`, `allow_mock_documents`, `l1_registration`, `nationality_mode`, `nationality_commitment`.
 - `InputEntry`: `(slot, ct_commitment)`, what a revote must name as its parent.
 - `input_ids` keys are `keccak256(abi.encode("CRISP_INPUT_V1", program, e3Id (full), encryptedVoteHash,
   ciphertextCommitment, slot, parentIndexPlusOne))` truncated to 31 bytes, the same `inputId` L1 computes.
@@ -118,9 +130,12 @@ tested against Solidity-produced roots with an in-memory store.
 | `constructor`           | public initializer      | deployer   | Stores `Config` (11 arguments: `l1_program`, `interfold`, the two domain separators, the signer key halves, `fold_vk_hash`, the ZKPassport settings and registry).                                                                                                          |
 | `open_round`            | public                  | anyone     | Rebuilds the ROUND message content from its arguments, consumes it (secret `0`, sender = L1 program), stores `RoundConfig`. Rejects `input_limit` 0 or > 65536, and an empty window. |
 | `publish_key`           | public                  | anyone     | Same for the KEY message; stores the committee public key.                                                                                                    |
-| `register`              | private                 | voter      | Rounds with `min_age == 0`. Verifies a ZKPassport proof bound to the caller's address, spends the uniqueness nullifier, enqueues `_add_member`.              |
-| `register_with_age`     | private                 | voter      | Rounds with `min_age != 0`: also proves `age >= min_age`. A separate entry point because a ZKPassport query's size is a compile-time constant.             |
-| `_add_member`           | public, `#[only_self]`  | contract   | Registration window, slot uniqueness, census capacity, LeanIMT insert, records the new root.                                                                 |
+| `register`              | private                 | voter      | Aztec-path rounds with no rule. Verifies a ZKPassport proof bound to the caller's address, spends the uniqueness nullifier, enqueues `_add_member`.          |
+| `register_with_age`     | private                 | voter      | Aztec-path rounds with `min_age != 0` and no nationality rule: also proves `age >= min_age`. A separate entry point because a ZKPassport query's size is a compile-time constant. |
+| `register_with_nationality` | private             | voter      | Aztec-path rounds with a nationality rule and no age rule: also proves the nationality is in (or not in) the committed list.                                |
+| `register_with_age_and_nationality` | private     | voter      | Aztec-path rounds with both rules.                                                                                                                            |
+| `add_member_from_l1`    | public                  | anyone     | L1-path rounds: consumes the MEMBER message `(roundId, slot)` the L1 program sent (secret `0`, sender = L1 program, a message-tree leaf index) and inserts the slot into the census. The keeper calls it. |
+| `_add_member`           | public, `#[only_self]`  | contract   | `insert_member` for the `register*` functions.                                                                                                               |
 | `cast`                  | private                 | voter      | Verifies the fold proof (9 public inputs), the verification-key hash and the availability attestation (ECDSA); enqueues `_append_input`.                    |
 | `_append_input`         | public, `#[only_self]`  | contract   | Window, attestation expiry, known census root, input limit, parent rule, replay (`inputId`), LazyIMT insert.                                                 |
 | `close_round`           | public                  | anyone     | After `input_end`, once: folds the root, sends `(roundId, inputRoot, numInputs)` to L1, returns the root.                                                      |
@@ -148,9 +163,21 @@ Notes that are not obvious:
   commitment; otherwise the parent input must belong to the same slot and carry `prev_commitment`.
 - **No chain id in the constructor**: both domain separators already commit to it.
 - Message contents are `sha256_to_field(abi.encode(...))` (first 31 bytes of the digest): ROUND
-  `(1, roundId, numOptions, credits, inputStart, inputEnd, inputLimit, scopeHash, minAge, allowMock)`, KEY
-  `(2, roundId, committeePublicKeyField)`, ROOT `(3, roundId, inputRoot, numInputs)`. The vectors are in
+  `(1, roundId, numOptions, credits, inputStart, inputEnd, inputLimit, scopeHash, minAge, allowMock,
+  l1Registration, nationalityMode, nationalityCommitment)`, KEY `(2, roundId, committeePublicKeyField)`, ROOT
+  `(3, roundId, inputRoot, numInputs)`, MEMBER `(4, roundId, slot)`. The vectors are in
   `../l1/tests/fixtures/message-vectors.json`.
+- **Two registration paths, one per round.** `l1_registration` is fixed when the round opens. On an
+  Aztec-path round the `register*` functions verify the voter's proof; on an L1-path round they all fail
+  ("round registers on L1") and members arrive as MEMBER messages through `add_member_from_l1`, which
+  fails on an Aztec-path round ("round registers on Aztec"). Both end in the same `insert_member`
+  (registration window, slot uniqueness, census capacity, LeanIMT insert, new root, log).
+- **Nationality.** `nationality_mode` 0 is no rule, 1 in the list, 2 not in it. The list itself is not on
+  Aztec: ROUND carries `nationality_commitment`, ZKPassport's parameter commitment of the country list
+  (`nationalityCommitment` in the SDK; exclusion lists are sorted first), and the nationality `register*`
+  functions require the proof's subproof to carry exactly that commitment. `open_round` refuses a mode other
+  than 0, 1 or 2, a commitment with no rule (or on the L1 path, where L1 checks the list itself), and no
+  commitment with a rule on the Aztec path. L1 refuses the same, so a malformed ROUND cannot open a round.
 
 ## Public logs
 
@@ -176,7 +203,7 @@ order. A server reads them with `getPublicLogsByTag`. Fields are full field elem
   `packages/crisp-contracts/tests/fixtures` (`input-tree*.json`, built by `CRISPProgram`).
 - EIP-712 ballot and availability digests, `inputId` (ABI encoding with the string tail), the typehash
   constants, and a secp256k1 attestation signed with viem.
-- The three L1 message contents of `message-vectors.json`.
+- The four L1 message contents of `message-vectors.json` (ROUND of both paths, KEY, ROOT, MEMBER).
 
 ## What the TXE tests cover
 
@@ -188,6 +215,15 @@ to the local-network run:
 - Registration: capsule delivery, registry lookups (a vendored registry deployed and seeded at the local
   network's canonical address, using ZKPassport's own age fixture), bound-address and scope mismatches, one
   registration per document and per slot, the registration window, the age and no-age entry points.
+- Nationality: the `register_with_nationality*` entry points accept a proof whose commitment equals the
+  round's (in and not-in lists), refuse another list, another account and a wrong subproof count, and every
+  entry point refuses a round whose rules it does not serve. The commitment fixtures come from
+  `vendor/zkpassport/core/src/fixtures.nr`, which the SDK test also checks.
+- `open_round` validation of the nationality mode and commitment, and of the L1-path flag.
+- L1 path: `add_member_from_l1` consumes the MEMBER message and inserts the slot (the census root equals the
+  SDK's), a ballot can be cast after it, and it refuses a replayed message, a message for another slot,
+  sender or round, an Aztec-path round, an unopened round, a slot already registered and a closed window;
+  every `register*` refuses an L1-path round.
 - The census root after 1, 2 and 3 registrations equals the SDK's `LeanIMT` (poseidon2) root.
 - Casting: attestation signature (right signer, wrong signer, tampered ballot, expired), verification-key
   hash, unknown census root, parent rule, replay, limit, window, missing committee key.
@@ -238,4 +274,6 @@ Private gate counts (`aztec profile gates target`):
 | `register_with_age` | 23,025  |
 
 The ZKPassport proof itself is verified by the registry (`assert_proof_valid`, 25,175 gates) and the
-fold proof by `verify_honk_proof` inside `cast`.
+fold proof by `verify_honk_proof` inside `cast`. `register_with_nationality` and
+`register_with_age_and_nationality` add one subproof each to the proof the registry verifies (outer
+circuits `outer_count_5` / `outer_count_6`); see `e2e/` for measured proving and registration times.

@@ -31,9 +31,6 @@ contract CRISPAztecProgram is CRISPRemoteProgram {
   /// `tests/aztec-program.test.ts` pins this value and the README gives the full command.
   bytes32 public constant SECRET_HASH = 0x1f8eff65d91ed781c2e7a28a2ff99b7f7506b7293121b5ffcf3cd339c84d2250;
 
-  /// @dev BN254 scalar field modulus; the Inbox rejects actors, contents and secret hashes above `p - 1`.
-  uint256 private constant FIELD_MODULUS = 21888242871839275222246405745257275088548364400416034343698204186575808495617;
-
   /// @notice Aztec Inbox (L1 -> L2).
   IAztecInbox public immutable inbox;
   /// @notice Aztec Outbox (L2 -> L1).
@@ -135,15 +132,12 @@ contract CRISPAztecProgram is CRISPRemoteProgram {
       string.concat("crisp-aztec:", Strings.toString(block.chainid), ":", Strings.toHexString(address(this)), ":", Strings.toString(e3Id));
   }
 
-  function _sendToRemote(uint256 e3Id, bytes memory message) internal override returns (bytes32 content) {
+  function _sendToRemote(uint256 e3Id, bytes memory message) internal override returns (bytes32 content, uint256 index) {
     if (l2Program == bytes32(0)) revert L2ProgramNotSet();
 
     content = sha256ToField(message);
-    (bytes32 leaf, uint256 index) = inbox.sendL2Message(
-      AztecDataStructures.L2Actor({ actor: l2Program, version: rollupVersion }),
-      content,
-      SECRET_HASH
-    );
+    bytes32 leaf;
+    (leaf, index) = inbox.sendL2Message(AztecDataStructures.L2Actor({ actor: l2Program, version: rollupVersion }), content, SECRET_HASH);
 
     emit L1ToL2MessageSent(e3Id, content, leaf, index);
   }

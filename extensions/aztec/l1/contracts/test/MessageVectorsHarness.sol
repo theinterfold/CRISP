@@ -20,4 +20,8 @@ contract MessageVectorsHarness {
   function inputRoot(uint256 roundId, uint256 root, uint256 numInputs) external pure returns (bytes memory) {
     return CRISPRemoteMessages.inputRoot(roundId, root, numInputs);
   }
+
+  function member(uint256 roundId, address slotAddress) external pure returns (bytes memory) {
+    return CRISPRemoteMessages.member(roundId, slotAddress);
+  }
 }

@@ -1,10 +1,10 @@
 # ZKPassport fixtures for the Aztec local network
 
-Dev tooling that lets `CrispAztec.register` / `register_with_age` run on a local Aztec network with **real
+Dev tooling that lets `CrispAztec.register` / `register_with_age` / `register_with_nationality` / `register_with_age_and_nationality` run on a local Aztec network with **real
 ZKPassport proofs**, no passport and no phone needed.
 
-What is real: every subproof (certificate, ID data, integrity, age, bind) is proved with `bb` 6.0.0 and aggregated
-by the published `outer_count_4` / `outer_count_5` circuits of ZKPassport circuits release **0.22.0** (the release
+What is real: every subproof (certificate, ID data, integrity, age, nationality, bind) is proved with `bb` 6.0.0 and aggregated
+by the published `outer_count_4` / `outer_count_5` / `outer_count_6` circuits of ZKPassport circuits release **0.22.0** (the release
 built for bb 6.0.0), exactly as the ZKPassport app produces a `compressed`-mode proof. What is synthetic: the
 passport (issuing country `ZKR`, ICAO's mock code, so the nullifier type is `NON_SALTED_MOCK`) and the certificate
 authority that signs it. The contract accepts mock documents only for rounds opened with `allowMockDocuments`
@@ -23,10 +23,11 @@ pnpm tsx zkpassport/src/demo.ts   # ~3 min: seeds the registry, opens 2 rounds, 
 
 `demo.ts` deploys the vendored `ZKPassportRegistry` at its canonical address and seeds it, deploys `CrispAztec`
 (its `l1_program` is anvil account 7, which stands in for `CRISPAztecProgram` and sends real Inbox messages), opens
-a round without age (`outer_count_4`) and one with `min_age` 18 (`outer_count_5`) using the real scope hash, lands
-`register` and `register_with_age`, prints the `MemberRegistered` logs, then checks that four flawed proofs are
-refused (a corrupted proof, a proof bound to another account, a proof for another round's scope, a document that
-already registered). `SKIP_CONTROLS=1` skips the controls.
+a round without age (`outer_count_4`), one with `min_age` 18 (`outer_count_5`), one with a nationality-in rule (`outer_count_5`) and one with
+`min_age` 18 and a nationality-not-in rule (`outer_count_6`) using the real scope hash, lands
+each variant (`register`, `register_with_age`, `register_with_nationality`, `register_with_age_and_nationality`), prints the
+`MemberRegistered` logs, then checks that five flawed proofs are refused (a corrupted proof, a proof bound to another account,
+a proof for another round's scope, a document that already registered, a proof for another nationality list). `SKIP_CONTROLS=1` skips the controls.
 
 ```ts
 import {
@@ -53,6 +54,7 @@ const proof = await generateMockRegistrationProof({
   domain: domainHash('<your domain>'),
   scope: scopeOf(chainId, l1Program, e3Id), // `crisp-aztec:<chainId>:<program>:<e3Id>`; hashed to the round's scope_hash
   minAge: 18, // 0 → outer_count_4 (register), > 0 → outer_count_5 (register_with_age)
+  nationality: { mode: 1, countries: ['ZKR'] }, // optional rule: one more subproof (the mock document's nationality is ZKR)
   now: await chainTime(session.node), // the proof's date: the contract checks it against the L2 block
   documentNumber: 'ZKR000001', // ≤ 9 chars of A-Z0-9<; one registration per document and round
 })
@@ -60,7 +62,7 @@ await client.register({ e3Id, slot, proof }) // `proof` is { proof, vkeyHash }, 
 ```
 
 `generateMockRegistrationProof` takes ~25 s (no age) or ~32 s (age). `mockRegistryRoots()` returns what a registry must
-hold (certificate root, circuit root, `outer_count_4/5` vk hashes) without proving anything.
+hold (certificate root, circuit root, `outer_count_4/5/6` vk hashes) without proving anything.
 
 ## Ordering and time
 

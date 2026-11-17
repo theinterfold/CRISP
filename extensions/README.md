@@ -26,11 +26,27 @@ sequenceDiagram
     S->>L1: publishCiphertextOutput (verify binds proof root to the L2 root)
 ```
 
+## Registration paths
+
+The creator chooses per poll how voters register (the L1 program's custom parameters):
+
+- **On the L2** (above): the voter proves their identity to the L2 contract, which inserts the slot into the
+  census.
+- **On L1**: the poll names a `ZKPassportRegistrar` (`core/contracts`). The voter's ZKPassport proof, bound to
+  the slot key, is verified on L1 and the program sends the slot to the L2 as a MEMBER message that the keeper
+  consumes (`K->>L2: add member (consume MEMBER)`). The CRISP server relays the voter's registration
+  (`POST /registration/l1`), so a voter needs no Ethereum wallet and no L2 account to register; only the
+  poll creator connects one.
+
+Either way a poll can require a minimum age and a nationality in, or not in, a list of countries. The L1
+registrar checks the list itself; the L2 contract is given only its commitment, so the circuit proves a match
+without a list on the L2. See `aztec/README.md` ("Registration paths and nationality").
+
 ## Layout
 
 | Path | Role |
 | --- | --- |
-| `core/contracts` | `CRISPRemoteProgram`: chain-agnostic L1 E3 program; `CRISPRemoteMessages`: ROUND/KEY/ROOT layouts. |
+| `core/contracts` | `CRISPRemoteProgram`: chain-agnostic L1 E3 program; `CRISPRemoteMessages`: ROUND/KEY/ROOT/MEMBER layouts; `ZKPassportRegistrar`: L1 ZKPassport registration of a round's voters. |
 | `core/remote-input` | Rust crate `crisp-remote-input`: the server seam (`RemoteInputSource`, `InputRootSubmitted`, gating, availability attester). |
 | `aztec/` | Reference extension for Aztec v6 (see `aztec/README.md`). |
 

@@ -15,9 +15,10 @@ export type CompressedProofResult = { proof?: string; vkeyHash?: string }
 
 /**
  * Subproofs the outer circuit aggregates for a query: 4 for one that only binds the proof to the sender (`register`),
- * 5 when it also proves a minimum age (`register_with_age`).
+ * 5 when it also proves a minimum age (`register_with_age`) or a nationality rule (`register_with_nationality`), 6 for both
+ * (`register_with_age_and_nationality`). See `registrationSubproofs`.
  */
-export type OuterSubproofCount = 4 | 5
+export type OuterSubproofCount = 4 | 5 | 6
 
 /**
  * Turn the outer proof of a ZKPassport `compressed` result into the capsule `register` consumes.

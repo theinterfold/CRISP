@@ -37,18 +37,25 @@ struct SubmittedRoot {
 }
 
 /// The custom parameters of a remote-program round: `abi.encode(numOptions, credits, minAge,
-/// allowMockDocuments)`. The remote contract enforces the age and the documents, and the server
-/// reads the number of options and the credits.
+/// allowMockDocuments, registrar, nationalityMode, countries, nationalityCommitment)`. The L1
+/// program validates all of it, and the remote contract (or the `registrar` on L1) enforces the
+/// age, the documents and the nationality rule. The server reads the number of options and the
+/// credits.
 type RemoteCustomParams = (
     sol_data::Uint<256>,
     sol_data::Uint<256>,
     sol_data::Uint<256>,
     sol_data::Bool,
+    sol_data::Address,
+    sol_data::Uint<8>,
+    sol_data::Array<sol_data::String>,
+    sol_data::Uint<256>,
 );
 
 fn round_params(custom_params: &[u8]) -> eyre::Result<CustomParams> {
-    let (num_options, credits, _min_age, _allow_mock_documents) =
-        <RemoteCustomParams as SolType>::abi_decode(custom_params)
+    // `abi.encode` of the words, not of one tuple: no offset word leads the data.
+    let (num_options, credits, ..) =
+        <RemoteCustomParams as SolType>::abi_decode_params(custom_params)
             .context("Failed to decode custom params from E3 event")?;
     Ok(CustomParams {
         // There is no token: the voter's credits are the same constant for everyone, and the
@@ -569,8 +576,17 @@ mod tests {
     }
 
     #[test]
-    fn custom_params_of_a_remote_round_come_from_its_four_words() {
-        let encoded = (U256::from(4), U256::from(10), U256::from(18), true).abi_encode_params();
+    fn custom_params_of_a_remote_round_come_from_its_eight_words() {
+        let encoded = <RemoteCustomParams as SolType>::abi_encode_params(&(
+            U256::from(4),
+            U256::from(10),
+            U256::from(18),
+            true,
+            Address::repeat_byte(0x11),
+            1u8,
+            vec!["DEU".to_string(), "FRA".to_string()],
+            U256::ZERO,
+        ));
 
         let params = round_params(&encoded).unwrap();
 
@@ -579,7 +595,23 @@ mod tests {
         assert_eq!(params.credit_mode, CreditMode::Constant);
         assert_eq!(params.census_mode, CensusMode::Onchain);
         assert_eq!(params.token_address, Address::ZERO.to_string());
-        // A round of the L1 program is not this program's: its words are a different layout.
+
+        // Rules do not change what the server reads: a round with none decodes the same.
+        let plain = <RemoteCustomParams as SolType>::abi_encode_params(&(
+            U256::from(4),
+            U256::from(10),
+            U256::from(18),
+            true,
+            Address::ZERO,
+            0u8,
+            Vec::<String>::new(),
+            U256::ZERO,
+        ));
+        assert_eq!(round_params(&plain).unwrap().num_options, "4");
+
+        // The earlier four-word layout and a round of the L1 program are not this layout.
+        let old = (U256::from(4), U256::from(10), U256::from(18), true).abi_encode_params();
+        assert!(round_params(&old).is_err());
         assert!(round_params(&[0u8; 31]).is_err());
     }
 

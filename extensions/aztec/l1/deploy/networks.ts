@@ -26,6 +26,9 @@ export const SEPOLIA_AZTEC: AztecBridge = {
   rollupVersion: 679261766n,
 }
 
+/** ZKPassport's root verifier, deployed at the same address on every network ZKPassport supports. */
+export const ZKPASSPORT_ROOT_VERIFIER = '0x1D000001000EFD9a6371f4d90bB8920D5431c0D8'
+
 /**
  * The Inbox, Outbox and rollup version of the local network (`aztec start --local-network`), read from its node: a
  * local network picks a new rollup version and new L1 addresses on every start.

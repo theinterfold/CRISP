@@ -41,6 +41,10 @@ const {
   getAgeParameterCommitment,
   getBindCircuitInputs,
   getBindParameterCommitment,
+  getCountryParameterCommitment,
+  getNationalityExclusionCircuitInputs,
+  getNationalityInclusionCircuitInputs,
+  ProofType,
   formatBoundData,
   getCircuitMerkleProof,
   getCommitmentFromDSCProof,
@@ -78,8 +82,10 @@ type Request = {
   domain: string
   /** `scope` (subscope) public input: the round's scope hash, decimal or 0x string. */
   scope: string
-  /** Minimum age to prove; 0 proves no age, which gives outer_count_4. */
+  /** Minimum age to prove; 0 proves no age. */
   minAge: number
+  /** A nationality rule to prove: `mode` 1 = nationality in `countries` (alpha-3, given order), 2 = not in them. Omit for none. */
+  nationality?: { mode: 1 | 2; countries: string[] }
   /** `current_date` of the proof, Unix seconds. */
   now: number
   /** 9 characters of the MRZ document number; a different one is a different document (a different nullifier). */
@@ -211,7 +217,7 @@ const main = async () => {
         circuitVersion: CIRCUIT_VERSION,
         certificateRegistryRoot: (await packagedCertificates(cscPem)).root,
         circuitRegistryRoot: manifest.root,
-        vkeyHashes: { outer_count_4: outer('outer_count_4'), outer_count_5: outer('outer_count_5') },
+        vkeyHashes: { outer_count_4: outer('outer_count_4'), outer_count_5: outer('outer_count_5'), outer_count_6: outer('outer_count_6') },
       }),
     )
     return
@@ -273,6 +279,23 @@ const main = async () => {
     disclosures.push({ name: 'compare_age', subproof: { ...toSubproof(r), paramCommitment } })
   }
 
+  if (request.nationality) {
+    // The mock document's nationality is ZKR (its MRZ), so `in [..ZKR..]` and `not in [..other..]` hold.
+    const { mode, countries } = request.nationality
+    const inclusion = mode === 1
+    const name = inclusion ? 'inclusion_check_nationality' : 'exclusion_check_nationality'
+    const inputs = inclusion
+      ? await getNationalityInclusionCircuitInputs(helper.passport, { nationality: { in: countries } }, SALTS, 0n, domain, scope, now)
+      : await getNationalityExclusionCircuitInputs(helper.passport, { nationality: { out: countries } }, SALTS, 0n, domain, scope, now)
+    assert(!!inputs, 'nationality inputs generated')
+    const r = await proveSubproof(name, inputs)
+    chainCheck(name, r)
+    const paramCommitment = getParameterCommitmentFromDisclosureProof(r.proof)
+    const expected = await getCountryParameterCommitment(inclusion ? ProofType.NATIONALITY_INCLUSION : ProofType.NATIONALITY_EXCLUSION, countries, !inclusion)
+    assert(expected === paramCommitment, 'nationality param commitment reproduced')
+    disclosures.push({ name, subproof: { ...toSubproof(r), paramCommitment } })
+  }
+
   const bindInputs = await getBindCircuitInputs(helper.passport, { bind: { user_address: request.aztecAddress } }, SALTS, 0n, domain, scope, now)
   assert(!!bindInputs, 'bind inputs generated')
   const bindR = await proveSubproof('bind', bindInputs)
@@ -282,7 +305,7 @@ const main = async () => {
   disclosures.push({ name: 'bind', subproof: { ...toSubproof(bindR), paramCommitment: bindCommitment } })
 
   // ---- Outer proof ----
-  const outerName = withAge ? 'outer_count_5' : 'outer_count_4'
+  const outerName = `outer_count_${3 + disclosures.length}`
   const chain = [toSubproof(dscR), toSubproof(idR), toSubproof(integrityR)]
   const merkle = []
   for (const s of [...chain, ...disclosures.map((d) => d.subproof)]) merkle.push(await getCircuitMerkleProof(s.vkeyHash, manifest))

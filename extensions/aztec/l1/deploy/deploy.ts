@@ -5,7 +5,15 @@
 // or FITNESS FOR A PARTICULAR PURPOSE.
 
 import hre from 'hardhat'
-import { type AztecBridge, localAztecBridge, readCrispDeployment, readDeployment, SEPOLIA_AZTEC, storeDeployment } from './networks'
+import {
+  type AztecBridge,
+  localAztecBridge,
+  readCrispDeployment,
+  readDeployment,
+  SEPOLIA_AZTEC,
+  storeDeployment,
+  ZKPASSPORT_ROOT_VERIFIER,
+} from './networks'
 
 /** Same minimum as `CRISPProgram`: voting must last an hour, and start after the worst-case committee setup. */
 const MIN_VOTING_DURATION = 3600n
@@ -15,6 +23,10 @@ const MIN_VOTING_DURATION = 3600n
  * end of the window still lands before Interfold's compute deadline.
  */
 const SEPOLIA_REMOTE_FINALITY_WINDOW = 10_800n
+/** The service the voter sees in the ZKPassport app, and part of every document identifier. */
+const DEFAULT_ZKPASSPORT_DOMAIN = 'poll.theinterfold.com'
+/** The maximum age of a ZKPassport proof when it is registered on L1. */
+const DEFAULT_ZKPASSPORT_PROOF_VALIDITY = 604_800n
 const interfoldAbi = [
   'function owner() view returns (address)',
   'function e3Programs(address) view returns (bool)',
@@ -38,6 +50,38 @@ async function recordedContract(ethers: any, chain: string, names: string[], wha
   return live[0]
 }
 
+/** Deploys (or finds) the `ZKPassportRegistrar` of `programAddress`; `undefined` where there is no root verifier to bind it to. */
+async function deployRegistrar(ethers: any, chain: string, programAddress: string, deployer: any): Promise<string | undefined> {
+  const rootVerifier = process.env.ZKPASSPORT_ROOT_VERIFIER ?? (chain === 'sepolia' ? ZKPASSPORT_ROOT_VERIFIER : undefined)
+  if (!rootVerifier) return undefined
+  if ((await ethers.provider.getCode(rootVerifier)) === '0x')
+    throw new Error(`ZKPassport root verifier ${rootVerifier} has no code on ${chain}`)
+  const domain = process.env.ZKPASSPORT_DOMAIN ?? DEFAULT_ZKPASSPORT_DOMAIN
+  const validityPeriod = process.env.ZKPASSPORT_PROOF_VALIDITY
+    ? BigInt(process.env.ZKPASSPORT_PROOF_VALIDITY)
+    : DEFAULT_ZKPASSPORT_PROOF_VALIDITY
+
+  const recorded = readDeployment(chain, 'ZKPassportRegistrar')
+  if (recorded && process.env.REDEPLOY !== 'true' && (await ethers.provider.getCode(recorded.address)) !== '0x') {
+    const existing = await ethers.getContractAt('ZKPassportRegistrar', recorded.address, deployer)
+    if ((await existing.program()).toLowerCase() === programAddress.toLowerCase()) {
+      console.log(`Reusing ZKPassportRegistrar ${recorded.address}`)
+      return recorded.address
+    }
+  }
+
+  const registrar = await ethers.deployContract('ZKPassportRegistrar', [rootVerifier, programAddress, domain, validityPeriod], deployer)
+  await registrar.waitForDeployment()
+  const address = await registrar.getAddress()
+  const receipt = await registrar.deploymentTransaction()!.wait()
+  storeDeployment(chain, 'ZKPassportRegistrar', {
+    address,
+    blockNumber: receipt!.blockNumber,
+    constructorArgs: { rootVerifier, program: programAddress, domain, validityPeriod: validityPeriod.toString() },
+  })
+  return address
+}
+
 /**
  * Deploys `CRISPAztecProgram` next to an existing Interfold + CRISP stack and registers it with Interfold.
  *
@@ -49,11 +93,21 @@ async function recordedContract(ethers: any, chain: string, names: string[], wha
  *   (`validate` reverts below it); 0 disables the check. Default: 0 on localhost, 10800 on Sepolia.
  * - `CRISP_AZTEC_L2_ADDRESS`: Aztec address of the deployed `crisp_aztec` contract; set once on the program.
  * - `CRISP_INITIAL_OWNER`: owner of the program (default: deployer). Required on Sepolia when governance owns Interfold.
- * - `REDEPLOY=true`: deploy a new program even if one is recorded for this network.
+ * - `ZKPASSPORT_ROOT_VERIFIER`: ZKPassport's root verifier for the L1 registrar. Default on Sepolia: the verifier ZKPassport
+ *   deploys at the same address everywhere. On localhost there is none, so the registrar is only deployed when this is set
+ *   (a test deployment of a mock verifier).
+ * - `ZKPASSPORT_DOMAIN`: the domain the registrar verifies proofs for (default poll.theinterfold.com). Must be the domain
+ *   the voter's ZKPassport request was made with, or no proof verifies.
+ * - `ZKPASSPORT_PROOF_VALIDITY`: seconds a proof stays registrable (default 604800, seven days).
+ * - `REDEPLOY=true`: deploy a new program (and registrar) even if one is recorded for this network.
  *
  * The L2 contract takes this program's address as an immutable and this program takes the L2 address afterwards, so
  * the intended order is: run this script, deploy `crisp_aztec` with the printed L1 address, run this script again with
  * `CRISP_AZTEC_L2_ADDRESS`. A rerun reuses the recorded program.
+ *
+ * The program's `ZKPassportRegistrar` is deployed too (see the environment above): it registers voters of rounds that
+ * name it as their `registrar`, and the CRISP server relays registrations to it (`ZKPASSPORT_REGISTRAR_ADDRESS`). It is
+ * bound to the program at construction, so a redeployed program gets a new registrar.
  */
 export async function deploy(): Promise<void> {
   const { ethers } = await hre.network.connect()
@@ -171,6 +225,8 @@ export async function deploy(): Promise<void> {
     }
   }
 
+  const registrarAddress = await deployRegistrar(ethers, chain, programAddress, deployer)
+
   console.log(`
       CRISPAztecProgram deployment (${chain}):
       ----------------------------------------------------------------------
@@ -182,7 +238,8 @@ export async function deploy(): Promise<void> {
       Aztec Outbox: ${bridge.outbox}
       Rollup version: ${bridge.rollupVersion}
       L2 program: ${await program.l2Program()}
-      CRISP_AZTEC_L1_PROGRAM=${programAddress}
+      ZKPassportRegistrar: ${registrarAddress ?? 'not deployed (set ZKPASSPORT_ROOT_VERIFIER)'}
+      CRISP_AZTEC_L1_PROGRAM=${programAddress}${registrarAddress ? `\n      ZKPASSPORT_REGISTRAR_ADDRESS=${registrarAddress}` : ''}
   `)
 }
 

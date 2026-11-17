@@ -19,6 +19,7 @@ import type { L1ToL2Message } from './l1'
 import { readLogs, type ReadLogsOptions } from './logs'
 import { e3IdOf, type RoundConfig, roundIdOf } from './messages'
 import type { AztecSession } from './session'
+import { registrationSubproofs } from './rules'
 import { type CompressedProofResult, registrationCapsule } from './zkpassport'
 
 /** The round parameters the contract stored from the ROUND message. */
@@ -31,6 +32,12 @@ export type RoundParams = {
   scopeHash: bigint
   minAge: bigint
   allowMockDocuments: boolean
+  /** The voters register on L1 (the round's `ZKPassportRegistrar`); `register` is not available. */
+  l1Registration: boolean
+  /** `NATIONALITY_MODE`: 0 none, 1 nationality in the list, 2 not in it. */
+  nationalityMode: number
+  /** ZKPassport commitment of the nationality list an Aztec-path round's proof is checked against; 0 otherwise. */
+  nationalityCommitment: bigint
 }
 
 /** What a transaction sent through this client reports. */
@@ -147,6 +154,9 @@ export class CrispAztec {
       scope_hash: bigint
       min_age: bigint
       allow_mock_documents: boolean
+      l1_registration: boolean
+      nationality_mode: bigint
+      nationality_commitment: bigint
     }>(this.contract.methods.get_round(this.roundIdFor(e3Id)))
 
     return {
@@ -158,6 +168,9 @@ export class CrispAztec {
       scopeHash: BigInt(round.scope_hash),
       minAge: BigInt(round.min_age),
       allowMockDocuments: round.allow_mock_documents,
+      l1Registration: round.l1_registration,
+      nationalityMode: Number(round.nationality_mode),
+      nationalityCommitment: BigInt(round.nationality_commitment),
     }
   }
 
@@ -226,6 +239,9 @@ export class CrispAztec {
         config.scopeHash,
         config.minAge,
         config.allowMockDocuments,
+        config.l1Registration,
+        config.nationalityMode,
+        config.nationalityCommitment,
         await this.messageLeafIndex(message),
       ),
     )
@@ -239,25 +255,45 @@ export class CrispAztec {
   }
 
   /**
-   * Register `slot` for a round with a ZKPassport proof bound to this session's account (`session.address`) and to the
-   * round's scope. The proof is the `compressed`-mode result of the ZKPassport SDK.
+   * Register `slot` for a round that registers on Aztec, with a ZKPassport proof bound to this session's account
+   * (`session.address`) and to the round's scope. The proof is the `compressed`-mode result of the ZKPassport SDK; it must
+   * show what the round asks (its minimum age and nationality rule), which also selects the entry point: `register`,
+   * `register_with_age`, `register_with_nationality` or `register_with_age_and_nationality`.
    */
   async register(args: { e3Id: bigint; slot: Address; proof: CompressedProofResult }): Promise<SentTx> {
     const round = await this.getRound(args.e3Id)
     if (!round) throw new Error(`Round ${args.e3Id} is not open on Aztec yet`)
+    if (round.l1Registration) throw new Error(`Round ${args.e3Id} registers on L1: use the registrar (registerOnL1Calldata), not Aztec`)
 
     // The verifier library `.view()`s the registry privately, so this wallet's PXE has to know its artifact.
     const { zkpassport_registry } = await this.view<{ zkpassport_registry: AztecAddress }>(this.contract.methods.get_config())
     await registerZKPassportRegistry(this.session.wallet, this.session.node, zkpassport_registry)
 
-    // A query's size is fixed at compile time, so a round with an age requirement has its own entry point.
+    // A query's size is fixed at compile time, so each combination of rules has its own entry point.
+    const roundId = this.roundIdFor(args.e3Id)
+    const slot = BigInt(args.slot)
     const withAge = round.minAge > 0n
-    const capsule = await registrationCapsule(this.contract.address, this.session.address, args.proof, withAge ? 5 : 4)
-    const call = withAge
-      ? this.contract.methods.register_with_age(this.roundIdFor(args.e3Id), BigInt(args.slot))
-      : this.contract.methods.register(this.roundIdFor(args.e3Id), BigInt(args.slot))
+    const withNationality = round.nationalityMode !== 0
+    const capsule = await registrationCapsule(this.contract.address, this.session.address, args.proof, registrationSubproofs(round))
+    const methods = this.contract.methods
+    const call =
+      withAge && withNationality
+        ? methods.register_with_age_and_nationality(roundId, slot)
+        : withAge
+          ? methods.register_with_age(roundId, slot)
+          : withNationality
+            ? methods.register_with_nationality(roundId, slot)
+            : methods.register(roundId, slot)
 
     return this.send(call, [capsule])
+  }
+
+  /**
+   * Add `slot` to the census of a round that registers on L1, from the MEMBER message the registrar's program sent for it
+   * (`getSentMembers`). Permissionless: the message authenticates the slot. Fails if the slot is already registered.
+   */
+  async addMemberFromL1(e3Id: bigint, slot: Address, message: L1ToL2Message): Promise<SentTx> {
+    return this.send(this.contract.methods.add_member_from_l1(this.roundIdFor(e3Id), BigInt(slot), await this.messageLeafIndex(message)))
   }
 
   /** Commit a ballot (a vote or a mask) built by `buildCast`. */

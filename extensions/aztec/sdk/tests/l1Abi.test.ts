@@ -10,19 +10,22 @@ import type { Abi } from 'viem'
 import { describe, expect, it } from 'vitest'
 
 import { programAbi } from '../src/l1'
+import { registrarAbi } from '../src/registrar'
 
 // The ABI the L1 package exports from its compiled `CRISPAztecProgram`.
-const compiled: Abi = JSON.parse(readFileSync(new URL('../../l1/abi/CRISPAztecProgram.json', import.meta.url), 'utf8'))
+const abiOf = (name: string): Abi => JSON.parse(readFileSync(new URL(`../../l1/abi/${name}.json`, import.meta.url), 'utf8'))
 
-describe('program ABI subset', () => {
-  it.each(programAbi.map((item) => [item.type, 'name' in item ? item.name : '', item] as const))(
-    '%s %s matches the compiled program',
+const matchesCompiled = (name: string, subset: Abi) =>
+  it.each(subset.filter((item) => item.type === 'function' || item.type === 'event').map((item) => [item.type, 'name' in item ? item.name : '', item] as const))(
+    `%s %s matches the compiled ${name}`,
     (_type, _name, item) => {
-      const match = compiled.find(
+      const match = abiOf(name).find(
         (candidate) => candidate.type === item.type && 'name' in candidate && 'name' in item && candidate.name === item.name,
       )
       expect(match, 'the item is missing from the compiled ABI').toBeDefined()
       expect(formatAbiItem(match!)).toBe(formatAbiItem(item))
     },
   )
-})
+
+describe('program ABI subset', () => matchesCompiled('CRISPAztecProgram', programAbi as Abi))
+describe('registrar ABI subset', () => matchesCompiled('ZKPassportRegistrar', registrarAbi as Abi))

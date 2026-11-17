@@ -15,6 +15,7 @@ use std::time::Duration;
 use alloy::eips::BlockNumberOrTag;
 use alloy::providers::{DynProvider, Provider, ProviderBuilder};
 use alloy::rpc::client::RpcClient;
+use alloy::signers::local::PrivateKeySigner;
 use alloy::transports::http::Http;
 use tokio::sync::OnceCell;
 
@@ -50,6 +51,32 @@ pub async fn provider() -> eyre::Result<&'static DynProvider> {
     static PROVIDER: OnceCell<DynProvider> = OnceCell::const_new();
     PROVIDER
         .get_or_try_init(|| async { http_provider(&CONFIG.http_rpc_url) })
+        .await
+}
+
+/// The provider that sends transactions from the server key (`PRIVATE_KEY`) to `HTTP_RPC_URL`,
+/// built once, with the server key's address. Transactions go through `send_with_next_nonce`, the
+/// process-wide nonce sequence of that key.
+pub async fn sender() -> eyre::Result<&'static (DynProvider, alloy::primitives::Address)> {
+    static SENDER: OnceCell<(DynProvider, alloy::primitives::Address)> = OnceCell::const_new();
+    SENDER
+        .get_or_try_init(|| async {
+            let signer: PrivateKeySigner = CONFIG
+                .private_key
+                .parse()
+                .map_err(|error| eyre::eyre!("invalid server key: {error}"))?;
+            let address = signer.address();
+            let url: reqwest::Url = CONFIG
+                .http_rpc_url
+                .parse()
+                .map_err(|error| eyre::eyre!("the RPC URL is not a valid URL: {error}"))?;
+            let transport = Http::with_client(HTTP.clone(), url);
+            let provider = ProviderBuilder::new()
+                .wallet(signer)
+                .connect_client(RpcClient::new(transport, false))
+                .erased();
+            Ok((provider, address))
+        })
         .await
 }
 
