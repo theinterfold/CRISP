@@ -7,6 +7,10 @@
 import {
   type Vote,
   type CensusVariant,
+  type BallotBaseProofs,
+  type BaseProof,
+  type BaseProofs,
+  type BaseVerificationKeys,
   type FoldVerifierTarget,
   type PrepareBallotInputs,
   type PreparedBallot,
@@ -139,29 +143,16 @@ export const executeCircuit = async (circuit: CompiledCircuit, inputs: any): Pro
   return noir.execute(inputs)
 }
 
+type BallotCircuits = ReturnType<typeof requireCircuits>
+
 /**
- * Generate a proof for the CRISP circuit given the circuit inputs.
- * @param circuitInputs - Inputs used in both the CRISP and GRECO circuits.
- * @param censusMode - Which ballot and fold circuits to prove with.
- * @param options - `onProgress` is called as each of {@link PROOF_STAGES} starts.
- * @returns The proof.
+ * Execute the three base circuits of a ballot: `user_data_encryption_ct0`, `user_data_encryption_ct1` and the crisp
+ * ballot circuit. Witness generation for all three runs ahead of any proving; it is short and is counted as part of
+ * the first stage.
  */
-export const generateProof = async (
-  circuitInputs: any,
-  censusMode: CensusVariant = 'merkle',
-  { onProgress, verifierTarget = 'evm' }: ProofOptions = {},
-) => {
-  const report = (stage: ProofStage) => onProgress?.({ stage, index: PROOF_STAGES.indexOf(stage), total: PROOF_STAGES.length })
-  const api = await getBBApi()
-
-  const circuits = requireCircuits()
+const executeBaseCircuits = async (circuitInputs: any, censusMode: CensusVariant, circuits: BallotCircuits) => {
   const ballotCircuit = censusMode === 'onchain' ? circuits.crispOnchain : circuits.crisp
-  const foldCircuitForMode = censusMode === 'onchain' ? foldOnchainCircuit : foldCircuit
-
-  // Witness generation for the first three circuits runs ahead of any proving; it is short and is
-  // counted as part of the first stage.
-  report('encryption_ct0')
-  const { witness: userDataEncryptionCt0Witness } = await executeCircuit(circuits.userDataEncryptionCt0 as CompiledCircuit, {
+  const { witness: ct0Witness } = await executeCircuit(circuits.userDataEncryptionCt0 as CompiledCircuit, {
     pk0is: circuitInputs.pk0is,
     ct0is: circuitInputs.ct0is,
     u: circuitInputs.u,
@@ -169,7 +160,7 @@ export const generateProof = async (
     k1: circuitInputs.k1,
     r: circuitInputs.r,
   })
-  const { witness: userDataEncryptionCt1Witness } = await executeCircuit(circuits.userDataEncryptionCt1 as CompiledCircuit, {
+  const { witness: ct1Witness } = await executeCircuit(circuits.userDataEncryptionCt1 as CompiledCircuit, {
     pk1is: circuitInputs.pk1is,
     ct1is: circuitInputs.ct1is,
     u: circuitInputs.u,
@@ -211,6 +202,36 @@ export const generateProof = async (
     is_mask_vote: circuitInputs.is_mask_vote,
     num_options: circuitInputs.num_options,
   })
+
+  return { ballotCircuit, ct0Witness, ct1Witness, crispWitness, crispReturnValue }
+}
+
+/**
+ * Generate a proof for the CRISP circuit given the circuit inputs.
+ * @param circuitInputs - Inputs used in both the CRISP and GRECO circuits.
+ * @param censusMode - Which ballot and fold circuits to prove with.
+ * @param options - `onProgress` is called as each of {@link PROOF_STAGES} starts.
+ * @returns The proof.
+ */
+export const generateProof = async (
+  circuitInputs: any,
+  censusMode: CensusVariant = 'merkle',
+  { onProgress, verifierTarget = 'evm' }: ProofOptions = {},
+) => {
+  const report = (stage: ProofStage) => onProgress?.({ stage, index: PROOF_STAGES.indexOf(stage), total: PROOF_STAGES.length })
+  const api = await getBBApi()
+
+  const circuits = requireCircuits()
+  const foldCircuitForMode = censusMode === 'onchain' ? foldOnchainCircuit : foldCircuit
+
+  report('encryption_ct0')
+  const {
+    ballotCircuit,
+    ct0Witness: userDataEncryptionCt0Witness,
+    ct1Witness: userDataEncryptionCt1Witness,
+    crispWitness,
+    crispReturnValue,
+  } = await executeBaseCircuits(circuitInputs, censusMode, circuits)
 
   const userDataEncryptionCt0Backend = new UltraHonkBackend((circuits.userDataEncryptionCt0 as CompiledCircuit).bytecode, api)
   const userDataEncryptionCt1Backend = new UltraHonkBackend((circuits.userDataEncryptionCt1 as CompiledCircuit).bytecode, api)
@@ -311,6 +332,52 @@ export const generateProof = async (
   return foldBackend.generateProof(foldWitness, { verifierTarget })
 }
 
+
+/**
+ * Prove the three base circuits of a ballot and stop: no `user_data_encryption` aggregation and no fold.
+ *
+ * For a verifier that checks the three proofs itself, as the Aztec `cast` does: it saves the two 2^21-gate
+ * proofs the fold stack adds. Every proof is a `noir-recursive-no-zk` proof, the flavour Aztec's
+ * `verify_honk_proof_non_zk` checks in a private function. Skipping zero-knowledge is safe there because the
+ * proofs are private inputs of the function and never leave the voter's device; the transaction proof hides them.
+ * A verifier that publishes the proofs needs the fold ({@link generateProof}) instead.
+ *
+ * @param circuitInputs - The inputs of {@link prepareBallot}, with the signature attached.
+ * @param censusMode - Which ballot circuit to prove with.
+ * @param options - `onProgress` is called as each of the three stages starts (`total` is 3).
+ */
+export const generateBaseProofs = async (
+  circuitInputs: any,
+  censusMode: CensusVariant = 'merkle',
+  { onProgress }: Pick<ProofOptions, 'onProgress'> = {},
+): Promise<BaseProofs> => {
+  const stages: ProofStage[] = ['encryption_ct0', 'encryption_ct1', 'ballot']
+  const report = (stage: ProofStage) => onProgress?.({ stage, index: stages.indexOf(stage), total: stages.length })
+  const api = await getBBApi()
+  const circuits = requireCircuits()
+
+  report('encryption_ct0')
+  const { ballotCircuit, ct0Witness, ct1Witness, crispWitness } = await executeBaseCircuits(circuitInputs, censusMode, circuits)
+
+  const prove = async (circuit: unknown, witness: Uint8Array): Promise<BaseProof> => {
+    const backend = new UltraHonkBackend((circuit as CompiledCircuit).bytecode, api)
+    const { proof, publicInputs } = await backend.generateProof(witness, { verifierTarget: 'noir-recursive-no-zk' })
+    const { vkAsFields, vkHash } = await backend.generateRecursiveProofArtifacts(proof, publicInputs.length, {
+      verifierTarget: 'noir-recursive-no-zk',
+    })
+
+    return { proof, proofFields: proofToFields(proof), vkFields: vkAsFields, vkHash, publicInputs }
+  }
+
+  const ct0 = await prove(circuits.userDataEncryptionCt0, ct0Witness)
+  report('encryption_ct1')
+  const ct1 = await prove(circuits.userDataEncryptionCt1, ct1Witness)
+  report('ballot')
+  const crisp = await prove(ballotCircuit, crispWitness)
+
+  return { ct0, ct1, crisp }
+}
+
 /**
  * Validate a vote.
  * @param vote - The vote to validate.
@@ -407,6 +474,37 @@ export const finishMaskProof = async (prepared: PreparedBallot, digest: `0x${str
 }
 
 /**
+ * Phase two without the aggregation: the three base proofs of a prepared ballot, for a verifier that checks them
+ * itself (see {@link generateBaseProofs}). {@link finishBallotProof} stays the way to get the fold L1 verifies.
+ *
+ * @param prepared The output of `prepareBallot`.
+ * @param digest The ballot digest.
+ * @param signature The voter signature over that digest.
+ * @param options `onProgress` reports each of the three proof stages as it starts.
+ */
+export const finishBallotBaseProofs = async (
+  prepared: PreparedBallot,
+  digest: `0x${string}`,
+  signature: `0x${string}`,
+  options: Pick<ProofOptions, 'onProgress'> = {},
+): Promise<BallotBaseProofs> => {
+  const circuitInputs = await attachSignatureImpl(prepared, digest, signature)
+
+  return {
+    ...(await generateBaseProofs(circuitInputs, prepared.censusMode, options)),
+    encryptedVote: prepared.encryptedVote,
+    parentIndexPlusOne: prepared.parentIndexPlusOne,
+  }
+}
+
+/** {@link finishBallotBaseProofs} for a mask, which carries the same digest and a placeholder signature. */
+export const finishMaskBaseProofs = async (
+  prepared: PreparedBallot,
+  digest: `0x${string}`,
+  options: Pick<ProofOptions, 'onProgress'> = {},
+): Promise<BallotBaseProofs> => finishBallotBaseProofs(prepared, digest, MASK_SIGNATURE, options)
+
+/**
  * Locally verify a Noir proof.
  * @param proof - The proof to verify.
  * @returns True if the proof is valid, false otherwise.
@@ -440,4 +538,43 @@ export const getFoldRecursiveVerificationKey = async (
   })
 
   return { vkFields: vkAsFields, vkHash }
+}
+
+/**
+ * The verification keys of the three base circuits of the registered preset for the `noir-recursive-no-zk` target,
+ * which a contract that verifies the base proofs in-circuit pins by `vkHash`. Unlike the fold's, they depend on the
+ * preset: register it first (`setCircuits`).
+ */
+export const getBaseVerificationKeys = async (censusMode: CensusVariant = 'merkle'): Promise<BaseVerificationKeys> => {
+  const api = await getBBApi()
+  const circuits = requireCircuits()
+  const keyOf = async (circuit: unknown) => {
+    const { vkAsFields, vkHash } = await new UltraHonkBackend((circuit as CompiledCircuit).bytecode, api).generateRecursiveProofArtifacts(
+      new Uint8Array(),
+      0,
+      { verifierTarget: 'noir-recursive-no-zk' },
+    )
+
+    return { vkFields: vkAsFields, vkHash }
+  }
+
+  return {
+    ct0: await keyOf(circuits.userDataEncryptionCt0),
+    ct1: await keyOf(circuits.userDataEncryptionCt1),
+    crisp: await keyOf(censusMode === 'onchain' ? circuits.crispOnchain : circuits.crisp),
+  }
+}
+
+/** Locally verify the three base proofs, each against its own circuit. */
+export const verifyBaseProofs = async (proofs: BaseProofs, censusMode: CensusVariant = 'merkle'): Promise<boolean> => {
+  const api = await getBBApi()
+  const circuits = requireCircuits()
+  const check = async (circuit: unknown, { proof, publicInputs }: BaseProof) =>
+    new UltraHonkBackend((circuit as CompiledCircuit).bytecode, api).verifyProof({ proof, publicInputs }, { verifierTarget: 'noir-recursive-no-zk' })
+
+  return (
+    (await check(circuits.userDataEncryptionCt0, proofs.ct0)) &&
+    (await check(circuits.userDataEncryptionCt1, proofs.ct1)) &&
+    (await check(censusMode === 'onchain' ? circuits.crispOnchain : circuits.crisp, proofs.crisp))
+  )
 }

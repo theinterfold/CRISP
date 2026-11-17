@@ -126,7 +126,7 @@ pub struct VoteRequest {
 }
 
 /// A ciphertext of a round whose inputs are accepted on a remote chain, offered for staging. The
-/// server computes the content hash itself, and the voter's remote proof is not sent to it.
+/// server computes the content hash itself, and the voter's ballot proof is not sent to it.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct RemoteInputSubmission {
     pub round_id: String,
@@ -138,6 +138,19 @@ pub struct RemoteInputSubmission {
     pub ciphertext_commitment: String,
     #[serde(default)]
     pub parent_index_plus_one: u64,
+    /// Proves the sender holds the key of some registered slot, bound to this request, without
+    /// saying which (`buildStagingPass`). Required for every request, vote or mask.
+    pub staging_pass: StagingPassSubmission,
+}
+
+/// A staging pass as the SDK sends it.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct StagingPassSubmission {
+    /// The proof, hex.
+    pub proof: String,
+    /// The public inputs, 32-byte hex fields: `census_root, round_id, request_digest_hi,
+    /// request_digest_lo, max_requests, tag`.
+    pub public_inputs: Vec<String>,
 }
 
 /// The server's attestation that it holds a staged ciphertext, in the form the remote contract
@@ -170,6 +183,9 @@ pub struct RemoteInputConfig {
     /// server does not relay L1 registrations.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub zkpassport_registrar: Option<String>,
+    /// How many staging passes one slot key may use per round: the `max_requests` a pass is
+    /// proved for.
+    pub staging_max_requests: u32,
 }
 
 /// `ZKPassportRegistrar.register` calldata to relay to the configured registrar.

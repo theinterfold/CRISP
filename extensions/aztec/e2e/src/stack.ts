@@ -5,10 +5,12 @@
 // or FITNESS FOR A PARTICULAR PURPOSE.
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { arch, platform } from 'node:os'
+import { arch, homedir, platform } from 'node:os'
 import { join } from 'node:path'
 
-import { connectAztec, deployCrispAztec, getFoldRecursiveVerificationKey, domainSeparator } from '@crisp-e3/aztec'
+import { connectAztec, deployCrispAztec, getBaseVerificationKeys, domainSeparator } from '@crisp-e3/aztec'
+import { destroyBBApi, setCircuits } from '@crisp-e3/sdk'
+import { loadCircuits } from '@crisp-e3/sdk/insecure-64'
 import { createPublicClient, createWalletClient, getAddress, http, type Abi, type Address, type Hex } from 'viem'
 import { foundry } from 'viem/chains'
 
@@ -65,7 +67,8 @@ export type Deployment = {
   registrar: Address
   mockRootVerifier: Address
   aztecContract: string
-  fatVkHash: string
+  /** Hashes of the verification keys of the three base circuits the contract pins. */
+  baseVkHashes: { ct0: string; ct1: string; crisp: string }
   rollupVersion: number
   inbox: Address
   outbox: Address
@@ -236,7 +239,7 @@ const deployL1Program = (rootVerifier: Address, l2Address?: string): { program: 
 }
 
 /** Seed the ZKPassport registry (a no-op after the first run: the clock was warped 24 hours then) and deploy `crisp_aztec`. */
-const deployAztecSide = async (program: Address, interfold: Address): Promise<{ contract: string; vkHash: string; rollupVersion: number }> => {
+const deployAztecSide = async (program: Address, interfold: Address): Promise<{ contract: string; baseVkHashes: Deployment['baseVkHashes']; rollupVersion: number }> => {
   log('seeding the ZKPassport registry (idempotent; warps the local network clock 24h the first time)')
   const registryContext = await connectRegistryContext(AZTEC_NODE_URL)
   try {
@@ -246,7 +249,10 @@ const deployAztecSide = async (program: Address, interfold: Address): Promise<{ 
     await registryContext.stop()
   }
 
-  const { vkHash } = await getFoldRecursiveVerificationKey()
+  // The contract pins the verification keys of the three base circuits of the preset the round runs with.
+  setCircuits(await loadCircuits())
+  const keys = await getBaseVerificationKeys()
+  destroyBBApi()
   const session = await connectAztec(AZTEC_NODE_URL)
   try {
     const contract = await deployCrispAztec(session, {
@@ -254,13 +260,16 @@ const deployAztecSide = async (program: Address, interfold: Address): Promise<{ 
       interfold,
       domainSeparator: domainSeparator(L1_CHAIN_ID, program),
       availabilitySignerPublicKey: accounts.server.account.publicKey,
-      foldVkHash: BigInt(vkHash),
+      ct0VkHash: BigInt(keys.ct0.vkHash),
+      ct1VkHash: BigInt(keys.ct1.vkHash),
+      crispVkHash: BigInt(keys.crisp.vkHash),
       zkpassportDomainHash: domainHash(ZKPASSPORT_DOMAIN),
       zkpassportCircuitVersion: circuitsVersionField(CIRCUITS_VERSION),
       zkpassportValiditySeconds: ZKPASSPORT_VALIDITY_SECONDS,
       zkpassportRegistry: LOCAL_NETWORK_REGISTRY_ADDRESS,
     })
-    return { contract: contract.address.toString(), vkHash: String(vkHash), rollupVersion: session.rollupVersion }
+    const baseVkHashes = { ct0: keys.ct0.vkHash, ct1: keys.ct1.vkHash, crisp: keys.crisp.vkHash }
+    return { contract: contract.address.toString(), baseVkHashes, rollupVersion: session.rollupVersion }
   } finally {
     await session.stop()
   }
@@ -334,6 +343,9 @@ const serverEnv = (d: Deployment): Record<string, string> => ({
   AZTEC_NODE_URL,
   AZTEC_CONTRACT_ADDRESS: d.aztecContract,
   AZTEC_ATTESTATION_TTL_SECONDS: '3600',
+  // The server verifies the staging pass of every ciphertext with `bb` 6.0.0.
+  STAGING_PASS_VK_PATH: paths.stagingPassVk,
+  BB_BINARY_PATH: env('BB_BINARY_PATH', join(homedir(), '.bb', 'bb')),
   RUST_LOG: env('RUST_LOG', 'info'),
 })
 
@@ -355,7 +367,7 @@ export const up = async (): Promise<Deployment> => {
   const records = deployInterfoldAndCrisp()
   const mockRootVerifier = await deployMockRootVerifier()
   const { program: l1Program, registrar } = deployL1Program(mockRootVerifier)
-  const { contract, vkHash, rollupVersion } = await deployAztecSide(getAddress(l1Program.address), records.Interfold.address)
+  const { contract, baseVkHashes, rollupVersion } = await deployAztecSide(getAddress(l1Program.address), records.Interfold.address)
   deployL1Program(mockRootVerifier, contract)
 
   const info = await fetch(AZTEC_NODE_URL, {
@@ -375,7 +387,7 @@ export const up = async (): Promise<Deployment> => {
     registrar: getAddress(registrar.address),
     mockRootVerifier,
     aztecContract: contract,
-    fatVkHash: vkHash,
+    baseVkHashes,
     rollupVersion,
     inbox: getAddress(info.result.l1ContractAddresses.inboxAddress),
     outbox: getAddress(info.result.l1ContractAddresses.outboxAddress),

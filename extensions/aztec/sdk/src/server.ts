@@ -6,6 +6,8 @@
 
 import { bytesToHex, type Address, type Hex } from 'viem'
 
+import type { StagingPass } from './staging-pass'
+
 /** `GET voting/remote-input/config`: how the CRISP server is wired for rounds collected on an L2. */
 export type RemoteInputConfig = {
   kind: string
@@ -18,6 +20,8 @@ export type RemoteInputConfig = {
   signer_public_key: Hex
   /** The L1 `ZKPassportRegistrar` the server relays registrations to (`POST /registration/l1`); absent when it is not configured. */
   zkpassport_registrar?: Address
+  /** Staging passes one slot key may use per round (`STAGING_MAX_REQUESTS_PER_SLOT`); the circuit's `max_requests`. */
+  staging_max_requests: number
 }
 
 /** The server's availability attestation for one staged ciphertext. */
@@ -37,6 +41,8 @@ export type StageInputRequest = {
   ciphertext: Uint8Array
   ciphertextCommitment: Hex
   parentIndexPlusOne: number
+  /** Proves the sender holds a registered slot key without saying which (`buildStagingPass`); required for every request. */
+  stagingPass: StagingPass
 }
 
 const failure = async (what: string, response: Response): Promise<Error> => {
@@ -56,7 +62,8 @@ export const getRemoteInputConfig = async (serverUrl: string, fetchImpl: typeof 
  * Stage a ciphertext with the CRISP server and receive the availability attestation the Aztec contract checks.
  *
  * The server stores the bytes durably before it signs, which is what lets the Secure Process read an input that
- * only its leaf is committed on chain. It does not see or verify the proof: Aztec does.
+ * only its leaf is committed on chain. It does not see or verify the ballot proof: Aztec does. It verifies the staging
+ * pass, which proves the request comes from some registered slot (see `staging-pass.ts`).
  */
 export const stageInput = async (
   serverUrl: string,
@@ -72,6 +79,7 @@ export const stageInput = async (
       ciphertext: bytesToHex(request.ciphertext),
       ciphertext_commitment: request.ciphertextCommitment,
       parent_index_plus_one: request.parentIndexPlusOne,
+      staging_pass: { proof: request.stagingPass.proof, public_inputs: request.stagingPass.publicInputs },
     }),
   })
   if (!response.ok) throw await failure('input staging', response)

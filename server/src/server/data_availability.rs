@@ -41,6 +41,7 @@ use tokio::{sync::Semaphore, task::JoinSet};
 use tracing::{info, warn};
 
 mod remote_input;
+mod staging_pass;
 pub use remote_input::RemoteInputRequest;
 use remote_input::RemoteInputs;
 
@@ -763,6 +764,8 @@ pub struct AvailabilityService {
     /// Ciphertexts staged for rounds whose inputs live on a remote chain, keyed by round and
     /// content hash (`remote_input`). The L1 path keeps its bytes in `objects` under their jobs.
     remote_objects: Tree,
+    /// The tags of the staging passes used, keyed by round and tag (`staging_pass`).
+    staging_tags: Tree,
     /// Set when this instance serves a remote program.
     remote: Option<RemoteInputs>,
     input_duration_seconds: u64,
@@ -842,6 +845,7 @@ impl AvailabilityService {
                     anyhow::anyhow!("the E3 program address is invalid: {error}")
                 })?,
                 remote_objects: db.open_tree("data-availability-remote-objects")?,
+                staging_tags: db.open_tree("data-availability-staging-tags")?,
                 remote: RemoteInputs::from_config(config)?,
                 input_duration_seconds: config.e3_duration,
                 proof_lead_seconds: config.avail_proof_lead(),
@@ -2753,6 +2757,7 @@ mod tests {
             interfold_address: Address::ZERO,
             e3_program_address: Address::ZERO,
             remote_objects: db.open_tree("remote-objects").unwrap(),
+            staging_tags: db.open_tree("staging-tags").unwrap(),
             remote: None,
             input_duration_seconds: 0,
             proof_lead_seconds: 0,

@@ -67,8 +67,11 @@ trusts only the proof Aztec verifies itself.
   circom Poseidon, dynamic depth), so the OpenVM guest and program server are unchanged. circom
   Poseidon costs ~271k L2 gas per hash in the AVM, which caps both trees at 65,536 leaves; the worst
   insert or close uses ~4.7M of the 6M public gas budget.
-- **Ballot proof.** The final fold proof uses the `noir-recursive` target (ZK, 458 fields) and is
-  verified in the private `cast` with `verify_honk_proof` against the stored fold VK hash.
+- **Ballot proof.** The voter proves only the three base circuits (`user_data_encryption_ct0`, `_ct1`, crisp) with the
+  `noir-recursive-no-zk` target (410 fields each); the private `cast` verifies all three with
+  `verify_honk_proof_non_zk` against the stored VK hashes and makes the checks the `user_data_encryption` and fold
+  circuits make on L1 (`contracts/README.md`, *The ballot proofs*). That drops the two 2^21-gate aggregation proofs
+  from the voter's work. The proofs are private arguments of `cast` and never leave the voter's device.
 - **Identity.** A round registers its voters on one of two paths, chosen by its creator (see
   *Registration paths and nationality* below). On the Aztec path, ZKPassport `compressed` outer
   proofs (bb 6.0.0) are verified in the private `register*` functions, bound to the caller, scoped
@@ -76,7 +79,9 @@ trusts only the proof Aztec verifies itself.
   verifies the proof and the slot reaches Aztec as a MEMBER message. Either way a person holding two
   documents can still register twice.
 - **Availability.** Ciphertexts stay off-chain: the CRISP server stages them and signs an
-  `InputAvailability` attestation that `cast` verifies, as on L1.
+  `InputAvailability` attestation that `cast` verifies, as on L1. The server stages a ciphertext only
+  against a **staging pass**, an anonymous proof that the sender holds the key of some registered slot
+  (below), so staging is not open to anyone who wants to fill its storage.
 - **Finality.** The ROOT message is consumable on L1 only after the Aztec epoch proof; deployments
   set `remoteFinalityWindow` so requests with a too-short compute window are refused.
 
@@ -99,6 +104,10 @@ Aztec side is `extensions/aztec/ingest` (crate `crisp-aztec-ingest`); the integr
 | `AZTEC_ATTESTATION_TTL_SECONDS` | Validity of an attestation, counted from the later of the Aztec and the local clock. Default 900.         |
 | `AZTEC_START_BLOCK`             | First Aztec block scanned for inputs. Unset scans from the first block.                                   |
 | `ZKPASSPORT_REGISTRAR_ADDRESS`  | The program's `ZKPassportRegistrar`. Optional: set, the server relays L1 registrations (`POST /registration/l1`). |
+| `STAGING_PASS_VK_PATH`          | Verification key of the staging pass circuit (`extensions/core/circuits/staging_pass/compiled/staging_pass.vk`). Required. |
+| `STAGING_MAX_REQUESTS_PER_SLOT` | Staging passes one slot key may use per round: its ciphertext stagings, votes and masks together. Default 16. |
+| `BB_BINARY_PATH`                | The Barretenberg CLI that verifies passes, `bb` 6.0.0 exactly (checked at startup). Default `bb` on the `PATH`; the Docker image ships it. |
+| `BB_CRS_PATH`                   | `bb`'s reference-string directory. Unset: `~/.bb-crs`, which `bb` fills from the internet on first use. The Docker image ships it. |
 | `PRIVATE_KEY`                   | Signs the attestations. The Aztec contract must be deployed with its public key (see `config` below).    |
 
 The server relays no inputs in this mode (it only relays L1 registrations, below). Outside local chains, `RELAY_MIN_BALANCE_ETH=0` satisfies the
@@ -111,9 +120,9 @@ relay validation.
    countries, nationalityCommitment)`, records the round, and starts it when the committee key is
    indexed. It has no census and posts no Merkle root;
    `/rounds/request` refuses in this mode.
-2. **Voting.** The voter encrypts a ballot, sends the ciphertext to `POST /voting/remote-input`, and
-   submits the returned attestation with the Noir proof to Aztec. Aztec verifies the proof and
-   accepts the input.
+2. **Voting.** The voter encrypts a ballot, sends the ciphertext and a staging pass to
+   `POST /voting/remote-input`, and submits the returned attestation with the Noir proofs to Aztec.
+   Aztec verifies the proofs and accepts the input.
 3. **Ingest.** Every 5 seconds the server reads the `INPUT_COMMITTED` public logs of the contract
    (`node_getPublicLogsByTags`, tag `1`, resumed from a per-round cursor) and stores each input in
    the same round record the L1 `InputCommitted` handler fills, pairing it with the bytes it staged
@@ -148,14 +157,15 @@ id.
   "slot": "0x…",
   "ciphertext": "0x…",
   "ciphertext_commitment": "0x…32 bytes",
-  "parent_index_plus_one": 0
+  "parent_index_plus_one": 0,
+  "staging_pass": { "proof": "0x…", "public_inputs": ["0x…32 bytes", "… 6 in all"] }
 }
 ```
 
-The server computes `keccak256(ciphertext)` itself. It refuses the request (400) when the round is
-unknown, belongs to another program, or its L1 input window has closed, when the ciphertext is empty
-or too large, or when the ciphertext does not re-commit to `ciphertext_commitment`. It does **not**
-verify the ballot proof: Aztec does. A caller beyond the rate limit gets 429, an infrastructure
+The server computes `keccak256(ciphertext)` itself. It refuses the request (400) when the staging
+pass is refused (below), when the round is unknown, belongs to another program, or its L1 input window
+has closed, when the ciphertext is empty or too large, or when the ciphertext does not re-commit to
+`ciphertext_commitment`. It does **not** verify the ballot proof: Aztec does. A caller beyond the rate limit gets 429, an infrastructure
 failure 503. The answer is
 
 ```json
@@ -175,7 +185,56 @@ The bytes are durable before the signature is returned.
 
 `GET /voting/remote-input/config` returns `kind`, `chain_id`, `program`, `aztec_node_url`,
 `aztec_contract`, `signer` (address), `signer_public_key` (`x || y`, the key the Aztec contract is
-deployed with) and, when the server relays L1 registrations, `zkpassport_registrar`.
+deployed with), `staging_max_requests` (the limit a pass is proved for) and, when the server relays L1
+registrations, `zkpassport_registrar`.
+
+### Staging pass
+
+The server attests availability before the `cast` (the contract requires the attestation), so without
+a gate anyone could fill its storage with bytes that are never cast. Asking for the slot's signature
+would let the server tell a vote (signed by the slot) from a mask (any registered slot may be masked
+by anybody), which the ballot design keeps indistinguishable. A pass
+(`extensions/core/circuits/staging_pass`, built by `extensions/aztec/sdk`'s `buildStagingPass`)
+proves only that **the sender holds the key of some slot registered in the round's census**, and
+reveals neither the slot nor the key:
+
+- Public: `census_root`, `round_id` (the low 96 bits of the E3 id), `request_digest`, `max_requests`
+  and a one-time `tag = Poseidon(x, y, round_id, k)` of the slot public key `(x, y)`.
+- `request_digest = keccak256(abi.encode("CRISP_STAGING_V1", chainId, program, e3Id,
+  ciphertextCommitment, slot, parentIndexPlusOne))` is signed by the slot key inside the proof, so a
+  pass cannot be replayed for other bytes, another slot or another round.
+- `k < max_requests`, so a slot key has `max_requests` tags per round (`STAGING_MAX_REQUESTS_PER_SLOT`,
+  default 16). Every staging spends one, vote or mask. A mask is staged with the pass of the **masker's
+  own** slot while the request names the masked slot; the server cannot tell. A voter who is not
+  registered cannot stage.
+
+The server checks, cheapest first: well-formed public inputs, the request digest recomputed from the
+request and this round, `max_requests` equal to its own, `census_root` one the round has had, `tag` not
+used in this round, then the proof (`bb verify`, 2 at a time, 30 s each), and finally stores the tag
+atomically. Each refusal is a 400 naming the check. A tag stays spent when the request is refused for
+what the caller sent (a closed window, bytes that do not match the commitment); a failure of the server
+or of a chain it reads gives it back. Tags and census roots are dropped when the round is released.
+
+The census roots come from the `MEMBER_REGISTERED` logs (tag `2`). A known root is answered at once. An
+unknown one makes the server page the **proven** blocks from a saved cursor (never past the proven tip, as
+the node replaces the blocks of an epoch that is never proven) and then read the unproven tail to the
+newest block without saving a position, so a voter can stage right after registering. That read is single-flight per round and
+runs at most once per 5 s: a pass naming a root registered within the last seconds may be refused
+(`names a census root this round has not had`) and should be retried. This is anti-spam, not soundness:
+`cast` checks the census itself. Before a proof is verified the server also refuses a proof of the wrong
+size, a closed input window (round program and deadline cached per round) and a full staging store; at most
+2 `bb verify` run at once and a request that waits more than 2 s for a slot gets 503. A pass is a ZK proof over the default `bb` target (`evm`: keccak transcript, zero knowledge); the
+verification is a `bb` 6.0.0 subprocess because no workspace crate verifies UltraHonk, and a verifier
+of our own would be a second implementation to keep in step with `bb`.
+
+**Unlinkability assumption.** The tag hashes the slot *public key*, not the address, which the L1
+registration and the census publish. The public key is never published: a ballot's signature is a
+private input of its proof and the registration binds only the address. While that holds, tags cannot
+be linked to slots, nor a vote's tag to a mask's. A slot owner who reveals a signature made with the key
+(so anyone can recover it) can be linked to its tags, and so can anyone the server's logs of
+`(tag, request)` pairs are shared with: the server learns which stagings used the same key, not whose.
+The pass proves membership, not uniqueness of the person: it limits a key, and a registered voter with
+several slots (documents) has several keys.
 
 `POST /registration/l1` (404 unless `PROGRAM_KIND=aztec` and `ZKPASSPORT_REGISTRAR_ADDRESS` is set)
 
@@ -213,10 +272,11 @@ attestation's input id and its EIP-712 digest all use the full E3 id.
 
 ### Risks to know
 
-- **Staged bytes are not proof-backed.** The server cannot check a Noir proof, so any caller can stage
-  well-formed ciphertexts until the staging allowance (`DATA_AVAILABILITY_MAX_PENDING_BYTES`) or the
-  per-caller rate limit is hit, and the bytes stay until their round ends. The allowance is shared
-  with no other path, but a full allowance blocks honest staging for that period.
+- **Staged bytes are not ballot-backed.** The server cannot check the ballot proof, so a registered
+  slot can stage up to `STAGING_MAX_REQUESTS_PER_SLOT` well-formed ciphertexts that are never cast; they
+  stay until their round ends. The staging pass bounds this per slot key and shuts out everyone who is
+  not registered; the allowance (`DATA_AVAILABILITY_MAX_PENDING_BYTES`) and the per-caller rate limit
+  still bound the total. A census of N members can fill `N x max_requests` stagings.
 - **One signer.** The attestation key is the server's `PRIVATE_KEY`. Rotating it requires a new
   Aztec deployment, and two servers cannot both serve one Aztec round: an input attested by one is
   unknown to the other, and that round would never reach `numInputs`.

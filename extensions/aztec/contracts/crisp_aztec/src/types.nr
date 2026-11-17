@@ -14,8 +14,11 @@ pub struct Config {
     /// secp256k1 public key (x, y) of the availability signer.
     pub signer_x: [Field; 2],
     pub signer_y: [Field; 2],
-    /// Poseidon2 hash of the fold circuit's verification key.
-    pub fold_vk_hash: Field,
+    /// Poseidon2 hashes of the verification keys of the three base circuits a ballot is proven with
+    /// (`user_data_encryption_ct0`, `user_data_encryption_ct1`, crisp), for the BFV preset of this deployment.
+    pub ct0_vk_hash: Field,
+    pub ct1_vk_hash: Field,
+    pub crisp_vk_hash: Field,
     /// ZKPassport domain hash, circuit-manifest version, proof validity period and registry.
     pub zkpassport_domain: Field,
     pub zkpassport_version: Field,

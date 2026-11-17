@@ -25,9 +25,10 @@ import {
   requestNewRound,
 } from './api'
 import { getOnChainRoundData, getOnchainVotingPower, getPreviousCiphertext, getRoundDetails, getRoundTokenDetails } from './state'
-import { finishBallotProof, finishMaskProof, prepareBallot } from './vote'
+import { finishBallotBaseProofs, finishBallotProof, finishMaskBaseProofs, finishMaskProof, prepareBallot } from './vote'
 
 import type {
+  BallotBaseProofs,
   ChainHead,
   ContractRead,
   ContractReadResult,
@@ -239,6 +240,25 @@ export class CrispSDK {
     options: ProofOptions = {},
   ): Promise<ProofData> {
     return signature ? finishBallotProof(prepared, digest, signature, options) : finishMaskProof(prepared, digest, options)
+  }
+
+  /**
+   * Phase two without the aggregation, for a verifier that checks the three base proofs itself (the Aztec contract):
+   * the `user_data_encryption` and fold proofs are not made, which is most of the proving time. See
+   * `generateBaseProofs`. {@link finishBallot} stays the path whose fold L1 verifies.
+   *
+   * @param prepared - The output of {@link prepareBallot}.
+   * @param digest - The digest the voter signs.
+   * @param signature - The voter signature, omitted for a mask.
+   * @param options - `onProgress` reports each of the three proof stages as it starts.
+   */
+  async finishBallotBase(
+    prepared: PreparedBallot,
+    digest: `0x${string}`,
+    signature?: `0x${string}`,
+    options: Pick<ProofOptions, 'onProgress'> = {},
+  ): Promise<BallotBaseProofs> {
+    return signature ? finishBallotBaseProofs(prepared, digest, signature, options) : finishMaskBaseProofs(prepared, digest, options)
   }
 
   /**

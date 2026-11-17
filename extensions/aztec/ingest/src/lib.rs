@@ -12,11 +12,14 @@
 
 mod log;
 
-pub use log::{e3_id_of, round_id_of, InputCommitted, INPUT_COMMITTED_TAG};
+pub use log::{
+    e3_id_of, round_id_of, InputCommitted, MemberRegistered, INPUT_COMMITTED_TAG,
+    MEMBER_REGISTERED_TAG,
+};
 
 use alloy::primitives::{Address, B256, U256};
 use async_trait::async_trait;
-use crisp_remote_input::{InputPage, RemoteInput, RemoteInputSource};
+use crisp_remote_input::{CensusRootPage, InputPage, RemoteInput, RemoteInputSource};
 use eyre::{bail, ensure, eyre, Context, Result};
 use serde_json::{json, Value};
 use std::time::Duration;
@@ -153,28 +156,26 @@ impl AztecInputSource {
     }
 }
 
-#[async_trait]
-impl RemoteInputSource for AztecInputSource {
-    async fn fetch_inputs(&self, e3_id: U256, after: Option<&str>) -> Result<InputPage> {
-        let tag = format!("{:#066x}", U256::from(INPUT_COMMITTED_TAG));
-        // Only blocks of a proven epoch are read. The node drops the unproven blocks of an epoch
-        // that is never proven and reuses their numbers, so a cursor that passed one of them would
-        // skip the logs that replace it, and the dropped inputs would stay in the round. The root
-        // that reaches L1 follows the same epoch proof, so this adds no wait. `toBlock` is
-        // exclusive.
-        let proven = self.proven_block().await?;
-        if proven == 0 {
-            // Nothing is proven yet, so nothing can be read.
-            return Ok(InputPage::default());
-        }
+impl AztecInputSource {
+    /// The logs under `tag` after `after` (from the start block when `None`) up to `to_block`
+    /// exclusive (the node's newest block when `None`), as each one's position and fields.
+    async fn logs(
+        &self,
+        tag: u64,
+        after: Option<&str>,
+        to_block: Option<u64>,
+    ) -> Result<Vec<(Position, Vec<U256>)>> {
+        let tag = format!("{:#066x}", U256::from(tag));
         let mut query = json!({
             "contractAddress": self.contract,
             "tags": [match after {
                 Some(cursor) => json!({ "tag": tag, "afterLog": Position::parse(cursor)?.json() }),
                 None => json!(tag),
             }],
-            "toBlock": proven + 1,
         });
+        if let Some(to_block) = to_block {
+            query["toBlock"] = json!(to_block);
+        }
         if after.is_none() {
             if let Some(start) = self.start_block {
                 query["fromBlock"] = json!(start);
@@ -191,27 +192,51 @@ impl RemoteInputSource for AztecInputSource {
             .and_then(Value::as_array)
             .ok_or_else(|| eyre!("node_getPublicLogsByTags answered without a log list"))?;
 
+        logs.iter()
+            .map(|log| {
+                let position = Position::of_log(log)?;
+                ensure!(
+                    after.is_none_or(
+                        |cursor| Position::parse(cursor).is_ok_and(|after| position > after)
+                    ),
+                    "the node returned a log at or before the cursor"
+                );
+                let data = log
+                    .get("logData")
+                    .and_then(Value::as_array)
+                    .ok_or_else(|| eyre!("a node log has no logData"))?;
+                let fields = data
+                    .iter()
+                    .map(log::parse_field)
+                    .collect::<Result<Vec<_>>>()?;
+                Ok((position, fields))
+            })
+            .collect()
+    }
+}
+
+#[async_trait]
+impl RemoteInputSource for AztecInputSource {
+    async fn fetch_inputs(&self, e3_id: U256, after: Option<&str>) -> Result<InputPage> {
+        // Only blocks of a proven epoch are read. The node drops the unproven blocks of an epoch
+        // that is never proven and reuses their numbers, so a cursor that passed one of them would
+        // skip the logs that replace it, and the dropped inputs would stay in the round. The root
+        // that reaches L1 follows the same epoch proof, so this adds no wait. `toBlock` is
+        // exclusive.
+        let proven = self.proven_block().await?;
+        if proven == 0 {
+            // Nothing is proven yet, so nothing can be read.
+            return Ok(InputPage::default());
+        }
+        let logs = self
+            .logs(INPUT_COMMITTED_TAG, after, Some(proven + 1))
+            .await?;
+
         let mut inputs = Vec::new();
         let mut scanned_to = None;
-        for log in logs {
-            let position = Position::of_log(log)?;
-            ensure!(
-                after.is_none_or(
-                    |cursor| Position::parse(cursor).is_ok_and(|after| position > after)
-                ),
-                "the node returned a log at or before the cursor"
-            );
+        for (position, fields) in &logs {
             scanned_to = Some(position.render());
-
-            let data = log
-                .get("logData")
-                .and_then(Value::as_array)
-                .ok_or_else(|| eyre!("a node log has no logData"))?;
-            let fields = data
-                .iter()
-                .map(log::parse_field)
-                .collect::<Result<Vec<_>>>()?;
-            let committed = InputCommitted::decode(&fields)?;
+            let committed = InputCommitted::decode(fields)?;
             // The log names the round by its low 96 bits; everything past this point speaks the
             // Interfold E3 id.
             if e3_id_of(self.interfold, committed.round_id) != e3_id {
@@ -230,6 +255,38 @@ impl RemoteInputSource for AztecInputSource {
         Ok(InputPage {
             inputs,
             scanned_to,
+            more: logs.len() >= PAGE_SIZE,
+        })
+    }
+
+    async fn census_roots(
+        &self,
+        e3_id: U256,
+        after: Option<&str>,
+        proven_only: bool,
+    ) -> Result<CensusRootPage> {
+        // As `fetch_inputs`: a position past an unproven block could skip the logs that replace it.
+        let to_block = if proven_only {
+            let proven = self.proven_block().await?;
+            if proven == 0 {
+                return Ok(CensusRootPage::default());
+            }
+            Some(proven + 1)
+        } else {
+            None
+        };
+        let logs = self.logs(MEMBER_REGISTERED_TAG, after, to_block).await?;
+
+        let mut roots = Vec::new();
+        for (_, fields) in &logs {
+            let member = MemberRegistered::decode(fields)?;
+            if e3_id_of(self.interfold, member.round_id) == e3_id {
+                roots.push(member.census_root);
+            }
+        }
+        Ok(CensusRootPage {
+            roots,
+            scanned_to: logs.last().map(|(position, _)| position.render()),
             more: logs.len() >= PAGE_SIZE,
         })
     }

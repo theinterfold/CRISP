@@ -10,6 +10,7 @@ repository.workspace = true
 alloy = { workspace = true }
 async-trait = { version = "=0.1.88" }
 eyre = { workspace = true }
+hex = { workspace = true }
 
 [dev-dependencies]
 tokio.workspace = true

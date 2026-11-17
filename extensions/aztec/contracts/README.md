@@ -11,8 +11,8 @@ close_round ──ROOT──▶ L1 program         (input root and count, throug
 
 Voters register a slot (an Ethereum address) either with a ZKPassport proof on Aztec or, on a round that
 registers on L1, through the L1 `ZKPassportRegistrar` and a MEMBER message (see `../README.md`), then cast
-ballots with a fold proof (`noir-recursive` proof of the CRISP fold circuit) plus an attestation from the
-availability service. The contract is the on-chain ledger: it checks the proofs, builds both Merkle trees
+ballots with the three base proofs of the ballot (`user_data_encryption_ct0`, `user_data_encryption_ct1` and the
+CRISP ballot circuit, no aggregation) plus an attestation from the availability service. The contract is the on-chain ledger: it checks the proofs, builds both Merkle trees
 with the same hashing as the Solidity code and the circuits, and sends the final input root to L1.
 
 ## Build and test
@@ -100,7 +100,7 @@ bytes)` wherever the full id is hashed or signed: the EIP-712 `Ballot` and `Inpu
 | `input_ids[round][key]`            | `PublicMutable<bool>`                | `_append_input`                |
 
 - `Config`: L1 program and Interfold (`EthAddress`), ballot and availability EIP-712 domain separators, the
-  availability signer's secp256k1 key (x, y), the fold verification-key hash, the ZKPassport domain hash,
+  availability signer's secp256k1 key (x, y), the verification-key hashes of the three base circuits, the ZKPassport domain hash,
   circuits version, validity period and registry address. Bytes32 values are stored as two 128-bit halves.
 - `RoundConfig`: `num_options`, `credits`, `input_start`, `input_end`, `input_limit`, `scope_hash`,
   `min_age`, `allow_mock_documents`, `l1_registration`, `nationality_mode`, `nationality_commitment`.
@@ -127,7 +127,7 @@ tested against Solidity-produced roots with an in-memory store.
 
 | Function                | Kind                    | Caller     | What it does                                                                                                                                                  |
 | ----------------------- | ----------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `constructor`           | public initializer      | deployer   | Stores `Config` (11 arguments: `l1_program`, `interfold`, the two domain separators, the signer key halves, `fold_vk_hash`, the ZKPassport settings and registry).                                                                                                          |
+| `constructor`           | public initializer      | deployer   | Stores `Config` (13 arguments: `l1_program`, `interfold`, the two domain separators, the signer key halves, `ct0_vk_hash`, `ct1_vk_hash`, `crisp_vk_hash`, the ZKPassport settings and registry).                                                                                                          |
 | `open_round`            | public                  | anyone     | Rebuilds the ROUND message content from its arguments, consumes it (secret `0`, sender = L1 program), stores `RoundConfig`. Rejects `input_limit` 0 or > 65536, and an empty window. |
 | `publish_key`           | public                  | anyone     | Same for the KEY message; stores the committee public key.                                                                                                    |
 | `register`              | private                 | voter      | Aztec-path rounds with no rule. Verifies a ZKPassport proof bound to the caller's address, spends the uniqueness nullifier, enqueues `_add_member`.          |
@@ -136,7 +136,7 @@ tested against Solidity-produced roots with an in-memory store.
 | `register_with_age_and_nationality` | private     | voter      | Aztec-path rounds with both rules.                                                                                                                            |
 | `add_member_from_l1`    | public                  | anyone     | L1-path rounds: consumes the MEMBER message `(roundId, slot)` the L1 program sent (secret `0`, sender = L1 program, a message-tree leaf index) and inserts the slot into the census. The keeper calls it. |
 | `_add_member`           | public, `#[only_self]`  | contract   | `insert_member` for the `register*` functions.                                                                                                               |
-| `cast`                  | private                 | voter      | Verifies the fold proof (9 public inputs), the verification-key hash and the availability attestation (ECDSA); enqueues `_append_input`.                    |
+| `cast`                  | private                 | voter      | Verifies the three base proofs, their verification-key hashes and the links between them, and the availability attestation (ECDSA); enqueues `_append_input`.                    |
 | `_append_input`         | public, `#[only_self]`  | contract   | Window, attestation expiry, known census root, input limit, parent rule, replay (`inputId`), LazyIMT insert.                                                 |
 | `close_round`           | public                  | anyone     | After `input_end`, once: folds the root, sends `(roundId, inputRoot, numInputs)` to L1, returns the root.                                                      |
 | views                   | utility                 | anyone     | `get_config`, `get_round`, `get_committee_key`, `is_closed`, `get_input_count`, `get_census_count`, `get_census_root`, `is_census_root_known`, `is_slot_registered`, `get_input`. |
@@ -154,11 +154,12 @@ Notes that are not obvious:
 - **The attestation covers the ballot.** `cast` recomputes `inputId` and the EIP-712 `InputAvailability`
   digest from its arguments, so the signature fixes the ciphertext commitment, the encrypted-vote hash,
   the slot and the parent. `expires_at` is checked in public with `now < expires_at`, as L1 does.
-- **The fold proof's public inputs**, in circuit order: previous commitment, the two 128-bit halves of the
-  EIP-712 ballot digest, slot, census root, `is_first_vote`, number of options, ciphertext commitment,
-  committee key. The contract
-  checks `poseidon2(vk) == config.fold_vk_hash` (`getFoldRecursiveVerificationKey` in the SDK computes the
-  same hash) and calls `verify_honk_proof` with it.
+- **Three base proofs instead of the fold** (see *The ballot proofs* below). The crisp proof's public
+  inputs, in circuit order: previous commitment, the two 128-bit halves of the EIP-712 ballot digest, slot,
+  census root, `is_first_vote`, number of options, ciphertext commitment, then its two return values
+  (the ciphertext commitment of the encryption proofs and the `k1` commitment), which `cast` derives from the
+  encryption proofs' public inputs. Each verification key must hash (Poseidon2) to the hash in `Config`
+  (`getBaseVerificationKeys` in the SDK computes them), and `verify_honk_proof_non_zk` checks the proof.
 - **Parent rule**: parent index plus one is `0` for a first ballot, which must name no previous
   commitment; otherwise the parent input must belong to the same slot and carry `prev_commitment`.
 - **No chain id in the constructor**: both domain separators already commit to it.
@@ -178,6 +179,46 @@ Notes that are not obvious:
   functions require the proof's subproof to carry exactly that commitment. `open_round` refuses a mode other
   than 0, 1 or 2, a commitment with no rule (or on the L1 path, where L1 checks the list itself), and no
   commitment with a rule on the Aztec path. L1 refuses the same, so a malformed ROUND cannot open a round.
+
+## The ballot proofs
+
+On L1 a voter's proof is a stack of five: `user_data_encryption_ct0`, `user_data_encryption_ct1` and the CRISP
+ballot circuit, then the Interfold `user_data_encryption` aggregation (it verifies ct0 and ct1) and `crisp_fold`
+(it verifies the aggregation and the ballot circuit), the last two at 2^21 gates each. Aztec private functions verify
+UltraHonk proofs cheaply (the pairing is deferred), so on Aztec the voter proves only the three base circuits and
+`cast` verifies all three itself (`verify_honk_proof_non_zk`), making in Noir every check the two aggregation
+circuits make (`crisp_aztec/src/ballot.nr`). The circuits are unchanged and L1 still uses the full stack.
+
+**What the two aggregation circuits check beyond verifying proofs, and where `cast` makes each check.** The
+sources are `circuits/bin/fold/src/main.nr` and the Interfold `user_data_encryption` circuit
+(`circuits/bin/threshold/user_data_encryption`, release `v0.20.0-dev.3`).
+
+| # | Constraint (circuit) | In `cast` |
+| - | -------------------- | --------- |
+| 1 | `user_data_encryption` verifies the ct0 and ct1 proofs with `ct0_key_hash` / `ct1_key_hash` as public inputs; `crisp_fold` verifies the aggregation and crisp proofs with their key hashes as witnesses, and asserts `compute_vk_hash([ude, crisp, ct0, ct1])` is one of two constants (insecure, secure preset) | Each verification key's Poseidon2 hash is asserted equal to `Config.ct0_vk_hash` / `ct1_vk_hash` / `crisp_vk_hash` (messages `unexpected ct0 / ct1 / crisp verification key`) and the proof is verified against that hash. The position of a proof pins its circuit |
+| 2 | `user_data_encryption`: `ct0_public_inputs[3] == ct1_public_inputs[2]` (both proofs commit to the same `u`) | `ct0 and ct1 commit to different u` |
+| 3 | `user_data_encryption` computes `ct_commitment = compute_commitment([ct0_commitment, ct1_commitment], DS_CIPHERTEXT)`; `crisp_fold` asserts crisp's `ct_commitment` equals it | The same commitment is computed (`interfold_lib`, the library the circuits use) and placed as the crisp proof's ninth public input, so the crisp proof verifies only for that ciphertext |
+| 4 | `user_data_encryption` outputs `k1_commitment = ct0_public_inputs[2]`; `crisp_fold` asserts crisp's `k1_commitment` equals it | ct0's third public input is placed as the crisp proof's tenth public input |
+| 5 | `user_data_encryption` computes `pk_commitment = compute_commitment([pk0_commitment, pk1_commitment], DS_PK_AGGREGATION)`; the fold returns it as its last public input, which `cast` compared with the committee key | The same commitment is computed and asserted equal to the committee key of the round (`ballot is encrypted to another committee key`) |
+| 6 | `crisp_fold` exposes the ballot circuit's inputs as its own public inputs (previous commitment, digest halves, slot, census root, `is_first_vote`, number of options, final ciphertext commitment) | Unchanged: the first eight public inputs of the crisp proof are values `cast` already holds (arguments, the round, the computed digest) |
+
+The commitments are tested against the public inputs of a real ballot (`crisp_aztec/src/tests.nr`): the Noir
+`pk_commitment` and `ciphertext_commitment` reproduce what the `user_data_encryption` circuit computed. TXE tests
+cover a wrong verification key for each circuit, a proof in another proof's place, different `u`, a ballot
+encrypted to another key (either half). TXE does not run the recursion, so what makes a tampered public input
+or a swapped proof fail is the verification itself: the e2e harness submits such ballots on the local network
+and asserts they are refused.
+
+**Flavour.** The proofs are `noir-recursive-no-zk` (`PROOF_TYPE_HONK`, 410 fields); `verify_honk_proof_non_zk`
+exists in `bb_proof_verification` v6.0.0 and bb 6.0.0 instantiates the non-ZK recursive verifier for the Mega
+circuits that private functions are. Zero knowledge is not needed because the proofs are private arguments of
+`cast`: they exist only on the voter's device and inside the transaction proof, which is zero-knowledge. **They
+must never leave the device**: the SDK, the app and the server request carry only the ciphertext and its
+commitment. A verifier that publishes the proofs needs the ZK flavour or the fold.
+
+**Preset.** The three key hashes are fixed by the BFV preset the deployment serves (`insecure-64`, `secure-8192`);
+the fold's single hash covered both, so a deployment now serves one preset. `pnpm base-vk-hashes <preset>` in
+`../sdk` prints them.
 
 ## Public logs
 
@@ -233,9 +274,10 @@ to the local-network run:
 
 The ZKPassport fixture is bound to a fixed address that TXE has no account for, so the tests re-bind it
 to a created account and move its unique identifier to stand for different documents. That only works
-because TXE does not check the proof. The fold proof in `crisp_aztec_test/src/fold_fixture.nr` is a real
-proof (natively verified with `bb verify -t noir-recursive`) and its verification-key hash is the one the
-SDK computes. Real verification of both proofs, the L1 round trip and the public logs need a local
+because TXE does not check the proof. `crisp_aztec_test/src/base_fixture.nr` holds the three base circuits'
+real verification keys (`insecure-64`) and their hashes, as `getBaseVerificationKeys` computes them; the proofs
+in the `cast` tests are zeros. The commitments of `ballot.nr` are tested against the public inputs of a real
+ballot (`crisp_aztec/src/tests.nr`). Real verification of both proofs, the L1 round trip and the public logs need a local
 network; `../sdk` and `../../../` e2e drive that.
 
 ## Gas and gates
@@ -269,12 +311,12 @@ Private gate counts (`aztec profile gates target`):
 
 | Function            | Gates   |
 | ------------------- | ------- |
-| `cast`              | 203,091 |
+| `cast`              | 227,954 (202,805 with the fold's `verify_honk_proof`) |
 | `register`          | 22,944  |
 | `register_with_age` | 23,025  |
 
 The ZKPassport proof itself is verified by the registry (`assert_proof_valid`, 25,175 gates) and the
-fold proof by `verify_honk_proof` inside `cast`. `register_with_nationality` and
+base proofs by `verify_honk_proof_non_zk` inside `cast`. `register_with_nationality` and
 `register_with_age_and_nationality` add one subproof each to the proof the registry verifies (outer
 circuits `outer_count_5` / `outer_count_6`). The e2e harness registers four voters with `register_with_age_and_nationality`
 (`outer_count_6`) on the local network; each mock-document proof took 43 to 71 seconds.

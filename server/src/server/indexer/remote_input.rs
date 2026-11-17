@@ -554,7 +554,7 @@ mod tests {
     use alloy::primitives::keccak256;
     use alloy::sol_types::SolValue;
     use async_trait::async_trait;
-    use crisp_remote_input::InputPage;
+    use crisp_remote_input::{CensusRootPage, InputPage};
     use e3_fhe_params::{build_bfv_params_from_set_arc, BfvParamSet, BfvPreset};
     use e3_sdk::indexer::InMemoryStore;
     use std::sync::Mutex;
@@ -716,6 +716,15 @@ mod tests {
                 more: page.len() == self.page_size,
                 inputs: page,
             })
+        }
+
+        async fn census_roots(
+            &self,
+            _e3_id: U256,
+            _after: Option<&str>,
+            _proven_only: bool,
+        ) -> eyre::Result<CensusRootPage> {
+            Ok(CensusRootPage::default())
         }
 
         async fn latest_timestamp(&self) -> eyre::Result<u64> {

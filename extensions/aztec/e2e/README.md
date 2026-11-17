@@ -18,7 +18,9 @@ One full round per registration path of the Aztec program on a local Aztec v6 ne
      each MEMBER message into `add_member_from_l1`;
 4. each round: `Interfold.request` (the creator sends one transaction), the DKG (stage `KeyPublished`), the keeper opens the
    round and relays the key to L2, four voters register, then four votes are cast and one mask added (a zero ballot on a slot
-   that already voted: it must not change the tally) (`@crisp-e3/aztec`);
+   that already voted: it must not change the tally) (`@crisp-e3/aztec`). A ballot is the three base proofs (no
+   aggregation) that `cast` verifies; on the L1 path two tampered ballots (an altered ct1 commitment, the ct0 and ct1
+   proofs swapped) must be refused where the transaction is proven;
 5. the network clock is warped past the input window; the keeper closes the round and submits the root on L1;
 6. the server computes, the ciphernodes decrypt, and the decoded tally must equal `[20, 20]` in both rounds (voters 1-2 pick
    option 0, voters 3-4 option 1, ten credits each).
@@ -70,7 +72,7 @@ with the deployer's key. Voters' slot keys are random and need no funds.
   and the Interfold stack is deployed with `ENABLE_ZK_VERIFICATION=true`. With your own binary that has the feature, set
   `INTERFOLD_BIN=<path> CRISP_E2E_SKIP_PROOF_AGGREGATION=true`.
 - **Compute is the dev (unproved) program** (`E3_PROGRAM__DEV=true`, `CRISP_UNPROVED_TEST=1`, mock OpenVM receipt
-  verifier): the repo's local default. Everything else, the fold proofs the voters generate, the ZKPassport proofs, the
+  verifier): the repo's local default. Everything else, the base proofs the voters generate (three per ballot, no fold), the ZKPassport proofs, the
   Aztec contract, the outbox witness, is real.
 - **An idle local network builds no blocks**, so an L1→L2 message is never included, an epoch is never proven and time
   never moves. While a round runs, the harness asks the node's debug API for an empty block every 8s
@@ -91,3 +93,11 @@ with the deployer's key. Voters' slot keys are random and need no funds.
 `CRISP_E2E_VOTING_SECONDS` (3600), `CRISP_E2E_PUMP_MS` (8000), `CRISP_E2E_KEEPER_POLL_MS` (5000),
 `CRISP_E2E_DKG_TIMEOUT_S` (1200), `CRISP_E2E_MEMBERS_TIMEOUT_S` (1200, registration and, on the L1 path, the keeper's MEMBER relay), `CRISP_E2E_ROOT_TIMEOUT_S` (1500), `CRISP_E2E_COMPUTE_TIMEOUT_S` (1800),
 `AZTEC_NODE_URL`, `L1_RPC_URL`, `CRISP_E2E_WORK`, `RUST_LOG`.
+
+## Voter time
+
+A ballot's three base proofs and its `cast` transaction (proving, sending, inclusion) took 9 to 10 seconds per voter in this
+harness (Node/WASM, preset `insecure-64`, local network), against 37 to 74 seconds for the fold stack's five proofs plus the
+`cast`; the base proofs and `cast` are 3 to 5 seconds of that, the aggregation and fold were 36 seconds. With the staging pass of
+every ciphertext the cast takes 15 to 18 seconds. A real preset (`secure-8192`) is slower in absolute terms: its ct0 and ct1
+circuits are 2^21 gates each, as large as the two aggregation proofs.

@@ -18,7 +18,7 @@ sequenceDiagram
     K->>L1: publishCommitteeKey (sends KEY) after KeyPublished
     K->>L2: publish key (consume KEY)
     V->>L2: register (identity proof)
-    V->>S: stage ciphertext, get availability attestation
+    V->>S: stage ciphertext with a staging pass, get availability attestation
     V->>L2: cast (ballot proof + attestation), leaf appended
     K->>L2: close round (sends ROOT)
     K->>L1: submit root (consume ROOT)
@@ -47,7 +47,8 @@ without a list on the L2. See `aztec/README.md` ("Registration paths and nationa
 | Path | Role |
 | --- | --- |
 | `core/contracts` | `CRISPRemoteProgram`: chain-agnostic L1 E3 program; `CRISPRemoteMessages`: ROUND/KEY/ROOT/MEMBER layouts; `ZKPassportRegistrar`: L1 ZKPassport registration of a round's voters. |
-| `core/remote-input` | Rust crate `crisp-remote-input`: the server seam (`RemoteInputSource`, `InputRootSubmitted`, gating, availability attester). |
+| `core/remote-input` | Rust crate `crisp-remote-input`: the server seam (`RemoteInputSource`, `InputRootSubmitted`, gating, availability attester, staging pass statement). |
+| `core/circuits/staging_pass` | Noir circuit of the staging pass: an anonymous, rate-limited proof that the sender holds the key of some slot of the round's census, required to stage a ciphertext with the server (see `core/README.md`). |
 | `aztec/` | Reference extension for Aztec v6 (see `aztec/README.md`). |
 
 ## Adding an L2
@@ -57,11 +58,13 @@ A new chain adds a sibling `extensions/<l2>/` with:
 1. **L1 adapter** extending `CRISPRemoteProgram` (see `core/README.md`): deliver ROUND/KEY through
    the chain's L1→L2 bridge, authenticate ROOT through its L2→L1 bridge and call `_acceptInputRoot`.
 2. **L2 contract** that reproduces `CRISPProgram`'s input tree byte for byte (leaf formula, zk-kit
-   lazy IMT, circom Poseidon, dynamic root depth), verifies the CRISP fold proof and the server's
+   lazy IMT, circom Poseidon, dynamic root depth), verifies the three base proofs of the CRISP ballot (no fold) and the server's
    availability attestation, enforces the slot parent chain, window, limit and replay rules, and
-   emits inputs in a form the server can index.
+   emits inputs, and the census root after each registration, in a form the server can index (the
+   staging pass names a census root, which the server checks against them).
 3. **Server ingest** crate implementing `crisp_remote_input::RemoteInputSource`
-   (`fetch_inputs(e3_id, after)`, `latest_timestamp()`) plus a `ProgramKind` variant. The server then
+   (`fetch_inputs(e3_id, after)`, `census_roots(e3_id, after)`, `latest_timestamp()`) plus a `ProgramKind`
+   variant. The server then
    attests availability with the shared `AvailabilityAttester`, ingests inputs into the same round
    record the L1 `InputCommitted` handler fills, computes once `indexed == numInputs`, and reuses
    `run_compute`, `stage_output` and `publishCiphertextOutput` unchanged.

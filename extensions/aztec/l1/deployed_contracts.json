@@ -1,8 +1,8 @@
 {
   "sepolia": {
     "CRISPAztecProgram": {
-      "address": "0xF2F8047C478FAE4a0b9cf8B500211315fDfdd7F1",
-      "blockNumber": 12153734,
+      "address": "0xa67B6cDa41f75F3081162D2F50C2b663Ebe3b1F4",
+      "blockNumber": 12154827,
       "constructorArgs": {
         "initialOwner": "0x8837e47c4Bb520ADE83AAB761C3B60679443af1B",
         "openVmVerifier": "0x226436d8A72357c7992896B37f0A2E00dCb6A341",
@@ -16,11 +16,11 @@
       }
     },
     "ZKPassportRegistrar": {
-      "address": "0x10744Ca11f6c90D106e9Aa73a0D421Fa88B4cF17",
-      "blockNumber": 12153738,
+      "address": "0x2258E935662A259F1c5D58228ea6bA93F6870C03",
+      "blockNumber": 12154831,
       "constructorArgs": {
         "rootVerifier": "0x1D000001000EFD9a6371f4d90bB8920D5431c0D8",
-        "program": "0xF2F8047C478FAE4a0b9cf8B500211315fDfdd7F1",
+        "program": "0xa67B6cDa41f75F3081162D2F50C2b663Ebe3b1F4",
         "domain": "poll.theinterfold.com",
         "validityPeriod": "604800"
       }

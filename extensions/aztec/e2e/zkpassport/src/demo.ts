@@ -44,8 +44,7 @@ import {
 
 const NODE_URL = process.env.AZTEC_NODE_URL ?? 'http://localhost:8080'
 const L1_RPC_URL = process.env.L1_RPC_URL ?? 'http://localhost:8545'
-/** Hash of the fold circuit's noir-recursive verification key (`pnpm -C extensions/aztec/sdk fold-vk-hash`); `register` does not use it. */
-const FOLD_VK_HASH = 0x18217e9d33082668b29217bbf1f578b0f9b2a499beb010f8a64728d0ae582589n
+const BASE_VK_HASH = 0n // the demo only registers; no ballot is cast, so the pinned verification keys are never checked
 const DOMAIN = 'crisp-aztec.local'
 /** Stands in for the Interfold: the top 20 bytes of every e3Id (`roundId` is the low 96 bits). */
 const INTERFOLD = getAddress('0xdFa59d66c173A00643eBE80e172Af5a8Cf244b30')
@@ -79,7 +78,9 @@ const main = async () => {
     interfold: INTERFOLD,
     domainSeparator: pad('0x01', { size: 32 }),
     availabilitySignerPublicKey: signer.publicKey,
-    foldVkHash: FOLD_VK_HASH,
+    ct0VkHash: BASE_VK_HASH,
+    ct1VkHash: BASE_VK_HASH,
+    crispVkHash: BASE_VK_HASH,
     zkpassportDomainHash: domainHash(DOMAIN),
     zkpassportCircuitVersion: circuitsVersionField(CIRCUITS_VERSION),
     zkpassportValiditySeconds: VALIDITY_SECONDS,

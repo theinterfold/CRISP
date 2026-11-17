@@ -20,9 +20,11 @@
 
 mod attestation;
 mod gating;
+mod staging;
 
 pub use attestation::{input_id, Attestation, AvailabilityAttester, InputStatement};
 pub use gating::{readiness, Readiness};
+pub use staging::{staging_request_digest, StagingPassStatement, STAGING_PASS_PUBLIC_INPUTS};
 
 use alloy::{
     primitives::{Address, B256, U256},
@@ -63,12 +65,37 @@ pub struct InputPage {
     pub more: bool,
 }
 
+/// One page of the census roots of a round, in the order the L2 produced them.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct CensusRootPage {
+    /// The root after each registration of the requested round in this page.
+    pub roots: Vec<U256>,
+    /// The position of the last record the page scanned, including records of other rounds. Resume
+    /// from it. `None` when the page scanned nothing.
+    pub scanned_to: Option<String>,
+    /// Whether a further page may exist.
+    pub more: bool,
+}
+
 /// A chain that holds the inputs of rounds whose program lives on L1.
 #[async_trait]
 pub trait RemoteInputSource: Send + Sync {
     /// The inputs of `e3_id` accepted after `after`, an opaque position this source returned
     /// earlier. `None` starts at the beginning of the source's history.
     async fn fetch_inputs(&self, e3_id: U256, after: Option<&str>) -> eyre::Result<InputPage>;
+
+    /// The census roots of `e3_id` registered after `after`, an opaque position this source
+    /// returned earlier. With `proven_only`, only blocks that can no longer be replaced are read, so
+    /// a position taken from the page is safe to resume from. Without it the newest blocks are read
+    /// too, so a root a voter has just seen is known; those blocks can still be dropped and
+    /// replaced, so a position from such a page must NOT be kept. A staging pass names one of these
+    /// roots; it is a spam filter and not a soundness input.
+    async fn census_roots(
+        &self,
+        e3_id: U256,
+        after: Option<&str>,
+        proven_only: bool,
+    ) -> eyre::Result<CensusRootPage>;
 
     /// The timestamp of the newest remote block, in the clock the remote contract compares an
     /// attestation's `expiresAt` against.

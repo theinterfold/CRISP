@@ -1,3 +1,4 @@
+pub mod ballot;
 pub mod constants;
 pub mod hashing;
 pub mod identity;
@@ -8,11 +9,12 @@ pub mod types;
 
 use aztec::macros::aztec;
 
-/// CRISP on Aztec: voters register with a ZKPassport proof and cast fold-proven ballots; the contract builds the
-/// census tree and the input tree, and sends the input root to L1 when the round closes.
+/// CRISP on Aztec: voters register with a ZKPassport proof and cast ballots proven by the three base circuits; the
+/// contract builds the census tree and the input tree, and sends the input root to L1 when the round closes.
 #[aztec]
 pub contract CrispAztec {
     use crate::{
+        ballot::{crisp_public_inputs, CT0_PUBLIC_INPUTS, CT1_PUBLIC_INPUTS},
         constants::{
             LOG_INPUT_COMMITTED, LOG_KEY_PUBLISHED, LOG_MEMBER_REGISTERED, LOG_ROUND_CLOSED, LOG_ROUND_OPENED,
             MAX_LEAVES, NATIONALITY_NONE, NATIONALITY_OUT,
@@ -31,7 +33,7 @@ pub contract CrispAztec {
         protocol::address::{AztecAddress, EthAddress},
         state_vars::{Map, PublicImmutable, PublicMutable},
     };
-    use bb_proof_verification::{UltraHonkVerificationKey, UltraHonkZKProof, verify_honk_proof};
+    use bb_proof_verification::{UltraHonkProof, UltraHonkVerificationKey, verify_honk_proof_non_zk};
     use poseidon::{poseidon::bn254::hash_2, poseidon2::Poseidon2};
     use zkpassport_aztec_verifier::{
         query::Query,
@@ -68,7 +70,9 @@ pub contract CrispAztec {
         availability_domain_separator: [u8; 32],
         availability_signer_pubkey_x: [u8; 32],
         availability_signer_pubkey_y: [u8; 32],
-        fold_vk_hash: Field,
+        ct0_vk_hash: Field,
+        ct1_vk_hash: Field,
+        crisp_vk_hash: Field,
         zkpassport_domain_hash: Field,
         zkpassport_circuit_version: Field,
         zkpassport_validity_period: u64,
@@ -81,7 +85,9 @@ pub contract CrispAztec {
             availability_domain: to_halves(availability_domain_separator),
             signer_x: to_halves(availability_signer_pubkey_x),
             signer_y: to_halves(availability_signer_pubkey_y),
-            fold_vk_hash,
+            ct0_vk_hash,
+            ct1_vk_hash,
+            crisp_vk_hash,
             zkpassport_domain: zkpassport_domain_hash,
             zkpassport_version: zkpassport_circuit_version,
             zkpassport_validity_period,
@@ -322,13 +328,24 @@ pub contract CrispAztec {
     // Ballots
     // ---------------------------------------------------------------------------------------------------------
 
-    /// Commits one ballot: a fold proof for `slot`, the availability service's attestation of the ciphertext, and the
-    /// bytes the input tree leaf commits to. Votes and masks enter the same way.
+    /// Commits one ballot: the three base proofs of the ballot for `slot` (`user_data_encryption_ct0`,
+    /// `user_data_encryption_ct1` and crisp, non-ZK UltraHonk proofs, which this private function keeps from the
+    /// network), the availability service's attestation of the ciphertext, and the bytes the input tree leaf commits to.
+    /// Votes and masks enter the same way.
+    ///
+    /// L1 verifies one fold of the three proofs; here the fold's two aggregation circuits are replaced by checking the
+    /// proofs one by one and linking their public inputs (`ballot.nr` lists every check).
     #[external("private")]
     fn cast(
         round_id: Field,
-        vk: UltraHonkVerificationKey,
-        proof: UltraHonkZKProof,
+        ct0_vk: UltraHonkVerificationKey,
+        ct0_proof: UltraHonkProof,
+        ct0_public_inputs: [Field; CT0_PUBLIC_INPUTS],
+        ct1_vk: UltraHonkVerificationKey,
+        ct1_proof: UltraHonkProof,
+        ct1_public_inputs: [Field; CT1_PUBLIC_INPUTS],
+        crisp_vk: UltraHonkVerificationKey,
+        crisp_proof: UltraHonkProof,
         slot: Field,
         ct_commitment: Field,
         encrypted_vote_hash: [u8; 32],
@@ -346,22 +363,33 @@ pub contract CrispAztec {
         // Everything signed or proved off-chain names the round by its full Interfold e3Id.
         let e3_id = full_e3_id(config.interfold, round_id);
 
-        // The fold proof's public inputs, in the order the circuit declares them.
+        // The crisp proof's public inputs, in the order the circuit declares them.
         let digest = to_halves(ballot_digest(from_halves(config.ballot_domain), e3_id, slot, ct_commitment));
-        let public_inputs = [
-            prev_commitment,
-            digest[0],
-            digest[1],
-            slot,
-            census_root,
-            (parent_index_plus_one == 0) as Field,
-            round.num_options,
-            ct_commitment,
+        let crisp_pi = crisp_public_inputs(
+            ct0_public_inputs,
+            ct1_public_inputs,
             committee_key,
-        ];
-        let vk_hash = Poseidon2::hash(vk, vk.len());
-        assert_eq(vk_hash, config.fold_vk_hash, "unexpected fold verification key");
-        verify_honk_proof(vk, proof, public_inputs, vk_hash);
+            [
+                prev_commitment,
+                digest[0],
+                digest[1],
+                slot,
+                census_root,
+                (parent_index_plus_one == 0) as Field,
+                round.num_options,
+                ct_commitment,
+            ],
+        );
+
+        let ct0_vk_hash = Poseidon2::hash(ct0_vk, ct0_vk.len());
+        assert_eq(ct0_vk_hash, config.ct0_vk_hash, "unexpected ct0 verification key");
+        let ct1_vk_hash = Poseidon2::hash(ct1_vk, ct1_vk.len());
+        assert_eq(ct1_vk_hash, config.ct1_vk_hash, "unexpected ct1 verification key");
+        let crisp_vk_hash = Poseidon2::hash(crisp_vk, crisp_vk.len());
+        assert_eq(crisp_vk_hash, config.crisp_vk_hash, "unexpected crisp verification key");
+        verify_honk_proof_non_zk(ct0_vk, ct0_proof, ct0_public_inputs, ct0_vk_hash);
+        verify_honk_proof_non_zk(ct1_vk, ct1_proof, ct1_public_inputs, ct1_vk_hash);
+        verify_honk_proof_non_zk(crisp_vk, crisp_proof, crisp_pi, crisp_vk_hash);
 
         // The availability service attests that it holds the ciphertext behind this input.
         let id = input_id(

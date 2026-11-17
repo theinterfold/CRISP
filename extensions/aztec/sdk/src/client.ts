@@ -48,7 +48,7 @@ const MESSAGE_TIMEOUT_SECONDS = 600
 
 const bytes32 = (hex: Hex): number[] => Array.from(hexToBytes(hex, { size: 32 }))
 
-/** The 10 values the contract is deployed with; see `deployCrispAztec`. */
+/** The values the contract is deployed with; see `deployCrispAztec`. */
 export type DeployParams = {
   l1Program: Address
   /** The Interfold the program serves: its address is the top 20 bytes of every e3Id of the round ids this contract tracks. */
@@ -57,8 +57,13 @@ export type DeployParams = {
   domainSeparator: Hex
   /** The availability signer's secp256k1 public key: 64 bytes `x ‖ y`, or the 65-byte uncompressed form with its `04` prefix. */
   availabilitySignerPublicKey: Hex
-  /** Hash of the fold circuit's `noir-recursive` verification key (`getFoldRecursiveVerificationKey`). */
-  foldVkHash: bigint
+  /**
+   * Hashes of the verification keys of the three base circuits of the BFV preset the deployment serves
+   * (`getBaseVerificationKeys` of `@crisp-e3/sdk`, with the preset registered): a ballot is proven with exactly these.
+   */
+  ct0VkHash: bigint
+  ct1VkHash: bigint
+  crispVkHash: bigint
   zkpassportDomainHash: bigint
   /** The ZKPassport circuits release, packed (`0x16` in the top byte for 0.22.0). */
   zkpassportCircuitVersion: bigint
@@ -82,7 +87,9 @@ export const deployCrispAztec = async (session: AztecSession, params: DeployPara
     separator,
     Array.from(key.slice(0, 32)),
     Array.from(key.slice(32, 64)),
-    new Fr(params.foldVkHash),
+    new Fr(params.ct0VkHash),
+    new Fr(params.ct1VkHash),
+    new Fr(params.crispVkHash),
     new Fr(params.zkpassportDomainHash),
     new Fr(params.zkpassportCircuitVersion),
     params.zkpassportValiditySeconds,
@@ -301,8 +308,14 @@ export class CrispAztec {
     return this.send(
       this.contract.methods.cast(
         this.roundIdFor(args.e3Id),
-        args.vk,
-        args.proof,
+        args.ct0Vk,
+        args.ct0Proof,
+        args.ct0PublicInputs,
+        args.ct1Vk,
+        args.ct1Proof,
+        args.ct1PublicInputs,
+        args.crispVk,
+        args.crispProof,
         BigInt(args.slot),
         BigInt(args.ctCommitment),
         bytes32(args.encryptedVoteHash),

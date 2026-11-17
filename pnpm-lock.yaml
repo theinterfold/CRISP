@@ -308,6 +308,9 @@ importers:
       '@crisp-e3/sdk':
         specifier: workspace:*
         version: link:../../../packages/crisp-sdk
+      '@noir-lang/noir_js':
+        specifier: 1.0.0-rc.3
+        version: 1.0.0-rc.3
       '@zk-kit/lean-imt':
         specifier: ^2.2.4
         version: 2.2.5(bufferutil@4.1.0)(utf-8-validate@5.0.10)

@@ -21,7 +21,7 @@
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "test": "vitest --run",
-    "fold-vk-hash": "node scripts/fold-vk-hash.mjs",
+    "base-vk-hashes": "node scripts/base-vk-hashes.mjs",
     "codegen": "aztec codegen ../contracts/target/crisp_aztec-CrispAztec.json -o src/bindings -f"
   },
   "dependencies": {
@@ -34,6 +34,7 @@
     "@aztec-labs/stdlib": "6.0.0",
     "@aztec-labs/wallets": "6.0.0",
     "@crisp-e3/sdk": "workspace:*",
+    "@noir-lang/noir_js": "1.0.0-rc.3",
     "@zk-kit/lean-imt": "^2.2.4",
     "@zkpassport/aztec": "0.1.0-beta.0",
     "@zkpassport/utils": "0.40.0",

@@ -47,13 +47,13 @@ export class CrispAztecContract extends ContractBase {
    * @param instantiation - Optional address-affecting parameters (salt, deployer / universalDeploy, publicKeys).
    *                       Salt defaults to a random value; the deployer is locked lazily from the first send-time `from`.
    */
-  public static deploy(wallet: Wallet, l1_program: EthAddressLike, interfold: EthAddressLike, ballot_domain_separator: (bigint | number)[], availability_domain_separator: (bigint | number)[], availability_signer_pubkey_x: (bigint | number)[], availability_signer_pubkey_y: (bigint | number)[], fold_vk_hash: FieldLike, zkpassport_domain_hash: FieldLike, zkpassport_circuit_version: FieldLike, zkpassport_validity_period: (bigint | number), zkpassport_registry: AztecAddressLike, instantiation?: DeployInstantiationOptions) {
+  public static deploy(wallet: Wallet, l1_program: EthAddressLike, interfold: EthAddressLike, ballot_domain_separator: (bigint | number)[], availability_domain_separator: (bigint | number)[], availability_signer_pubkey_x: (bigint | number)[], availability_signer_pubkey_y: (bigint | number)[], ct0_vk_hash: FieldLike, ct1_vk_hash: FieldLike, crisp_vk_hash: FieldLike, zkpassport_domain_hash: FieldLike, zkpassport_circuit_version: FieldLike, zkpassport_validity_period: (bigint | number), zkpassport_registry: AztecAddressLike, instantiation?: DeployInstantiationOptions) {
     return DeployMethod.create<CrispAztecContract>(
       wallet,
       {
         artifact: CrispAztecContractArtifact,
         postDeployCtor: (instance, wallet) => CrispAztecContract.at(instance.address, wallet),
-        args: [l1_program, interfold, ballot_domain_separator, availability_domain_separator, availability_signer_pubkey_x, availability_signer_pubkey_y, fold_vk_hash, zkpassport_domain_hash, zkpassport_circuit_version, zkpassport_validity_period, zkpassport_registry],
+        args: [l1_program, interfold, ballot_domain_separator, availability_domain_separator, availability_signer_pubkey_x, availability_signer_pubkey_y, ct0_vk_hash, ct1_vk_hash, crisp_vk_hash, zkpassport_domain_hash, zkpassport_circuit_version, zkpassport_validity_period, zkpassport_registry],
       },
       instantiation,
     );
@@ -101,37 +101,37 @@ export class CrispAztecContract extends ContractBase {
       slot: new Fr(1n),
     },
 rounds: {
-      slot: new Fr(17n),
-    },
-committee_keys: {
-      slot: new Fr(18n),
-    },
-closed: {
       slot: new Fr(19n),
     },
-census_count: {
+committee_keys: {
       slot: new Fr(20n),
     },
-census_nodes: {
+closed: {
       slot: new Fr(21n),
     },
-census_roots: {
+census_count: {
       slot: new Fr(22n),
     },
-registered_slots: {
+census_nodes: {
       slot: new Fr(23n),
     },
-input_count: {
+census_roots: {
       slot: new Fr(24n),
     },
-input_frontier: {
+registered_slots: {
       slot: new Fr(25n),
     },
-inputs: {
+input_count: {
       slot: new Fr(26n),
     },
-input_ids: {
+input_frontier: {
       slot: new Fr(27n),
+    },
+inputs: {
+      slot: new Fr(28n),
+    },
+input_ids: {
+      slot: new Fr(29n),
     }
       } as ContractStorageLayout<'config' | 'rounds' | 'committee_keys' | 'closed' | 'census_count' | 'census_nodes' | 'census_roots' | 'registered_slots' | 'input_count' | 'input_frontier' | 'inputs' | 'input_ids'>;
     }
@@ -143,14 +143,14 @@ input_ids: {
     /** add_member_from_l1(round_id: field, slot: field, leaf_index: field) */
     add_member_from_l1: ((round_id: FieldLike, slot: FieldLike, leaf_index: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
-    /** cast(round_id: field, vk: array, proof: array, slot: field, ct_commitment: field, encrypted_vote_hash: array, parent_index_plus_one: integer, prev_commitment: field, census_root: field, expires_at: integer, signature: array) */
-    cast: ((round_id: FieldLike, vk: FieldLike[], proof: FieldLike[], slot: FieldLike, ct_commitment: FieldLike, encrypted_vote_hash: (bigint | number)[], parent_index_plus_one: (bigint | number), prev_commitment: FieldLike, census_root: FieldLike, expires_at: (bigint | number), signature: (bigint | number)[]) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+    /** cast(round_id: field, ct0_vk: array, ct0_proof: array, ct0_public_inputs: array, ct1_vk: array, ct1_proof: array, ct1_public_inputs: array, crisp_vk: array, crisp_proof: array, slot: field, ct_commitment: field, encrypted_vote_hash: array, parent_index_plus_one: integer, prev_commitment: field, census_root: field, expires_at: integer, signature: array) */
+    cast: ((round_id: FieldLike, ct0_vk: FieldLike[], ct0_proof: FieldLike[], ct0_public_inputs: FieldLike[], ct1_vk: FieldLike[], ct1_proof: FieldLike[], ct1_public_inputs: FieldLike[], crisp_vk: FieldLike[], crisp_proof: FieldLike[], slot: FieldLike, ct_commitment: FieldLike, encrypted_vote_hash: (bigint | number)[], parent_index_plus_one: (bigint | number), prev_commitment: FieldLike, census_root: FieldLike, expires_at: (bigint | number), signature: (bigint | number)[]) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** close_round(round_id: field) */
     close_round: ((round_id: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
-    /** constructor(l1_program: struct, interfold: struct, ballot_domain_separator: array, availability_domain_separator: array, availability_signer_pubkey_x: array, availability_signer_pubkey_y: array, fold_vk_hash: field, zkpassport_domain_hash: field, zkpassport_circuit_version: field, zkpassport_validity_period: integer, zkpassport_registry: struct) */
-    constructor: ((l1_program: EthAddressLike, interfold: EthAddressLike, ballot_domain_separator: (bigint | number)[], availability_domain_separator: (bigint | number)[], availability_signer_pubkey_x: (bigint | number)[], availability_signer_pubkey_y: (bigint | number)[], fold_vk_hash: FieldLike, zkpassport_domain_hash: FieldLike, zkpassport_circuit_version: FieldLike, zkpassport_validity_period: (bigint | number), zkpassport_registry: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+    /** constructor(l1_program: struct, interfold: struct, ballot_domain_separator: array, availability_domain_separator: array, availability_signer_pubkey_x: array, availability_signer_pubkey_y: array, ct0_vk_hash: field, ct1_vk_hash: field, crisp_vk_hash: field, zkpassport_domain_hash: field, zkpassport_circuit_version: field, zkpassport_validity_period: integer, zkpassport_registry: struct) */
+    constructor: ((l1_program: EthAddressLike, interfold: EthAddressLike, ballot_domain_separator: (bigint | number)[], availability_domain_separator: (bigint | number)[], availability_signer_pubkey_x: (bigint | number)[], availability_signer_pubkey_y: (bigint | number)[], ct0_vk_hash: FieldLike, ct1_vk_hash: FieldLike, crisp_vk_hash: FieldLike, zkpassport_domain_hash: FieldLike, zkpassport_circuit_version: FieldLike, zkpassport_validity_period: (bigint | number), zkpassport_registry: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** get_census_count(round_id: field) */
     get_census_count: ((round_id: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;

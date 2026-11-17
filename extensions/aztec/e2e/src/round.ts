@@ -11,14 +11,17 @@ import { createAztecNodeDebugClient } from '@aztec-labs/stdlib/interfaces/client
 import {
   CrispAztec,
   NATIONALITY_MODE,
+  getRemoteInputConfig,
   buildCast,
   connectAztec,
+  destroyStagingPassProver,
   encodeCustomParams,
   nationalityCommitment,
   registerOnL1Calldata,
   relayRegistrationOnL1,
   scopeOf,
   type AztecSession,
+  type CastArguments,
   type RoundRules,
   type ZKPassportProofParams,
 } from '@crisp-e3/aztec'
@@ -181,6 +184,7 @@ export const round = async (which?: Path): Promise<void> => {
     for (const path of which ? [which] : (['aztec', 'l1'] as const)) await roundOnPath(path)
   } finally {
     await Promise.resolve(destroyBBApi()).catch(() => undefined)
+    await destroyStagingPassProver().catch(() => undefined)
   }
 }
 
@@ -400,6 +404,15 @@ const roundOnPath = async (path: Path): Promise<void> => {
     }
 
     // ---- 5. Votes (and one mask) ----
+    // Every ciphertext staged with the server carries a staging pass of the voter's own slot key. The server takes each
+    // (key, round, counter) once and a key gets `staging_max_requests` of them, so every attempt, control included, uses the next.
+    const { staging_max_requests: stagingMaxRequests } = await getRemoteInputConfig(SERVER_URL)
+    const stagingCounters = voters.map(() => 0)
+    const stagingFor = (index: number) => ({
+      signer: async (digest: Hex) => signDigest(voters[index].slotKey, digest),
+      maxRequests: stagingMaxRequests,
+      counter: stagingCounters[index]++,
+    })
     const castOne = async (index: number, ballot: number[] | undefined, label: string) => {
       const voter = voters[index]
       const started = Date.now()
@@ -413,14 +426,44 @@ const roundOnPath = async (path: Path): Promise<void> => {
         numOptions: NUM_OPTIONS,
         census,
         committeePublicKey,
-        committeeKeyCommitment,
         availabilitySigner: d.serverSigner as Address,
+        staging: stagingFor(index),
         ballot: ballot ? { vote: ballot, sign: async (digest) => signDigest(voter.slotKey, digest) } : undefined,
         onProgress: (progress) => log(`${stamp()} ${voter.name}: ${JSON.stringify(progress)}`),
       }))
       const sent = await clients[index].cast(args)
       txs.push({ layer: 'L2', what: `${voter.name} ${label}`, hash: sent.txHash })
       log(`${stamp()} ${voter.name}: ${label} in ${((Date.now() - started) / 1000).toFixed(0)}s, tx ${sent.txHash} (block ${sent.blockNumber})`)
+    }
+    // Controls on the proofs `cast` verifies itself: the tampered ballots are refused where the transaction is proven,
+    // because the recursion is not executed in simulation. Run once, on the L1 path, to keep the other path's time.
+    if (path === 'l1') {
+      const control = async (label: string, tamper: (args: CastArguments) => CastArguments) => {
+        const honest = await buildCast({
+          serverUrl: SERVER_URL,
+          program: d.program,
+          l1ChainId: L1_CHAIN_ID,
+          e3Id,
+          slot: slotOf(voters[0]),
+          credits: CREDITS,
+          numOptions: NUM_OPTIONS,
+          census,
+          committeePublicKey,
+          availabilitySigner: d.serverSigner as Address,
+          staging: stagingFor(0),
+          ballot: { vote: voters[0].ballot!, sign: async (digest) => signDigest(voters[0].slotKey, digest) },
+        })
+        try {
+          await clients[0].cast(tamper(honest))
+        } catch (error) {
+          log(`${stamp()} control "${label}" refused: ${String((error as Error).message).split('\n')[0].slice(0, 160)}`)
+
+          return
+        }
+        throw new Error(`The control "${label}" was accepted: cast does not verify what it must`)
+      }
+      await control('the ct1 ciphertext commitment altered', (args) => ({ ...args, ct1PublicInputs: args.ct1PublicInputs.map((v, i) => (i === 1 ? v + 1n : v)) }))
+      await control('the ct0 and ct1 proofs swapped', (args) => ({ ...args, ct0Proof: args.ct1Proof, ct1Proof: args.ct0Proof }))
     }
     for (const [index, voter] of voters.entries()) await castOne(index, voter.ballot, `cast [${voter.ballot}]`)
     for (const [index, voter] of voters.entries()) {

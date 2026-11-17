@@ -160,6 +160,25 @@ pub struct Config {
     /// no Ethereum wallet. Absent: no round of this server registers on L1.
     #[serde(default)]
     pub zkpassport_registrar_address: Option<String>,
+    /// How many staging passes one slot key may use per round (`PROGRAM_KIND=aztec`). Each
+    /// `POST /voting/remote-input`, vote or mask, spends one, so a slot stages at most this many
+    /// ciphertexts a round. The pass circuit takes it as a public input and the SDK proves
+    /// against the value of `GET /voting/remote-input/config`.
+    #[serde(default = "default_staging_max_requests_per_slot")]
+    pub staging_max_requests_per_slot: u32,
+    /// The verification key of the `staging_pass` circuit (`extensions/core/circuits/staging_pass/
+    /// compiled/staging_pass.vk`). Required for `PROGRAM_KIND=aztec`.
+    #[serde(default)]
+    pub staging_pass_vk_path: Option<String>,
+    /// The Barretenberg CLI that verifies staging passes. Must be the version that made the key
+    /// (6.0.0); the Docker image ships it.
+    #[serde(default = "default_bb_binary_path")]
+    pub bb_binary_path: String,
+    /// The directory of `bb`'s reference string. Absent: `bb` uses `~/.bb-crs` and downloads what
+    /// it lacks on its first verification. The Docker image ships it, so the server needs no
+    /// network and no writable home to verify a pass.
+    #[serde(default)]
+    pub bb_crs_path: Option<String>,
 }
 
 impl Config {
@@ -230,6 +249,20 @@ impl Config {
             return Err(invalid("AZTEC_NODE_URL is required for PROGRAM_KIND=aztec"));
         }
         self.aztec_contract()?;
+        if self
+            .staging_pass_vk_path
+            .as_deref()
+            .is_none_or(|path| path.trim().is_empty())
+        {
+            return Err(invalid(
+                "STAGING_PASS_VK_PATH is required for PROGRAM_KIND=aztec",
+            ));
+        }
+        if self.staging_max_requests_per_slot == 0 {
+            return Err(invalid(
+                "STAGING_MAX_REQUESTS_PER_SLOT must be greater than zero",
+            ));
+        }
         if self.aztec_attestation_ttl_seconds == 0 {
             return Err(invalid(
                 "AZTEC_ATTESTATION_TTL_SECONDS must be greater than zero",
@@ -493,6 +526,14 @@ const fn default_aztec_attestation_ttl_seconds() -> u64 {
     900
 }
 
+const fn default_staging_max_requests_per_slot() -> u32 {
+    16
+}
+
+fn default_bb_binary_path() -> String {
+    "bb".to_owned()
+}
+
 /// Loaded on first use; a missing or invalid setting stops the process with its message.
 pub static CONFIG: LazyLock<Config> =
     LazyLock::new(|| Config::from_env().expect("Failed to load configuration"));
@@ -677,6 +718,28 @@ mod tests {
                 .validate_program()
                 .is_err()
         );
+        // The key of the staging pass circuit is required, and the limit must allow one pass.
+        let staged = |extra: serde_json::Value| {
+            let mut program = serde_json::json!({
+                "aztec_node_url": "http://127.0.0.1:8080",
+                "aztec_contract_address": contract,
+            });
+            program
+                .as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            aztec(program)
+        };
+        assert!(staged(serde_json::json!({})).validate_program().is_err());
+        assert!(staged(serde_json::json!({ "staging_pass_vk_path": " " }))
+            .validate_program()
+            .is_err());
+        assert!(staged(serde_json::json!({
+            "staging_pass_vk_path": "staging_pass.vk",
+            "staging_max_requests_per_slot": 0
+        }))
+        .validate_program()
+        .is_err());
         assert!(aztec(serde_json::json!({
             "aztec_node_url": "http://127.0.0.1:8080",
             "aztec_contract_address": "0x1234"
@@ -686,16 +749,20 @@ mod tests {
         assert!(aztec(serde_json::json!({
             "aztec_node_url": "http://127.0.0.1:8080",
             "aztec_contract_address": contract,
+            "staging_pass_vk_path": "staging_pass.vk",
             "aztec_attestation_ttl_seconds": 0
         }))
         .validate_program()
         .is_err());
         let valid = aztec(serde_json::json!({
             "aztec_node_url": "http://127.0.0.1:8080",
-            "aztec_contract_address": contract
+            "aztec_contract_address": contract,
+            "staging_pass_vk_path": "staging_pass.vk"
         }));
         assert!(valid.validate_program().is_ok());
         assert!(valid.is_aztec());
+        assert_eq!(valid.staging_max_requests_per_slot, 16);
+        assert_eq!(valid.bb_binary_path, "bb");
     }
 
     #[test]
@@ -706,7 +773,8 @@ mod tests {
             let mut program = serde_json::json!({
                 "program_kind": "aztec",
                 "aztec_node_url": "http://127.0.0.1:8080",
-                "aztec_contract_address": contract
+                "aztec_contract_address": contract,
+                "staging_pass_vk_path": "staging_pass.vk"
             });
             program
                 .as_object_mut()

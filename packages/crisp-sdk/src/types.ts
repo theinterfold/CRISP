@@ -153,6 +153,34 @@ export type RecursiveFoldArtifacts = {
 }
 
 /**
+ * One of the three base proofs of a ballot, in the `noir-recursive-no-zk` flavour: what Aztec's
+ * `verify_honk_proof_non_zk` takes in a private function. The 410 proof fields exclude the public inputs.
+ */
+export type BaseProof = {
+  proof: Uint8Array
+  proofFields: string[]
+  vkFields: string[]
+  vkHash: string
+  publicInputs: string[]
+}
+
+/**
+ * The base proofs, which carry the ballot's encryption and rules without the two aggregation layers:
+ * `ct0` and `ct1` (`user_data_encryption_ct0` / `_ct1`, public inputs `pk0, ct0, k1, u` and `pk1, ct1, u`) and
+ * `crisp` (ten public inputs, the last two being its return values).
+ */
+export type BaseProofs = { ct0: BaseProof; ct1: BaseProof; crisp: BaseProof }
+
+/** {@link BaseProofs} with what {@link ProofData} carries beside the proof. */
+export type BallotBaseProofs = BaseProofs & {
+  encryptedVote: Uint8Array
+  parentIndexPlusOne: number
+}
+
+/** Verification key and hash of each base circuit, for a verifier that pins them. */
+export type BaseVerificationKeys = Record<keyof BaseProofs, { vkFields: string[]; vkHash: string }>
+
+/**
  * The proof system target of the final fold proof.
  *
  * - `evm` (default): keccak transcript, verified by the generated Solidity verifier.

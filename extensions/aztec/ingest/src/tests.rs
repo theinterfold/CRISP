@@ -284,3 +284,119 @@ fn a_cursor_round_trips_and_orders_by_position() {
     assert!(Position::parse("11-0-2-1").is_err());
     assert!(Position::parse("a-b-c").is_err());
 }
+
+/// A `MEMBER_REGISTERED` public log: `[2, round_id, index, slot, leaf, root]`.
+fn member_log(e3_id: u64, index: u64, root: u64, at: (u64, u64, u64)) -> Value {
+    let fields = [
+        U256::from(MEMBER_REGISTERED_TAG),
+        U256::from(e3_id),
+        U256::from(index),
+        U256::from_be_slice(address!("0x00000000000000000000000000000000000000aa").as_slice()),
+        U256::from(0x2000 + index),
+        U256::from(root),
+    ];
+    json!({
+        "logData": fields.map(field),
+        "blockNumber": at.0,
+        "txIndexWithinBlock": at.1,
+        "logIndexWithinTx": at.2,
+        "blockTimestamp": "1794872445",
+    })
+}
+
+/// The proven read stops at the proven tip like `fetch_inputs`, and keeps only the requested round.
+#[tokio::test]
+async fn proven_census_roots_stop_at_the_proven_block_for_one_round() {
+    let (node, requests) = node(vec![
+        proven(100),
+        answer(vec![
+            member_log(7, 0, 0x70, (10, 0, 0)),
+            member_log(8, 0, 0x80, (10, 1, 0)),
+            member_log(7, 1, 0x71, (11, 0, 0)),
+        ]),
+    ])
+    .await;
+
+    let page = source(node, Some(5))
+        .census_roots(e3(7), None, true)
+        .await
+        .unwrap();
+
+    assert_eq!(page.roots, [U256::from(0x70), U256::from(0x71)]);
+    assert_eq!(page.scanned_to.as_deref(), Some("11-0-0"));
+    assert!(!page.more);
+    assert_eq!(
+        requests.lock().unwrap()[1]["params"][0],
+        json!({
+            "contractAddress": CONTRACT.to_string(),
+            "tags": [format!("{:#066x}", 2)],
+            "fromBlock": 5,
+            "toBlock": 101,
+        })
+    );
+}
+
+#[tokio::test]
+async fn nothing_is_read_while_nothing_is_proven() {
+    let (node, requests) = node(vec![proven(0)]).await;
+    let page = source(node, None)
+        .census_roots(e3(7), None, true)
+        .await
+        .unwrap();
+    assert_eq!(page, CensusRootPage::default());
+    assert_eq!(requests.lock().unwrap().len(), 1);
+}
+
+/// A voter who has just registered names a root of a block that is not proven yet, so the tail read
+/// goes to the newest block: no chain-tips lookup and no `toBlock`.
+#[tokio::test]
+async fn the_unproven_tail_is_read_to_the_newest_block() {
+    let (node, requests) = node(vec![answer(vec![member_log(7, 2, 0x72, (12, 0, 0))])]).await;
+
+    let page = source(node, Some(5))
+        .census_roots(e3(7), Some("11-0-0"), false)
+        .await
+        .unwrap();
+
+    assert_eq!(page.roots, [U256::from(0x72)]);
+    let requests = requests.lock().unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(
+        requests[0]["params"][0],
+        json!({
+            "contractAddress": CONTRACT.to_string(),
+            "tags": [{
+                "tag": format!("{:#066x}", 2),
+                "afterLog": { "blockNumber": 11, "txIndexWithinBlock": 0, "logIndexWithinTx": 0 },
+            }],
+        })
+    );
+}
+
+#[tokio::test]
+async fn census_roots_report_a_full_page() {
+    let logs = (0..PAGE_SIZE as u64)
+        .map(|n| member_log(7, n, n, (20 + n, 0, 0)))
+        .collect();
+    let (node, _) = node(vec![answer(logs)]).await;
+
+    let page = source(node, None)
+        .census_roots(e3(7), None, false)
+        .await
+        .unwrap();
+
+    assert!(page.more);
+    assert_eq!(page.scanned_to.as_deref(), Some("39-0-0"));
+}
+
+#[tokio::test]
+async fn a_member_log_of_another_shape_stops_the_census_read() {
+    let mut bad = member_log(7, 0, 1, (10, 0, 0));
+    bad["logData"].as_array_mut().unwrap().pop();
+    let (node, _) = node(vec![answer(vec![bad])]).await;
+
+    assert!(source(node, None)
+        .census_roots(e3(7), None, false)
+        .await
+        .is_err());
+}

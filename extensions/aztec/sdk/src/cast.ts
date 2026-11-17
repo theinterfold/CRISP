@@ -10,6 +10,7 @@ import { bytesToHex, hexToBytes, keccak256, recoverAddress, type Address, type H
 import { availabilityDigest, ballotDigest, inputId } from './ballot'
 import type { Census } from './census'
 import { stageInput, type InputAttestation } from './server'
+import { buildStagingPass } from './staging-pass'
 
 /** What a voter signs: the EIP-712 ballot digest, raw (no EIP-191 prefix), with the key of the slot address. */
 export type DigestSigner = (digest: Hex) => Promise<Hex>
@@ -26,23 +27,45 @@ export type BuildCastInputs = {
   credits: bigint
   numOptions: number
   census: Census
-  /** The committee's BFV public key, as the CRISP server serves it. */
+  /**
+   * The committee's BFV public key, as the CRISP server serves it. The contract checks that the ballot is encrypted to the
+   * key it stored from the KEY message, from the commitments the two encryption proofs expose.
+   */
   committeePublicKey: Uint8Array
-  /** The 32-byte commitment of that key the contract stored from the KEY message. */
-  committeeKeyCommitment: Hex
   /** The availability signer the server is configured with; an attestation by anyone else is refused. */
   availabilitySigner: Address
   /** Omit for a mask: a mask carries no signature and is indistinguishable from a vote on chain. */
   ballot?: { vote: Vote; sign: DigestSigner }
+  /**
+   * The staging pass of this request (`staging-pass.ts`): signed by the voter's OWN registered slot key, for a vote and a mask
+   * alike, so the server cannot tell them apart. For a vote that is the ballot's signer; for a mask `slot` is the masked
+   * slot and this is the masker's.
+   */
+  staging: {
+    signer: DigestSigner
+    /** The server's `staging_max_requests`. */
+    maxRequests: number
+    /** The next unused pass counter of the signer's key in this round (`BuildStagingPassInputs.counter`). */
+    counter: number
+  }
   onProgress?: ProofOptions['onProgress']
 }
 
 /** Everything `cast` takes, in contract terms. */
 export type CastArguments = {
   e3Id: bigint
-  /** 115-field verification key and 458-field proof of the `noir-recursive` fold proof. */
-  vk: bigint[]
-  proof: bigint[]
+  /**
+   * The three base proofs of the ballot, which `cast` verifies in place of L1's fold: each a 115-field verification
+   * key and a 410-field `noir-recursive-no-zk` proof, with the public inputs of the two encryption proofs.
+   */
+  ct0Vk: bigint[]
+  ct0Proof: bigint[]
+  ct0PublicInputs: bigint[]
+  ct1Vk: bigint[]
+  ct1Proof: bigint[]
+  ct1PublicInputs: bigint[]
+  crispVk: bigint[]
+  crispProof: bigint[]
   slot: Address
   ctCommitment: Hex
   encryptedVoteHash: Hex
@@ -57,12 +80,14 @@ export type CastArguments = {
   attestation: InputAttestation
 }
 
-// Fold public inputs, in the order `CRISPProgram._verifyInputProof` reads them.
-const PI = { PREV_COMMITMENT: 0, SLOT: 3, CENSUS_ROOT: 4, NUM_OPTIONS: 6, CT_COMMITMENT: 7, COMMITTEE_KEY: 8 } as const
+// Public inputs of the crisp ballot proof, in the order the circuit declares them (the first eight are the fold's too).
+const PI = { PREV_COMMITMENT: 0, SLOT: 3, CENSUS_ROOT: 4, NUM_OPTIONS: 6, CT_COMMITMENT: 7 } as const
 
 /**
- * Build the arguments of one `cast` call: encrypt, sign, prove (a `noir-recursive` fold proof), stage the ciphertext
- * with the server, and check each value the contract will check so a mistake fails here, not in a rejected transaction.
+ * Build the arguments of one `cast` call: encrypt, sign, prove the three base circuits (no aggregation: the contract
+ * verifies them itself), stage the ciphertext with the server, and check each value the contract will check so a mistake
+ * fails here, not in a rejected transaction. The proofs stay on this device: only the ciphertext and its commitment go
+ * to the server, and the proofs are arguments of a private function, hidden by the Aztec transaction proof.
  *
  * The circuit preset must be registered first (`setCircuits(await loadCircuits())` from the preset subpath of
  * `@crisp-e3/sdk` that matches the round).
@@ -85,27 +110,33 @@ export const buildCast = async (inputs: BuildCastInputs): Promise<CastArguments>
 
   const digest = ballotDigest({ l1ChainId, program, e3Id, slot, ciphertextCommitment: prepared.ctCommitment })
   const signature = inputs.ballot ? await inputs.ballot.sign(digest) : undefined
-  const result = await crisp.finishBallot(prepared, digest, signature, { verifierTarget: 'noir-recursive', onProgress: inputs.onProgress })
-  if (!result.recursive) throw new Error('The fold proof carries no recursive artifacts')
+  const result = await crisp.finishBallotBase(prepared, digest, signature, { onProgress: inputs.onProgress })
 
-  const pi = result.publicInputs.map((value) => BigInt(value))
-  if (pi.length !== 9) throw new Error(`The fold proof has ${pi.length} public inputs, expected 9`)
+  const pi = result.crisp.publicInputs.map((value) => BigInt(value))
+  if (pi.length !== 10) throw new Error(`The crisp proof has ${pi.length} public inputs, expected 10`)
+  if (result.ct0.publicInputs.length !== 4 || result.ct1.publicInputs.length !== 3) {
+    throw new Error('The encryption proofs have an unexpected number of public inputs')
+  }
   if (pi[PI.CENSUS_ROOT] !== census.root)
     throw new Error('The proof was made against a different census root than the one rebuilt from the logs')
-  if (pi[PI.COMMITTEE_KEY] !== BigInt(inputs.committeeKeyCommitment)) {
-    throw new Error('The committee public key the server serves does not match the key the Aztec contract stored')
-  }
   if (pi[PI.CT_COMMITMENT] !== BigInt(prepared.ctCommitment))
     throw new Error('The proof commits to a different ciphertext than the one prepared')
 
   const encryptedVoteHash = keccak256(bytesToHex(result.encryptedVote))
-  const attestation = await stageInput(serverUrl, {
+  const staged = {
     e3Id,
     slot,
     ciphertext: result.encryptedVote,
     ciphertextCommitment: prepared.ctCommitment,
     parentIndexPlusOne: result.parentIndexPlusOne,
+  }
+  const stagingPass = await buildStagingPass({
+    ...inputs.staging,
+    census,
+    credits: inputs.credits,
+    request: { l1ChainId, program, ...staged },
   })
+  const attestation = await stageInput(serverUrl, { ...staged, stagingPass })
 
   const id = inputId({
     program,
@@ -125,8 +156,14 @@ export const buildCast = async (inputs: BuildCastInputs): Promise<CastArguments>
 
   return {
     e3Id,
-    vk: result.recursive.vkFields.map((field) => BigInt(field)),
-    proof: result.recursive.proofFields.map((field) => BigInt(field)),
+    ct0Vk: toBigints(result.ct0.vkFields),
+    ct0Proof: toBigints(result.ct0.proofFields),
+    ct0PublicInputs: toBigints(result.ct0.publicInputs),
+    ct1Vk: toBigints(result.ct1.vkFields),
+    ct1Proof: toBigints(result.ct1.proofFields),
+    ct1PublicInputs: toBigints(result.ct1.publicInputs),
+    crispVk: toBigints(result.crisp.vkFields),
+    crispProof: toBigints(result.crisp.proofFields),
     slot,
     ctCommitment: prepared.ctCommitment,
     encryptedVoteHash,
@@ -139,6 +176,8 @@ export const buildCast = async (inputs: BuildCastInputs): Promise<CastArguments>
     attestation,
   }
 }
+
+const toBigints = (fields: string[]): bigint[] => fields.map((field) => BigInt(field))
 
 /** A 64-byte `r ‖ s` signature carries no recovery id, so try both parities. */
 const isSignedBy = async (digest: Hex, compact: Hex, signer: Address): Promise<boolean> => {

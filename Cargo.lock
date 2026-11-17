@@ -2479,6 +2479,7 @@ dependencies = [
  "alloy",
  "async-trait",
  "eyre",
+ "hex",
  "tokio",
 ]
 

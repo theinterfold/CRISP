@@ -55,15 +55,21 @@ contract's ABI changes.
 - **The circuit preset is the caller's job.** `buildCast` proves with whatever `setCircuits`
   registered; call `setCircuits(await loadCircuits())` from the `@crisp-e3/sdk/<preset>` subpath
   that matches the round first.
-- **Fold proofs are `noir-recursive`.** `cast` verifies the fold proof inside the contract, so
-  `buildCast` asks `finishBallot` for `verifierTarget: 'noir-recursive'` (458 proof fields, 115
-  verification-key fields). The contract is deployed with the hash of that verification key;
-  `pnpm fold-vk-hash` prints it (one value for every preset).
+- **Ballots are proven by the three base circuits, not the fold.** `cast` verifies the
+  `user_data_encryption_ct0`, `user_data_encryption_ct1` and crisp proofs itself and makes the
+  checks the two aggregation circuits make on L1 (`contracts/crisp_aztec/src/ballot.nr` lists them),
+  so `buildCast` asks `finishBallotBase` for the base proofs only: no 2^21-gate aggregation proof,
+  no fold. They are `noir-recursive-no-zk` proofs (410 fields, 115-field verification key): they
+  are private arguments of `cast`, hidden by the transaction proof, and must never be sent
+  anywhere else (`buildCast` stages only the ciphertext with the server). The contract is deployed
+  with the hashes of the three verification keys of the round's BFV preset; `pnpm base-vk-hashes
+  <preset>` prints them (`getBaseVerificationKeys` after `setCircuits`). Unlike the fold's, they
+  differ per preset, so a deployment serves one preset.
 - **A session is disposable.** `connectAztec` makes an initializerless Schnorr account from random
   keys: no deployment transaction, nothing stored. A ZKPassport proof is bound to that address, so
   register and cast from the same session you proved for.
 - **Sessions prove client-side.** `connectAztec(url, { prove })` defaults to `true`. The embedded
-  wallet's simulation skips the `verify_honk_proof` recursion, so unproven transactions are not
+  wallet's simulation skips the `verify_honk_proof_non_zk` recursion, so unproven transactions are not
   checked against the ZKPassport or fold proof; a public network rejects them, a local network
   accepts them.
 - **The SponsoredFPC is not visible through `getContract`.** The local network funds it at genesis
@@ -73,6 +79,20 @@ contract's ABI changes.
   Inbox message (`getL1ToL2MessageIndex` is its leaf index). A local network builds blocks only for
   transactions, so an idle one never includes the message: send any transaction after the L1 call.
 - **`getRootWitness` is empty until the epoch's proof is on L1.** Ask again later; the keeper does.
+- **Staging needs a pass.** The server stages a ciphertext only against a staging pass: a zero-knowledge
+  proof that the sender holds the key of SOME slot registered in the round's census, with a one-time tag
+  (`buildStagingPass`, `staging-pass.ts`; circuit `extensions/core/circuits/staging_pass`). `buildCast` makes
+  it from its `staging: { signer, maxRequests, counter }`. `signer` is the voter's OWN registered slot key,
+  for a vote and for a mask alike (a mask's `slot` is the masked one), so the server cannot tell them
+  apart; an unregistered voter cannot stage. `maxRequests` is `getRemoteInputConfig().staging_max_requests`.
+  `counter` is the next unused pass of that key in that round, `0 <= counter < maxRequests`: the server
+  accepts each once, so count every staging, vote or mask, per key and round on the client (a refused one
+  still spends its counter, as the server keeps the tag when it refused something the caller sent). Pass
+  proofs are about 6 s in Node (2^17 gates, own bb.js instance: call `destroyStagingPassProver()` at
+  shutdown, next to `destroyBBApi`). Tags are unlinkable to slots only while the slot public key stays
+  unpublished: never publish a signature made with a slot key outside the ballot proof.
+  `stagingRequestDigest` is what the pass signs, and `server/tests/fixtures/staging_pass.json` is refreshed
+  from the SDK test with `WRITE_STAGING_FIXTURE=1` (the server's Rust tests verify it).
 - **The server attests the ciphertext.** `buildCast` stages it through `POST /voting/remote-input`
   and passes the server's 64-byte `r ‖ s` signature to the contract. The availability signer the
   contract trusts is fixed at deploy (`deployCrispAztec`, `signer_public_key` from

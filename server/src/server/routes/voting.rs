@@ -357,10 +357,10 @@ async fn broadcast_encrypted_vote(
 
 /// Stage a ciphertext of a remote-program round and attest that this server holds it.
 ///
-/// The remote contract verifies the ballot proof, so the server does not: it checks the bytes
-/// against the commitment the voter proves and the round against its program and window, keeps
-/// the bytes, and signs. Each caller is limited like a broadcast, because a staged ciphertext
-/// takes storage until its round ends.
+/// The remote contract verifies the ballot proof, so the server does not: it checks the staging
+/// pass (some registered slot sent this request, once), the bytes against the commitment the voter
+/// proves and the round against its program and window, keeps the bytes, and signs. Each caller is
+/// limited like a broadcast, because a staged ciphertext takes storage until its round ends.
 async fn stage_remote_input(
     request: HttpRequest,
     data: web::Json<RemoteInputSubmission>,
@@ -406,6 +406,7 @@ async fn stage_remote_input(
             ciphertext,
             commitment,
             parent_index_plus_one: submission.parent_index_plus_one,
+            staging_pass: submission.staging_pass,
         })
         .await
     {
@@ -423,10 +424,11 @@ async fn stage_remote_input(
 /// Where to submit a staged input: the remote chain, its contract, and the address that signs
 /// the attestation. 404 when this server serves the L1 program.
 async fn remote_input_config(availability: web::Data<AvailabilityService>) -> impl Responder {
-    let (Some((signer, public_key)), Some(node), Ok(contract)) = (
+    let (Some((signer, public_key)), Some(node), Ok(contract), Some(staging_max_requests)) = (
         availability.remote_signer(),
         CONFIG.aztec_node_url.as_deref(),
         CONFIG.aztec_contract(),
+        availability.staging_max_requests(),
     ) else {
         return HttpResponse::NotFound().finish();
     };
@@ -441,6 +443,7 @@ async fn remote_input_config(availability: web::Data<AvailabilityService>) -> im
         zkpassport_registrar: CONFIG
             .zkpassport_registrar()
             .map(|registrar| registrar.to_string()),
+        staging_max_requests,
     })
 }
 

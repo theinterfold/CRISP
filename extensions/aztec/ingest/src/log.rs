@@ -11,6 +11,12 @@ use eyre::{ensure, eyre, Result};
 /// log by its first field, so this value is also the tag the server queries.
 pub const INPUT_COMMITTED_TAG: u64 = 1;
 
+/// The first field of a `MEMBER_REGISTERED` public log, `[TAG, round_id, census_index, slot,
+/// census_leaf, census_root]`.
+pub const MEMBER_REGISTERED_TAG: u64 = 2;
+
+const MEMBER_REGISTERED_FIELDS: usize = 6;
+
 /// `[TAG, round_id, index, slot, ct_commitment, vote_hash_hi, vote_hash_lo, parent_index_plus_one]`.
 const INPUT_COMMITTED_FIELDS: usize = 8;
 
@@ -84,6 +90,40 @@ impl InputCommitted {
             commitment: B256::from(fields[4].to_be_bytes::<32>()),
             vote_hash: B256::from(vote_hash),
             parent_index_plus_one: to_u64(fields[7], 40, "parent index")?,
+        })
+    }
+}
+
+/// A decoded `MEMBER_REGISTERED` log: the census root after one registration.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MemberRegistered {
+    /// The contract's id of the round (`round_id_of`).
+    pub round_id: U256,
+    pub census_root: U256,
+}
+
+impl MemberRegistered {
+    /// Decode the `logData` of a public log under `MEMBER_REGISTERED_TAG`. Like `InputCommitted`,
+    /// a log of another shape is a wrong deployment, never one to skip.
+    pub fn decode(fields: &[U256]) -> Result<Self> {
+        ensure!(
+            fields.len() == MEMBER_REGISTERED_FIELDS,
+            "a MEMBER_REGISTERED log has {} fields, expected {MEMBER_REGISTERED_FIELDS}",
+            fields.len()
+        );
+        ensure!(
+            fields[0] == U256::from(MEMBER_REGISTERED_TAG),
+            "not a MEMBER_REGISTERED log: tag {}",
+            fields[0]
+        );
+        ensure!(
+            fields[1].bit_len() <= ROUND_ID_BITS,
+            "round id does not fit in {ROUND_ID_BITS} bits"
+        );
+
+        Ok(Self {
+            round_id: fields[1],
+            census_root: fields[5],
         })
     }
 }
@@ -179,6 +219,26 @@ mod tests {
             InputCommitted::decode(&fields(hash)).unwrap().vote_hash,
             hash
         );
+    }
+
+    #[test]
+    fn a_member_log_decodes_to_its_round_and_root() {
+        let fields = [2u64, 7, 3, 0xaa, 0x55, 0x66].map(U256::from).to_vec();
+        assert_eq!(
+            MemberRegistered::decode(&fields).unwrap(),
+            MemberRegistered {
+                round_id: U256::from(7),
+                census_root: U256::from(0x66),
+            }
+        );
+
+        let mut wrong_tag = fields.clone();
+        wrong_tag[0] = U256::from(1);
+        assert!(MemberRegistered::decode(&wrong_tag).is_err());
+        assert!(MemberRegistered::decode(&fields[..5]).is_err());
+        let mut wide = fields;
+        wide[1] = U256::from(1) << 96;
+        assert!(MemberRegistered::decode(&wide).is_err());
     }
 
     #[test]
