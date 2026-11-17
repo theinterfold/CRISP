@@ -40,6 +40,10 @@ use std::{
 use tokio::{sync::Semaphore, task::JoinSet};
 use tracing::{info, warn};
 
+mod remote_input;
+pub use remote_input::RemoteInputRequest;
+use remote_input::RemoteInputs;
+
 const JOB_POLL_INTERVAL: Duration = Duration::from_secs(30);
 // An Avail submission can use 20 seconds to connect, 30 seconds to submit, 300 seconds to
 // finalize, and 30 seconds to read its events. Keep the outer bound above those inner bounds.
@@ -756,6 +760,11 @@ pub struct AvailabilityService {
     private_key: String,
     interfold_address: Address,
     e3_program_address: Address,
+    /// Ciphertexts staged for rounds whose inputs live on a remote chain, keyed by round and
+    /// content hash (`remote_input`). The L1 path keeps its bytes in `objects` under their jobs.
+    remote_objects: Tree,
+    /// Set when this instance serves a remote program.
+    remote: Option<RemoteInputs>,
     input_duration_seconds: u64,
     proof_lead_seconds: u64,
     max_pending_bytes: u64,
@@ -832,6 +841,8 @@ impl AvailabilityService {
                 e3_program_address: config.e3_program_address.parse().map_err(|error| {
                     anyhow::anyhow!("the E3 program address is invalid: {error}")
                 })?,
+                remote_objects: db.open_tree("data-availability-remote-objects")?,
+                remote: RemoteInputs::from_config(config)?,
                 input_duration_seconds: config.e3_duration,
                 proof_lead_seconds: config.avail_proof_lead(),
                 max_pending_bytes: config.data_availability_max_pending_bytes,
@@ -891,9 +902,10 @@ impl AvailabilityService {
         .map_err(from_eyre)
     }
 
-    /// Check the post-key input duration against the current CRISP contract values.
+    /// Check the post-key input duration against the current CRISP contract values. A remote
+    /// program has neither window: its inputs need no Avail finalization.
     pub async fn validate_onchain_configuration(&self) -> anyhow::Result<()> {
-        if !self.is_avail() {
+        if !self.is_avail() || self.remote.is_some() {
             return Ok(());
         }
         let contract = self.crisp().await?;
@@ -2704,7 +2716,7 @@ mod tests {
         RelayPolicy::new(31_337, false, 3, None, None)
     }
 
-    fn test_service(max_pending_bytes: u64) -> AvailabilityService {
+    pub(super) fn test_service(max_pending_bytes: u64) -> AvailabilityService {
         test_service_on(&temporary_db(), max_pending_bytes, default_relay())
     }
 
@@ -2740,6 +2752,8 @@ mod tests {
             private_key: String::new(),
             interfold_address: Address::ZERO,
             e3_program_address: Address::ZERO,
+            remote_objects: db.open_tree("remote-objects").unwrap(),
+            remote: None,
             input_duration_seconds: 0,
             proof_lead_seconds: 0,
             max_pending_bytes,

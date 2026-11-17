@@ -194,6 +194,14 @@ async fn request_new_round(data: web::Json<RoundRequest>) -> HttpResponse {
     if !valid_cron_api_key(CONFIG.cron_api_key.as_deref(), &data.cron_api_key) {
         return json_message(StatusCode::UNAUTHORIZED, "Invalid API key");
     }
+    // A remote program's rounds are requested on L1 by the poll creator, with the program's own
+    // parameters. Requesting one here would run the CRISP token-census flow against another program.
+    if CONFIG.is_aztec() {
+        return json_message(
+            StatusCode::BAD_REQUEST,
+            "Rounds of this program are requested on L1 by the poll creator",
+        );
+    }
     if data.token_address.is_empty() {
         return json_message(StatusCode::BAD_REQUEST, "Token address is required");
     }

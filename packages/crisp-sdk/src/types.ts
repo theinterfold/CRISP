@@ -137,7 +137,29 @@ export type ProofData = {
    * that zero means "no parent", which is what index 0 would otherwise be ambiguous with.
    */
   parentIndexPlusOne: number
+  /** Present only when the fold proof was produced for `verifierTarget: 'noir-recursive'`. */
+  recursive?: RecursiveFoldArtifacts
 }
+
+/**
+ * What a Noir circuit needs to verify a fold proof in-circuit (`verify_honk_proof`): the ZK
+ * `noir-recursive` proof as 458 fields, the 115-field verification key, and its hash. The public
+ * inputs stay in {@link ProofData.publicInputs}.
+ */
+export type RecursiveFoldArtifacts = {
+  proofFields: string[]
+  vkFields: string[]
+  vkHash: string
+}
+
+/**
+ * The proof system target of the final fold proof.
+ *
+ * - `evm` (default): keccak transcript, verified by the generated Solidity verifier.
+ * - `noir-recursive`: poseidon2 transcript with zero knowledge, verified inside another Noir
+ *   circuit; the on-chain verifier cannot check it.
+ */
+export type FoldVerifierTarget = 'evm' | 'noir-recursive'
 
 /**
  * One proof in the ballot pipeline, in the order {@link finishBallotProof} produces them.
@@ -169,6 +191,8 @@ export type ProofProgress = {
 export type ProofOptions = {
   /** Called as each stage starts. Proving takes tens of seconds, so a client can show where it is. */
   onProgress?: (progress: ProofProgress) => void
+  /** Target of the final fold proof. Defaults to `evm`. */
+  verifierTarget?: FoldVerifierTarget
 }
 
 /**

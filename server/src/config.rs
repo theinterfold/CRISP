@@ -21,6 +21,16 @@ use crate::server::rpc;
 /// Default for `AVAIL_PROOF_LEAD_SECONDS`: the Avail finalization window.
 const AVAIL_FINALIZATION_WINDOW_SECONDS: u64 = 10_800;
 
+/// The program an instance serves. The kinds differ in where inputs live and so in how a round is
+/// computed (see `remote_input`).
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ProgramKind {
+    #[default]
+    Crisp,
+    Aztec,
+}
+
 // Do not derive `Debug`: this structure owns private keys and other secrets.
 #[derive(Deserialize)]
 pub struct Config {
@@ -126,6 +136,25 @@ pub struct Config {
     /// funds for `finalizeInput`. Absent or zero means no floor; `validate_relay` limits both.
     #[serde(default)]
     pub relay_min_balance_eth: Option<String>,
+
+    /// What `E3_PROGRAM_ADDRESS` is: `crisp` (the L1 `CRISPProgram`, the default) or `aztec` (a
+    /// `CRISPAztecProgram`, whose inputs live on Aztec). One instance serves one program.
+    #[serde(default)]
+    pub program_kind: ProgramKind,
+    /// The Aztec node whose public logs list the inputs. Required for `PROGRAM_KIND=aztec`.
+    #[serde(default)]
+    pub aztec_node_url: Option<String>,
+    /// The `CrispAztec` contract on Aztec, as a 32-byte hex address. Required for
+    /// `PROGRAM_KIND=aztec`.
+    #[serde(default)]
+    pub aztec_contract_address: Option<String>,
+    /// How long an input availability attestation stays valid, counted from the Aztec chain's
+    /// latest block. It must outlast proving a ballot and its inclusion on Aztec.
+    #[serde(default = "default_aztec_attestation_ttl_seconds")]
+    pub aztec_attestation_ttl_seconds: u64,
+    /// The first Aztec block that can hold a log of the contract. Absent starts at the first block.
+    #[serde(default)]
+    pub aztec_start_block: Option<u64>,
 }
 
 impl Config {
@@ -143,6 +172,42 @@ impl Config {
     /// Whether `CHAIN_ID` is a local development chain.
     pub fn is_local_chain(&self) -> bool {
         is_local_chain_id(self.chain_id)
+    }
+
+    /// Whether this instance serves rounds whose inputs live on Aztec.
+    pub fn is_aztec(&self) -> bool {
+        self.program_kind == ProgramKind::Aztec
+    }
+
+    /// The `CrispAztec` contract address of an Aztec instance. `from_env` refuses a missing or
+    /// malformed one.
+    pub fn aztec_contract(&self) -> Result<alloy::primitives::B256, ConfigError> {
+        self.aztec_contract_address
+            .as_deref()
+            .ok_or_else(|| invalid("AZTEC_CONTRACT_ADDRESS is required for PROGRAM_KIND=aztec"))?
+            .trim()
+            .parse()
+            .map_err(|_| invalid("AZTEC_CONTRACT_ADDRESS must be a 32-byte hex address"))
+    }
+
+    fn validate_program(&self) -> Result<(), ConfigError> {
+        if !self.is_aztec() {
+            return Ok(());
+        }
+        if self
+            .aztec_node_url
+            .as_deref()
+            .is_none_or(|url| url.trim().is_empty())
+        {
+            return Err(invalid("AZTEC_NODE_URL is required for PROGRAM_KIND=aztec"));
+        }
+        self.aztec_contract()?;
+        if self.aztec_attestation_ttl_seconds == 0 {
+            return Err(invalid(
+                "AZTEC_ATTESTATION_TTL_SECONDS must be greater than zero",
+            ));
+        }
+        Ok(())
     }
 
     /// `AVAIL_PROOF_LEAD_SECONDS`, or the Avail finalization window when it is unset.
@@ -199,6 +264,7 @@ impl Config {
         }
         parse_addresses("INDEX_CONTRACTS", config.index_contracts.as_deref())?;
         parse_addresses("INDEX_LOG_CONTRACTS", config.index_log_contracts.as_deref())?;
+        config.validate_program()?;
         Self::validate_data_availability(
             config.chain_id,
             &config.data_availability_mode(),
@@ -395,6 +461,10 @@ const fn default_relay_max_inputs_per_slot() -> u32 {
     3
 }
 
+const fn default_aztec_attestation_ttl_seconds() -> u64 {
+    900
+}
+
 /// Loaded on first use; a missing or invalid setting stops the process with its message.
 pub static CONFIG: LazyLock<Config> =
     LazyLock::new(|| Config::from_env().expect("Failed to load configuration"));
@@ -525,5 +595,78 @@ mod tests {
         assert_eq!(config.cron_api_key, None);
         assert_eq!(config.voting_start_buffer_seconds, 120);
         assert_eq!(config.relay_max_inputs_per_slot, 3);
+    }
+
+    fn config_with(program: serde_json::Value) -> Config {
+        let mut base = serde_json::json!({
+            "program_server_url": "http://127.0.0.1:3000",
+            "interfold_server_url": "http://127.0.0.1:4000",
+            "private_key": "test-key",
+            "http_rpc_url": "http://127.0.0.1:8545",
+            "ws_rpc_url": "ws://127.0.0.1:8545",
+            "interfold_address": "0x1",
+            "e3_program_address": "0x2",
+            "ciphernode_registry_address": "0x3",
+            "fee_token_address": "0x4",
+            "chain_id": 31_337,
+            "e3_param_set": 0,
+            "e3_committee_size": 0,
+            "e3_duration": 3_600,
+            "e3_compute_provider_name": "test",
+            "e3_compute_provider_parallel": false,
+            "e3_compute_provider_batch_size": 1
+        });
+        base.as_object_mut()
+            .unwrap()
+            .extend(program.as_object().unwrap().clone());
+        serde_json::from_value(base).unwrap()
+    }
+
+    #[test]
+    fn an_instance_serves_the_l1_program_unless_told_otherwise() {
+        let config = config_with(serde_json::json!({}));
+
+        assert!(!config.is_aztec());
+        assert!(config.validate_program().is_ok());
+        assert_eq!(config.aztec_attestation_ttl_seconds, 900);
+    }
+
+    #[test]
+    fn an_aztec_instance_needs_its_node_and_a_32_byte_contract() {
+        let contract = format!("0x{}", "ab".repeat(32));
+        let aztec = |extra: serde_json::Value| {
+            let mut program = serde_json::json!({ "program_kind": "aztec" });
+            program
+                .as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            config_with(program)
+        };
+
+        assert!(aztec(serde_json::json!({})).validate_program().is_err());
+        assert!(
+            aztec(serde_json::json!({ "aztec_node_url": "http://127.0.0.1:8080" }))
+                .validate_program()
+                .is_err()
+        );
+        assert!(aztec(serde_json::json!({
+            "aztec_node_url": "http://127.0.0.1:8080",
+            "aztec_contract_address": "0x1234"
+        }))
+        .validate_program()
+        .is_err());
+        assert!(aztec(serde_json::json!({
+            "aztec_node_url": "http://127.0.0.1:8080",
+            "aztec_contract_address": contract,
+            "aztec_attestation_ttl_seconds": 0
+        }))
+        .validate_program()
+        .is_err());
+        let valid = aztec(serde_json::json!({
+            "aztec_node_url": "http://127.0.0.1:8080",
+            "aztec_contract_address": contract
+        }));
+        assert!(valid.validate_program().is_ok());
+        assert!(valid.is_aztec());
     }
 }

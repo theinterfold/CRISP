@@ -7,6 +7,7 @@
 import {
   type Vote,
   type CensusVariant,
+  type FoldVerifierTarget,
   type PrepareBallotInputs,
   type PreparedBallot,
   type ProofOptions,
@@ -145,7 +146,11 @@ export const executeCircuit = async (circuit: CompiledCircuit, inputs: any): Pro
  * @param options - `onProgress` is called as each of {@link PROOF_STAGES} starts.
  * @returns The proof.
  */
-export const generateProof = async (circuitInputs: any, censusMode: CensusVariant = 'merkle', { onProgress }: ProofOptions = {}) => {
+export const generateProof = async (
+  circuitInputs: any,
+  censusMode: CensusVariant = 'merkle',
+  { onProgress, verifierTarget = 'evm' }: ProofOptions = {},
+) => {
   const report = (stage: ProofStage) => onProgress?.({ stage, index: PROOF_STAGES.indexOf(stage), total: PROOF_STAGES.length })
   const api = await getBBApi()
 
@@ -294,9 +299,16 @@ export const generateProof = async (circuitInputs: any, censusMode: CensusVarian
     k1_commitment: crispReturnValue[2].toString(),
   })
 
-  const proof = await foldBackend.generateProof(foldWitness, { verifierTarget: 'evm' })
+  if (verifierTarget === 'noir-recursive') {
+    const recursive = await foldBackend.generateProof(foldWitness, { verifierTarget })
+    const { vkAsFields, vkHash } = await foldBackend.generateRecursiveProofArtifacts(recursive.proof, recursive.publicInputs.length, {
+      verifierTarget,
+    })
 
-  return proof
+    return { ...recursive, recursive: { proofFields: proofToFields(recursive.proof), vkFields: vkAsFields, vkHash } }
+  }
+
+  return foldBackend.generateProof(foldWitness, { verifierTarget })
 }
 
 /**
@@ -399,10 +411,33 @@ export const finishMaskProof = async (prepared: PreparedBallot, digest: `0x${str
  * @param proof - The proof to verify.
  * @returns True if the proof is valid, false otherwise.
  */
-export const verifyProof = async (proof: ProofData, censusMode: CensusVariant = 'merkle'): Promise<boolean> => {
+export const verifyProof = async (
+  proof: ProofData,
+  censusMode: CensusVariant = 'merkle',
+  verifierTarget: FoldVerifierTarget = 'evm',
+): Promise<boolean> => {
   const api = await getBBApi()
   const circuit = censusMode === 'onchain' ? foldOnchainCircuit : foldCircuit
   const foldBackend = new UltraHonkBackend(circuit.bytecode, api)
 
-  return foldBackend.verifyProof(proof, { verifierTarget: 'evm' })
+  return foldBackend.verifyProof(proof, { verifierTarget })
+}
+
+/**
+ * The verification key of the fold circuit for the `noir-recursive` target, which a contract that
+ * verifies the fold proof in-circuit pins by `vkHash`.
+ *
+ * The fold circuit holds no preset-bound data (its constants cover both presets), so the key does
+ * not depend on the registered preset.
+ */
+export const getFoldRecursiveVerificationKey = async (
+  censusMode: CensusVariant = 'merkle',
+): Promise<{ vkFields: string[]; vkHash: string }> => {
+  const api = await getBBApi()
+  const circuit = censusMode === 'onchain' ? foldOnchainCircuit : foldCircuit
+  const { vkAsFields, vkHash } = await new UltraHonkBackend(circuit.bytecode, api).generateRecursiveProofArtifacts(new Uint8Array(), 0, {
+    verifierTarget: 'noir-recursive',
+  })
+
+  return { vkFields: vkAsFields, vkHash }
 }

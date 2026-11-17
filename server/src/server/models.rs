@@ -125,6 +125,49 @@ pub struct VoteRequest {
     pub send_from_wallet: bool,
 }
 
+/// A ciphertext of a round whose inputs are accepted on a remote chain, offered for staging. The
+/// server computes the content hash itself, and the voter's remote proof is not sent to it.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct RemoteInputSubmission {
+    pub round_id: String,
+    /// The slot address the input is published to.
+    pub slot: String,
+    /// The BFV ciphertext, hex.
+    pub ciphertext: String,
+    /// The commitment to the ciphertext that the voter's proof binds, a 32-byte hex string.
+    pub ciphertext_commitment: String,
+    #[serde(default)]
+    pub parent_index_plus_one: u64,
+}
+
+/// The server's attestation that it holds a staged ciphertext, in the form the remote contract
+/// verifies.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct RemoteInputAttestation {
+    pub input_id: String,
+    /// `keccak256` of the ciphertext, which the remote contract binds into the input.
+    pub encrypted_vote_hash: String,
+    pub expires_at: u64,
+    /// `r || s` of the EIP-712 `InputAvailability` signature, 64 bytes hex.
+    pub signature: String,
+    pub signer: String,
+}
+
+/// What a client needs to reach the remote chain of this server's program.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct RemoteInputConfig {
+    pub kind: String,
+    pub chain_id: u64,
+    /// The L1 program, which is the verifying contract of the attestation.
+    pub program: String,
+    pub aztec_node_url: String,
+    pub aztec_contract: String,
+    pub signer: String,
+    /// The signer's uncompressed secp256k1 public key, `x || y`, 64 bytes hex. The Aztec contract
+    /// is deployed with it.
+    pub signer_public_key: String,
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct GetRoundRequest {
     pub round_id: String,

@@ -91,6 +91,9 @@ The server exposes several RESTful API endpoints:
 - `GET /state/all`: Get results for all rounds
 - `POST /state/lite`: Get a lite version of the state for a specific round
 - `POST /voting/broadcast`: Broadcast an encrypted vote
+- `POST /voting/remote-input`, `GET /voting/remote-input/config`: only with `PROGRAM_KIND=aztec`;
+  they stage a ciphertext and sign an availability attestation, and say where to submit it. In that
+  mode `/voting/broadcast` and `/rounds/request` refuse. See `../extensions/aztec/README.md`.
 
 ## Upgrading across an input-format change
 

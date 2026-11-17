@@ -1,0 +1,18 @@
+[package]
+name = "crisp-aztec-ingest"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Reads CRISP inputs from the CrispAztec contract through an Aztec node"
+repository.workspace = true
+
+[dependencies]
+alloy = { workspace = true }
+async-trait = { version = "=0.1.88" }
+crisp-remote-input = { path = "../../core/remote-input" }
+eyre = { workspace = true }
+reqwest = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tokio.workspace = true

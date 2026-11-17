@@ -7,6 +7,8 @@ members = [
   "crates/zk-inputs-wasm",
   "crates/evm_helpers",
   "crates/crisp-utils",
+  "extensions/core/remote-input",
+  "extensions/aztec/ingest",
 ]
 resolver = "3"
 

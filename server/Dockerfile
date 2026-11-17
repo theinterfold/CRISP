@@ -30,6 +30,8 @@ COPY runner/ runner/
 COPY server/ server/
 COPY program/ program/
 COPY crates/ crates/
+COPY extensions/core/remote-input/ extensions/core/remote-input/
+COPY extensions/aztec/ingest/ extensions/aztec/ingest/
 COPY packages/crisp-contracts/deployed_contracts.json \
     packages/crisp-contracts/deployed_contracts.json
 COPY Cargo.* ./

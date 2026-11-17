@@ -1,0 +1,49 @@
+{
+  "name": "@crisp-e3/aztec",
+  "version": "0.28.1",
+  "private": true,
+  "type": "module",
+  "description": "Client for CRISP rounds that collect ballots on Aztec: voter flows, keeper operations and L1 helpers",
+  "license": "LGPL-3.0-only",
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest --run",
+    "fold-vk-hash": "node scripts/fold-vk-hash.mjs",
+    "codegen": "aztec codegen ../contracts/target/crisp_aztec-CrispAztec.json -o src/bindings -f"
+  },
+  "dependencies": {
+    "@aztec-foundation/bb.js": "6.0.0",
+    "@aztec-labs/accounts": "6.0.0",
+    "@aztec-labs/aztec.js": "6.0.0",
+    "@aztec-labs/constants": "6.0.0",
+    "@aztec-labs/foundation": "6.0.0",
+    "@aztec-labs/noir-contracts.js": "6.0.0",
+    "@aztec-labs/stdlib": "6.0.0",
+    "@aztec-labs/wallets": "6.0.0",
+    "@crisp-e3/sdk": "workspace:*",
+    "@zk-kit/lean-imt": "^2.2.4",
+    "@zkpassport/aztec": "0.1.0-beta.0",
+    "@zkpassport/utils": "0.40.0",
+    "poseidon-lite": "^0.3.0",
+    "viem": "2.38.6"
+  },
+  "devDependencies": {
+    "@types/node": "22.7.5",
+    "tsup": "^8.5.0",
+    "typescript": "5.8.3",
+    "vitest": "^1.6.1"
+  }
+}

@@ -6,7 +6,17 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll, vi } from 'vitest'
 import { Vote } from '../src/types'
 import { MAX_MSG_NON_ZERO_COEFFS, MAX_VOTE_OPTIONS, SIGNATURE_MESSAGE_HASH, SIGNATURE_MESSAGE } from '../src/constants'
-import { decodeTally, verifyProof, encodeVote, generateBFVKeys, encryptVote, decryptVote, validateVote, destroyBBApi } from '../src/vote'
+import {
+  decodeTally,
+  verifyProof,
+  encodeVote,
+  generateBFVKeys,
+  encryptVote,
+  decryptVote,
+  validateVote,
+  destroyBBApi,
+  getFoldRecursiveVerificationKey,
+} from '../src/vote'
 import { getZkInputsGenerator } from '../src/encoding'
 import { publicKeyToAddress, sign, signMessage } from 'viem/accounts'
 import { Hex, concat, keccak256, numberToHex, recoverPublicKey } from 'viem'
@@ -208,6 +218,37 @@ describe('Vote', () => {
       const isValid = await verifyProof(proof)
 
       expect(isValid).toBe(true)
+    })
+
+    it('Should generate a fold proof for the noir-recursive target', { timeout: 300000 }, async () => {
+      vi.spyOn(global, 'fetch').mockResolvedValueOnce(mockPreviousCiphertextNotFoundResponse())
+
+      const prepared = await sdk.prepareBallot({
+        censusMode: 'merkle',
+        vote,
+        publicKey,
+        merkleLeaves: leaves,
+        balance,
+        slotAddress: address,
+        isMaskVote: false,
+        numOptions: vote.length,
+        e3Id,
+      })
+      const digest = keccak256(concat([prepared.ctCommitment, numberToHex(e3Id, { size: 32 })]))
+      const ballotSignature = await sign({ hash: digest, privateKey: ECDSA_PRIVATE_KEY, to: 'hex' })
+
+      const proof = await sdk.finishBallot(prepared, digest, ballotSignature, { verifierTarget: 'noir-recursive' })
+
+      // The shapes `verify_honk_proof` takes in-circuit (ZK flavour): 458 proof fields, a 115-field
+      // key, and the nine fold public inputs.
+      expect(proof.recursive?.proofFields).toHaveLength(458)
+      expect(proof.recursive?.vkFields).toHaveLength(115)
+      expect(proof.publicInputs).toHaveLength(9)
+      expect(BigInt(proof.publicInputs[7])).toBe(BigInt(prepared.ctCommitment))
+
+      expect(await verifyProof(proof, 'merkle', 'noir-recursive')).toBe(true)
+      // The key that a verifier pins comes from the circuit alone, not from any proof.
+      expect(proof.recursive?.vkHash).toBe((await getFoldRecursiveVerificationKey()).vkHash)
     })
   })
 

@@ -94,6 +94,8 @@ jobs:
               - 'rust-toolchain.toml'
               - 'runner/**'
               - 'crates/**'
+              - 'extensions/core/remote-input/**'
+              - 'extensions/aztec/ingest/**'
               - 'program/**'
               - 'server/**'
               # The server and the program tests embed these files with include_str!.
