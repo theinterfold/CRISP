@@ -9,12 +9,10 @@ import { describe, expect, it } from 'vitest'
 
 import {
   encodeKeyMessage,
-  encodeMemberMessage,
   encodeRootMessage,
   encodeRoundMessage,
   e3IdOf,
   keyContent,
-  memberContent,
   rootContent,
   roundContent,
   roundIdOf,
@@ -40,29 +38,20 @@ describe('L1 message vectors', () => {
     scopeHash: BigInt(f.scopeHash as string),
     minAge: BigInt(f.minAge as string),
     allowMockDocuments: f.allowMockDocuments as boolean,
-    l1Registration: f.l1Registration as boolean,
     nationalityMode: Number(f.nationalityMode),
     nationalityCommitment: BigInt(f.nationalityCommitment as string),
   })
 
-  it.each(['round', 'roundL1'] as const)('encodes and hashes the 13-word ROUND message like CRISPRemoteMessages.round (%s)', (name) => {
+  it.each(['round', 'roundNoRule'] as const)('encodes and hashes the 12-word ROUND message like CRISPRemoteMessages.round (%s)', (name) => {
     const config = roundConfig(vectors[name].fields)
     expect(encodeRoundMessage(config)).toBe(vectors[name].abiEncoded)
     expect(roundContent(config)).toBe(BigInt(vectors[name].contentDecimal))
   })
 
-  it('covers both registration paths and a nationality commitment in the vectors', () => {
-    expect(vectors.round.fields.l1Registration).toBe(false)
+  it('covers a round with and a round without a nationality commitment in the vectors', () => {
     expect(BigInt(vectors.round.fields.nationalityCommitment)).toBeGreaterThan(0n)
-    expect(vectors.roundL1.fields.l1Registration).toBe(true)
-    expect(BigInt(vectors.roundL1.fields.nationalityCommitment)).toBe(0n)
-  })
-
-  it('encodes and hashes the MEMBER message like CRISPRemoteMessages.member', () => {
-    const { roundId, slotAddress, slot } = vectors.member.fields
-    expect(BigInt(slotAddress)).toBe(BigInt(slot))
-    expect(encodeMemberMessage(BigInt(roundId), slotAddress)).toBe(vectors.member.abiEncoded)
-    expect(memberContent(BigInt(roundId), slotAddress)).toBe(BigInt(vectors.member.contentDecimal))
+    expect(vectors.roundNoRule.fields.nationalityMode).toBe(0)
+    expect(BigInt(vectors.roundNoRule.fields.nationalityCommitment)).toBe(0n)
   })
 
   it('encodes and hashes the KEY message like CRISPRemoteMessages.committeeKey', () => {

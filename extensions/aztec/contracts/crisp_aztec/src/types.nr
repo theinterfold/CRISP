@@ -37,10 +37,8 @@ pub struct RoundConfig {
     pub scope_hash: Field,
     pub min_age: u8,
     pub allow_mock_documents: bool,
-    /// The voter registers on L1 (a ZKPassport proof verified there, relayed here as a MEMBER message) instead of here.
-    pub l1_registration: bool,
-    /// `NATIONALITY_*`. On an Aztec-path round the proof must show it against `nationality_commitment`; on an L1-path
-    /// round the L1 registrar checks the list and the commitment is 0.
+    /// `NATIONALITY_*`. With a rule the proof must show it against `nationality_commitment`, which is non-zero;
+    /// without one the commitment is 0.
     pub nationality_mode: u8,
     pub nationality_commitment: Field,
 }

@@ -32,11 +32,9 @@ export type RoundParams = {
   scopeHash: bigint
   minAge: bigint
   allowMockDocuments: boolean
-  /** The voters register on L1 (the round's `ZKPassportRegistrar`); `register` is not available. */
-  l1Registration: boolean
   /** `NATIONALITY_MODE`: 0 none, 1 nationality in the list, 2 not in it. */
   nationalityMode: number
-  /** ZKPassport commitment of the nationality list an Aztec-path round's proof is checked against; 0 otherwise. */
+  /** ZKPassport commitment of the nationality list the round's proof is checked against; 0 without a nationality rule. */
   nationalityCommitment: bigint
 }
 
@@ -161,7 +159,6 @@ export class CrispAztec {
       scope_hash: bigint
       min_age: bigint
       allow_mock_documents: boolean
-      l1_registration: boolean
       nationality_mode: bigint
       nationality_commitment: bigint
     }>(this.contract.methods.get_round(this.roundIdFor(e3Id)))
@@ -175,7 +172,6 @@ export class CrispAztec {
       scopeHash: BigInt(round.scope_hash),
       minAge: BigInt(round.min_age),
       allowMockDocuments: round.allow_mock_documents,
-      l1Registration: round.l1_registration,
       nationalityMode: Number(round.nationality_mode),
       nationalityCommitment: BigInt(round.nationality_commitment),
     }
@@ -246,7 +242,6 @@ export class CrispAztec {
         config.scopeHash,
         config.minAge,
         config.allowMockDocuments,
-        config.l1Registration,
         config.nationalityMode,
         config.nationalityCommitment,
         await this.messageLeafIndex(message),
@@ -262,7 +257,7 @@ export class CrispAztec {
   }
 
   /**
-   * Register `slot` for a round that registers on Aztec, with a ZKPassport proof bound to this session's account
+   * Register `slot` for a round with a ZKPassport proof bound to this session's account
    * (`session.address`) and to the round's scope. The proof is the `compressed`-mode result of the ZKPassport SDK; it must
    * show what the round asks (its minimum age and nationality rule), which also selects the entry point: `register`,
    * `register_with_age`, `register_with_nationality` or `register_with_age_and_nationality`.
@@ -270,7 +265,6 @@ export class CrispAztec {
   async register(args: { e3Id: bigint; slot: Address; proof: CompressedProofResult }): Promise<SentTx> {
     const round = await this.getRound(args.e3Id)
     if (!round) throw new Error(`Round ${args.e3Id} is not open on Aztec yet`)
-    if (round.l1Registration) throw new Error(`Round ${args.e3Id} registers on L1: use the registrar (registerOnL1Calldata), not Aztec`)
 
     // The verifier library `.view()`s the registry privately, so this wallet's PXE has to know its artifact.
     const { zkpassport_registry } = await this.view<{ zkpassport_registry: AztecAddress }>(this.contract.methods.get_config())
@@ -293,14 +287,6 @@ export class CrispAztec {
             : methods.register(roundId, slot)
 
     return this.send(call, [capsule])
-  }
-
-  /**
-   * Add `slot` to the census of a round that registers on L1, from the MEMBER message the registrar's program sent for it
-   * (`getSentMembers`). Permissionless: the message authenticates the slot. Fails if the slot is already registered.
-   */
-  async addMemberFromL1(e3Id: bigint, slot: Address, message: L1ToL2Message): Promise<SentTx> {
-    return this.send(this.contract.methods.add_member_from_l1(this.roundIdFor(e3Id), BigInt(slot), await this.messageLeafIndex(message)))
   }
 
   /** Commit a ballot (a vote or a mask) built by `buildCast`. */

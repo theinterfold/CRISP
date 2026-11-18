@@ -11,8 +11,6 @@ import {
   buildCast,
   getRoundConfig,
   getSentMessages,
-  registerOnL1Calldata,
-  relayRegistrationOnL1,
 } from '@crisp-e3/aztec'
 
 const session = await connectAztec('http://localhost:8080') // a fresh account, fees paid by the SponsoredFPC
@@ -100,20 +98,13 @@ contract's ABI changes.
   on it.
 - **Registration picks its entry point by round.** `register` reads the round's rules and calls `register`
   (no rule, a 4-subproof ZKPassport capsule), `register_with_age` (5), `register_with_nationality` (5) or
-  `register_with_age_and_nationality` (6). It throws for a round that registers on L1.
-- **A round's rules are one 8-field custom-params value.** `encodeCustomParams` / `decodeCustomParams` (with
+  `register_with_age_and_nationality` (6).
+- **A round's rules are one 7-field custom-params value.** `encodeCustomParams` / `decodeCustomParams` (with
   `RoundRules`) build and read what `Interfold.request` carries; `assertRules` rejects what L1 would
   (a minimum age above 99, a list that does not match the mode, more than 200 or duplicate countries,
-  a commitment where there should be none). `nationalityCommitment(mode, countries)` (async) is the value
-  an Aztec-path round with a nationality rule must carry; it matches the Noir fixtures and sorts exclusion
+  a commitment where there should be none, or none where there should be one). `nationalityCommitment(mode, countries)` (async) is the value
+  a round with a nationality rule must carry; it matches the Noir fixtures and sorts exclusion
   lists, and `registrationSubproofs(rules)` is the ZKPassport proof's size (4 to 6).
-- **The L1 path needs no Aztec account.** `registerOnL1Calldata({ e3Id, slot, params, countries })` encodes
-  `ZKPassportRegistrar.register` for a proof the ZKPassport app produced (`registrarAbi` is the ABI), and
-  `relayRegistrationOnL1(serverUrl, calldata)` posts it to the CRISP server's `POST /registration/l1`,
-  which pays for the transaction; the server's registrar address is `zkpassport_registrar` in
-  `getRemoteInputConfig`. The proof must be bound to the slot (`senderAddress = slot`), not to an Aztec
-  address. The keeper then moves the slot to Aztec (`getSentMembers` lists the MEMBER messages;
-  `addMemberFromL1(e3Id, slot, message)` is what it calls).
 - **Digests are signed raw.** `DigestSigner` signs the EIP-712 digest itself, without the EIP-191
   prefix.
 - **Tests that read `extensions/aztec/l1`.** `tests/messages.test.ts` and `tests/l1Abi.test.ts`

@@ -23,7 +23,7 @@ export const LOG_TAG = {
 } as const
 
 /** First word of every message exchanged with L1 (`CRISPRemoteMessages`). */
-export const MESSAGE_KIND = { ROUND: 1n, KEY: 2n, ROOT: 3n, MEMBER: 4n } as const
+export const MESSAGE_KIND = { ROUND: 1n, KEY: 2n, ROOT: 3n } as const
 
 /**
  * Aztec secret hash of secret `0`, the one every L1 message carries. The contract consumes with secret 0 and

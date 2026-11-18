@@ -128,7 +128,6 @@ const main = async () => {
       scopeHash: scopeHashOf(info.l1ChainId, program.address, e3Id),
       minAge: BigInt(minAge),
       allowMockDocuments: true,
-      l1Registration: false,
       nationalityMode: nationality?.mode ?? NATIONALITY_MODE.NONE,
       nationalityCommitment: nationality ? await nationalityCommitment(nationality.mode, nationality.countries) : 0n,
     }

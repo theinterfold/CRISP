@@ -17,24 +17,16 @@ import {
   destroyStagingPassProver,
   encodeCustomParams,
   nationalityCommitment,
-  registerOnL1Calldata,
-  relayRegistrationOnL1,
   scopeOf,
   type AztecSession,
   type CastArguments,
   type RoundRules,
-  type ZKPassportProofParams,
 } from '@crisp-e3/aztec'
 import { CrispSDK, decodeTally, destroyBBApi, setCircuits } from '@crisp-e3/sdk'
 import { loadCircuits } from '@crisp-e3/sdk/insecure-64'
 import {
   createPublicClient,
   createWalletClient,
-  encodeAbiParameters,
-  keccak256,
-  stringToHex,
-  zeroAddress,
-  zeroHash,
   http,
   parseAbi,
   parseEventLogs,
@@ -55,7 +47,6 @@ import {
   SERVER_URL,
   WORK,
   ZKPASSPORT_DOMAIN,
-  ZKPASSPORT_VALIDITY_SECONDS,
   accounts,
   envInt,
   paths,
@@ -139,56 +130,38 @@ const requireServices = (names: string[]): void => {
   }
 }
 
-export type Path = 'aztec' | 'l1'
-
-/** The two rounds: Aztec-path voters prove age and a nationality in a list, L1-path ones age and a nationality not in a list. */
-const roundRules = async (path: Path, d: Deployment): Promise<RoundRules> => {
-  const mode = path === 'l1' ? NATIONALITY_MODE.OUT : NATIONALITY_MODE.IN
-  const countries = path === 'l1' ? ['PRK', 'IRN'] : ['ZKR', 'DEU']
+/** The round: voters prove age 18+ and a nationality in a list. */
+const roundRules = async (): Promise<RoundRules> => {
+  const mode = NATIONALITY_MODE.IN
+  const countries = ['ZKR', 'DEU']
 
   return {
     numOptions: BigInt(NUM_OPTIONS),
     credits: CREDITS,
     minAge: 18n,
     allowMockDocuments: true,
-    registrar: path === 'l1' ? (d.registrar as Address) : zeroAddress,
     nationalityMode: mode,
     countries,
-    // The Aztec contract verifies the proofs against this commitment; on the L1 path the registrar checks the list itself.
-    nationalityCommitment: path === 'l1' ? 0n : await nationalityCommitment(mode, countries),
+    // The Aztec contract verifies the proofs against this commitment.
+    nationalityCommitment: await nationalityCommitment(mode, countries),
   }
 }
 
-/** What the ZKPassport mock verifier of `MockZKPassport.sol` reads from a proof (the registrar's own checks run for real). */
-type MockL1Proof = { identifier: Hex; age: bigint; nationality: string; boundTo: Address | undefined }
-
-const l1Identifier = (e3Id: bigint, index: number): Hex => keccak256(stringToHex(`${e3Id}:${index}`))
-
-const mockL1Proof = (slot: Address, mock: MockL1Proof): ZKPassportProofParams => ({
-  version: zeroHash,
-  proofVerificationData: { vkeyHash: zeroHash, proof: '0x01', publicInputs: [mock.identifier] },
-  committedInputs: encodeAbiParameters(
-    [{ type: 'address' }, { type: 'uint256' }, { type: 'uint256' }, { type: 'string' }],
-    [mock.boundTo ?? slot, BigInt(L1_CHAIN_ID), mock.age, mock.nationality],
-  ),
-  serviceConfig: { validityPeriodInSeconds: ZKPASSPORT_VALIDITY_SECONDS, domain: ZKPASSPORT_DOMAIN, scope: '', devMode: true },
-})
-
-/** Runs both paths, one round each, against the running stack (`which` runs one of them). */
-export const round = async (which?: Path): Promise<void> => {
+/** Runs one round against the running stack. */
+export const round = async (): Promise<void> => {
   const state = loadState()
   if (!state.deployment) throw new Error('No deployment: run `up` first')
   requireServices(['ciphernodes', 'program', 'server', 'keeper', 'randomness'])
   try {
     setCircuits(await loadCircuits())
-    for (const path of which ? [which] : (['aztec', 'l1'] as const)) await roundOnPath(path)
+    await runRound()
   } finally {
     await Promise.resolve(destroyBBApi()).catch(() => undefined)
     await destroyStagingPassProver().catch(() => undefined)
   }
 }
 
-const roundOnPath = async (path: Path): Promise<void> => {
+const runRound = async (): Promise<void> => {
   const state = loadState()
   const d = state.deployment as Deployment
 
@@ -201,7 +174,7 @@ const roundOnPath = async (path: Path): Promise<void> => {
   const debugging = () => requireServices(['ciphernodes', 'program', 'server', 'keeper'])
   const pump = startPump(envInt('CRISP_E2E_PUMP_MS', 8000))
   const sessions: AztecSession[] = []
-  log(`==== round on the ${path === 'l1' ? 'L1 (ZKPassport registrar, relayed by the CRISP server)' : 'Aztec'} registration path ====`)
+  log('==== round on Aztec ====')
 
   try {
     const aztecChainNow = async () => {
@@ -214,7 +187,7 @@ const roundOnPath = async (path: Path): Promise<void> => {
     }
 
     // ---- 1. The request: one transaction by the creator ----
-    const rules = await roundRules(path, d)
+    const rules = await roundRules()
     const creator = createWalletClient({ account: accounts.creator.account, chain: foundry, transport: http(L1_RPC_URL) })
     const deployer = createWalletClient({ account: accounts.deployer.account, chain: foundry, transport: http(L1_RPC_URL) })
     const votingSeconds = envInt('CRISP_E2E_VOTING_SECONDS', 3600)
@@ -304,7 +277,7 @@ const roundOnPath = async (path: Path): Promise<void> => {
       { timeoutMs: 900_000, intervalMs: 5000 },
     )
     log(`${stamp()} round open on Aztec: window ${opened.inputStart}..${opened.inputEnd}, limit ${opened.inputLimit}, scope ${opened.scopeHash}`)
-    if (opened.l1Registration !== (path === 'l1') || opened.nationalityMode !== rules.nationalityMode || opened.nationalityCommitment !== rules.nationalityCommitment) {
+    if (opened.nationalityMode !== rules.nationalityMode || opened.nationalityCommitment !== rules.nationalityCommitment) {
       throw new Error(`The round opened on Aztec with other rules than requested: ${JSON.stringify(opened, (_, v) => (typeof v === 'bigint' ? v.toString() : v))}`)
     }
     const committeeKeyCommitment = await waitFor(
@@ -332,8 +305,7 @@ const roundOnPath = async (path: Path): Promise<void> => {
       const session = await connectAztec(AZTEC_NODE_URL)
       sessions.push(session)
       clients.push(await CrispAztec.connect(session, d.aztecContract))
-      if (path === 'l1') continue
-      // Aztec path: a real mock-document proof (age and nationality) bound to this Aztec account and this round's scope.
+      // A real mock-document proof (age and nationality) bound to this Aztec account and this round's scope.
       const started = Date.now()
       const proof = await generateMockRegistrationProof({
         aztecAddress: session.address.toString(),
@@ -349,43 +321,8 @@ const roundOnPath = async (path: Path): Promise<void> => {
       txs.push({ layer: 'L2', what: `${voter.name} register (slot ${slotOf(voter)})`, hash: sent.txHash })
       log(`${stamp()} ${voter.name}: registered, tx ${sent.txHash} (block ${sent.blockNumber})`)
     }
-    if (path === 'l1') {
-      // L1 path: no Aztec account, no wallet: the proof is bound to the slot and the CRISP server relays it to the registrar.
-      const registerThroughServer = async (slot: Address, mock: MockL1Proof) => {
-        const calldata = registerOnL1Calldata({ e3Id, slot, params: mockL1Proof(slot, mock), countries: rules.countries })
-        const { txHash } = await relayRegistrationOnL1(SERVER_URL, calldata)
-        const receipt = await l1.waitForTransactionReceipt({ hash: txHash })
-        if (receipt.status !== 'success') throw new Error(`The registration ${txHash} reverted on L1`)
-
-        return txHash
-      }
-      const good = (index: number): MockL1Proof => ({ identifier: l1Identifier(e3Id, index), age: 30n, nationality: 'ZKR', boundTo: undefined })
-      // The server simulates a registration first and answers 400 with the registrar's error: the rules are enforced on L1.
-      const slotOne = slotOf(voters[0])
-      const refused = async (control: string, expected: string, mock: MockL1Proof, slot = slotOne) => {
-        try {
-          await registerThroughServer(slot, mock)
-        } catch (error) {
-          if (!String(error).includes(expected)) throw new Error(`Control "${control}" failed with ${String(error)}, expected ${expected}`)
-          log(`${stamp()} control "${control}" refused: ${expected}`)
-
-          return
-        }
-        throw new Error(`Control "${control}" was accepted`)
-      }
-      await refused('a nationality on the excluded list', 'NationalityNotProven', { ...good(90), nationality: 'PRK' })
-      await refused('a voter under the minimum age', 'AgeNotProven', { ...good(91), age: 17n })
-      await refused('a proof bound to another slot', 'WrongBinding', { ...good(92), boundTo: slotOf(voters[1]) })
-      for (const [index, voter] of voters.entries()) {
-        const hash = await registerThroughServer(slotOf(voter), good(index))
-        txs.push({ layer: 'L1', what: `${voter.name} registration (relayed by the server, slot ${slotOf(voter)})`, hash })
-        log(`${stamp()} ${voter.name}: registered on L1 through the server, tx ${hash}`)
-      }
-      await refused('a document that already registered', 'DocumentAlreadyRegistered', good(0), slotOf(voters[1]))
-    }
-    // L1 path: the keeper carries each MEMBER message to `add_member_from_l1`; the census is complete when all are in.
     const census = await waitFor(
-      path === 'l1' ? 'the keeper to add every L1 registration to the census' : 'the census',
+      'the census',
       async () => {
         debugging()
         const current = await crispWatcher.getCensus(e3Id)
@@ -436,35 +373,33 @@ const roundOnPath = async (path: Path): Promise<void> => {
       log(`${stamp()} ${voter.name}: ${label} in ${((Date.now() - started) / 1000).toFixed(0)}s, tx ${sent.txHash} (block ${sent.blockNumber})`)
     }
     // Controls on the proofs `cast` verifies itself: the tampered ballots are refused where the transaction is proven,
-    // because the recursion is not executed in simulation. Run once, on the L1 path, to keep the other path's time.
-    if (path === 'l1') {
-      const control = async (label: string, tamper: (args: CastArguments) => CastArguments) => {
-        const honest = await buildCast({
-          serverUrl: SERVER_URL,
-          program: d.program,
-          l1ChainId: L1_CHAIN_ID,
-          e3Id,
-          slot: slotOf(voters[0]),
-          credits: CREDITS,
-          numOptions: NUM_OPTIONS,
-          census,
-          committeePublicKey,
-          availabilitySigner: d.serverSigner as Address,
-          staging: stagingFor(0),
-          ballot: { vote: voters[0].ballot!, sign: async (digest) => signDigest(voters[0].slotKey, digest) },
-        })
-        try {
-          await clients[0].cast(tamper(honest))
-        } catch (error) {
-          log(`${stamp()} control "${label}" refused: ${String((error as Error).message).split('\n')[0].slice(0, 160)}`)
+    // because the recursion is not executed in simulation.
+    const control = async (label: string, tamper: (args: CastArguments) => CastArguments) => {
+      const honest = await buildCast({
+        serverUrl: SERVER_URL,
+        program: d.program,
+        l1ChainId: L1_CHAIN_ID,
+        e3Id,
+        slot: slotOf(voters[0]),
+        credits: CREDITS,
+        numOptions: NUM_OPTIONS,
+        census,
+        committeePublicKey,
+        availabilitySigner: d.serverSigner as Address,
+        staging: stagingFor(0),
+        ballot: { vote: voters[0].ballot!, sign: async (digest) => signDigest(voters[0].slotKey, digest) },
+      })
+      try {
+        await clients[0].cast(tamper(honest))
+      } catch (error) {
+        log(`${stamp()} control "${label}" refused: ${String((error as Error).message).split('\n')[0].slice(0, 160)}`)
 
-          return
-        }
-        throw new Error(`The control "${label}" was accepted: cast does not verify what it must`)
+        return
       }
-      await control('the ct1 ciphertext commitment altered', (args) => ({ ...args, ct1PublicInputs: args.ct1PublicInputs.map((v, i) => (i === 1 ? v + 1n : v)) }))
-      await control('the ct0 and ct1 proofs swapped', (args) => ({ ...args, ct0Proof: args.ct1Proof, ct1Proof: args.ct0Proof }))
+      throw new Error(`The control "${label}" was accepted: cast does not verify what it must`)
     }
+    await control('the ct1 ciphertext commitment altered', (args) => ({ ...args, ct1PublicInputs: args.ct1PublicInputs.map((v, i) => (i === 1 ? v + 1n : v)) }))
+    await control('the ct0 and ct1 proofs swapped', (args) => ({ ...args, ct0Proof: args.ct1Proof, ct1Proof: args.ct0Proof }))
     for (const [index, voter] of voters.entries()) await castOne(index, voter.ballot, `cast [${voter.ballot}]`)
     for (const [index, voter] of voters.entries()) {
       if (!voter.mask) continue
@@ -523,7 +458,6 @@ const roundOnPath = async (path: Path): Promise<void> => {
     log(`server result: ${JSON.stringify(serverResult, (_, v) => (typeof v === 'bigint' ? v.toString() : v)).slice(0, 400)}`)
 
     const report = {
-      path,
       e3Id: e3Id.toString(),
       rules,
       expectedTally: EXPECTED_TALLY.map(String),
@@ -533,12 +467,12 @@ const roundOnPath = async (path: Path): Promise<void> => {
       transactions: txs,
       seconds: Math.round((Date.now() - t0) / 1000),
     }
-    const reportFile = join(WORK, `report-${path}.json`)
+    const reportFile = join(WORK, 'report.json')
     writeFileSync(reportFile, `${JSON.stringify(report, (_, v) => (typeof v === 'bigint' ? v.toString() : v), 2)}\n`)
     if (tally.length !== EXPECTED_TALLY.length || tally.some((value, i) => value !== EXPECTED_TALLY[i])) {
       throw new Error(`Tally mismatch: expected [${EXPECTED_TALLY}], decoded [${tally}]`)
     }
-    log(`PASS (${path} path): tally [${tally}] equals the cast votes [${EXPECTED_TALLY}] in ${report.seconds}s; report at ${reportFile}`)
+    log(`PASS: tally [${tally}] equals the cast votes [${EXPECTED_TALLY}] in ${report.seconds}s; report at ${reportFile}`)
     for (const tx of txs) log(`  ${tx.layer} ${tx.hash} ${tx.what}`)
   } finally {
     await pump.stop()

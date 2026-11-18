@@ -13,7 +13,7 @@ use crisp_aztec::{
     ballot::{pk_commitment, CT0_PUBLIC_INPUTS, CT1_PUBLIC_INPUTS},
     CrispAztec,
     constants::{NATIONALITY_IN, NATIONALITY_NONE, NATIONALITY_OUT},
-    hashing::{key_content, member_content, round_content},
+    hashing::{key_content, round_content},
     types::{Config, InputEntry, RoundConfig},
 };
 use crate::base_fixture::{CRISP_VK, CRISP_VK_HASH, CT0_VK, CT0_VK_HASH, CT1_VK, CT1_VK_HASH};
@@ -99,17 +99,16 @@ unconstrained fn deploy() -> (TestEnvironment, AztecAddress) {
     (env, crisp)
 }
 
-/// The rule-shaped part of a ROUND message: which registration path the round uses and its nationality rule.
+/// The rule-shaped part of a ROUND message: the age and the nationality rule.
 struct Rules {
     min_age: u8,
-    l1_registration: bool,
     nationality_mode: u8,
     nationality_commitment: Field,
 }
 
-/// An Aztec-path round with an age rule and no nationality rule.
-fn aztec_rules(min_age: u8) -> Rules {
-    Rules { min_age, l1_registration: false, nationality_mode: 0, nationality_commitment: 0 }
+/// A round with an age rule and no nationality rule.
+fn age_rules(min_age: u8) -> Rules {
+    Rules { min_age, nationality_mode: 0, nationality_commitment: 0 }
 }
 
 unconstrained fn send_round_with(
@@ -130,7 +129,6 @@ unconstrained fn send_round_with(
             scope,
             rules.min_age,
             true,
-            rules.l1_registration,
             rules.nationality_mode,
             rules.nationality_commitment,
         ),
@@ -147,7 +145,7 @@ unconstrained fn send_round(
     min_age: u8,
     limit: u32,
 ) -> Field {
-    send_round_with(env, crisp, scope, aztec_rules(min_age), limit)
+    send_round_with(env, crisp, scope, age_rules(min_age), limit)
 }
 
 unconstrained fn open_round_with(
@@ -171,7 +169,6 @@ unconstrained fn open_round_with(
             scope,
             rules.min_age,
             true,
-            rules.l1_registration,
             rules.nationality_mode,
             rules.nationality_commitment,
             leaf_index,
@@ -180,7 +177,7 @@ unconstrained fn open_round_with(
 }
 
 unconstrained fn open_round(env: TestEnvironment, crisp: AztecAddress, scope: Field, min_age: u8, limit: u32) {
-    open_round_with(env, crisp, scope, aztec_rules(min_age), limit);
+    open_round_with(env, crisp, scope, age_rules(min_age), limit);
 }
 
 unconstrained fn publish_key(env: TestEnvironment, crisp: AztecAddress) {
@@ -289,12 +286,7 @@ fn exclusion_commitment() -> Field {
 }
 
 fn nationality_rules(min_age: u8, mode: u8, commitment: Field) -> Rules {
-    Rules { min_age, l1_registration: false, nationality_mode: mode, nationality_commitment: commitment }
-}
-
-/// An L1-path round: the registrar checks a nationality rule, so the round carries no commitment.
-fn l1_rules() -> Rules {
-    Rules { min_age: 0, l1_registration: true, nationality_mode: NATIONALITY_IN, nationality_commitment: 0 }
+    Rules { min_age, nationality_mode: mode, nationality_commitment: commitment }
 }
 
 /// A round with a committee key and the given rules.
@@ -305,15 +297,10 @@ unconstrained fn open_with(rules: Rules) -> (TestEnvironment, AztecAddress) {
     (env, crisp)
 }
 
-unconstrained fn open_l1() -> (TestEnvironment, AztecAddress) {
-    open_with(l1_rules())
-}
-
 /// `open_round` with rule arguments as given, to reach its validation (no message is consumed before it).
 unconstrained fn open_unchecked(
     env: TestEnvironment,
     crisp: AztecAddress,
-    l1_registration: bool,
     nationality_mode: u8,
     nationality_commitment: Field,
 ) {
@@ -329,22 +316,11 @@ unconstrained fn open_unchecked(
             FIXTURE_SCOPE,
             0,
             true,
-            l1_registration,
             nationality_mode,
             nationality_commitment,
             0,
         ),
     );
-}
-
-unconstrained fn send_member(env: TestEnvironment, crisp: AztecAddress, slot: Field) -> Field {
-    env.send_l1_to_l2_message(member_content(ROUND_ID, slot), 0, L1_PROGRAM, crisp)
-}
-
-/// What the keeper does for a MEMBER message: consume it into the census.
-unconstrained fn add_member(env: TestEnvironment, crisp: AztecAddress, slot: Field) {
-    let leaf_index = send_member(env, crisp, slot);
-    let _ = env.call_public(KEEPER, CrispAztec::at(crisp).add_member_from_l1(ROUND_ID, slot, leaf_index));
 }
 
 unconstrained fn deliver<let N: u32>(env: TestEnvironment, crisp: AztecAddress, user: AztecAddress, blob: [Field; N]) {
@@ -453,7 +429,6 @@ unconstrained fn open_round_consumes_the_round_message() {
     assert_eq(round.input_limit, 1000);
     assert_eq(round.min_age, 18);
     assert(round.allow_mock_documents);
-    assert(!round.l1_registration);
     assert_eq(round.nationality_mode, 0);
     assert_eq(round.nationality_commitment, 0);
 }
@@ -473,7 +448,6 @@ unconstrained fn a_round_cannot_be_opened_twice() {
         FIXTURE_SCOPE,
         0,
         true,
-        false,
         0,
         0,
         leaf_index,
@@ -500,7 +474,6 @@ unconstrained fn open_round_rejects_arguments_the_message_does_not_carry() {
             FIXTURE_SCOPE,
             0,
             true,
-            false,
             0,
             0,
             leaf_index,
@@ -519,7 +492,7 @@ unconstrained fn open_round_rejects_a_round_id_of_96_bits_or_more() {
     let (env, crisp) = deploy();
     let round_id = 0x1000000000000000000000000;
     let leaf_index = env.send_l1_to_l2_message(
-        round_content(round_id, NUM_OPTIONS, CREDITS, INPUT_START, INPUT_END, LIMIT, FIXTURE_SCOPE, 0, true, false, 0, 0),
+        round_content(round_id, NUM_OPTIONS, CREDITS, INPUT_START, INPUT_END, LIMIT, FIXTURE_SCOPE, 0, true, 0, 0),
         0,
         L1_PROGRAM,
         crisp,
@@ -536,7 +509,6 @@ unconstrained fn open_round_rejects_a_round_id_of_96_bits_or_more() {
             FIXTURE_SCOPE,
             0,
             true,
-            false,
             0,
             0,
             leaf_index,
@@ -560,7 +532,6 @@ unconstrained fn open_round_rejects_an_empty_window() {
             FIXTURE_SCOPE,
             0,
             true,
-            false,
             0,
             0,
             0,
@@ -692,7 +663,7 @@ unconstrained fn registration_needs_an_open_round() {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
-// Registration with a nationality rule (Aztec path)
+// Registration with a nationality rule
 // ---------------------------------------------------------------------------------------------------------------------
 
 #[test]
@@ -803,158 +774,28 @@ unconstrained fn register_with_age_and_nationality_rejects_a_round_without_a_nat
 #[test(should_fail_with = "unexpected nationality commitment")]
 unconstrained fn open_round_rejects_a_commitment_without_a_nationality_rule() {
     let (env, crisp) = deploy();
-    open_unchecked(env, crisp, false, NATIONALITY_NONE, 1);
+    open_unchecked(env, crisp, NATIONALITY_NONE, 1);
 }
 
 #[test(should_fail_with = "missing nationality commitment")]
-unconstrained fn open_round_rejects_an_aztec_path_nationality_rule_without_a_commitment() {
+unconstrained fn open_round_rejects_a_nationality_rule_without_a_commitment() {
     let (env, crisp) = deploy();
-    open_unchecked(env, crisp, false, NATIONALITY_IN, 0);
-}
-
-#[test(should_fail_with = "unexpected nationality commitment")]
-unconstrained fn open_round_rejects_a_commitment_on_an_l1_path_round() {
-    let (env, crisp) = deploy();
-    open_unchecked(env, crisp, true, NATIONALITY_IN, 1);
+    open_unchecked(env, crisp, NATIONALITY_IN, 0);
 }
 
 #[test(should_fail_with = "invalid nationality mode")]
 unconstrained fn open_round_rejects_an_unknown_nationality_mode() {
     let (env, crisp) = deploy();
-    open_unchecked(env, crisp, false, 3, 1);
+    open_unchecked(env, crisp, 3, 1);
 }
 
 #[test]
-unconstrained fn open_round_stores_the_registration_path_and_the_nationality_rule() {
+unconstrained fn open_round_stores_the_nationality_rule() {
     let (env, crisp) = deploy();
     open_round_with(env, crisp, FIXTURE_SCOPE, nationality_rules(18, NATIONALITY_OUT, exclusion_commitment()), LIMIT);
     let round: RoundConfig = env.execute_utility(CrispAztec::at(crisp).get_round(ROUND_ID));
-    assert(!round.l1_registration);
     assert_eq(round.nationality_mode, NATIONALITY_OUT);
     assert_eq(round.nationality_commitment, exclusion_commitment());
-}
-
-// ---------------------------------------------------------------------------------------------------------------------
-// Registration on L1 (MEMBER message)
-// ---------------------------------------------------------------------------------------------------------------------
-
-#[test]
-unconstrained fn add_member_from_l1_adds_the_slot_to_the_census() {
-    let (env, crisp) = open_l1();
-    add_member(env, crisp, SLOT_1);
-    assert(env.execute_utility(CrispAztec::at(crisp).is_slot_registered(ROUND_ID, SLOT_1)));
-    assert_eq(env.execute_utility(CrispAztec::at(crisp).get_census_count(ROUND_ID)), 1);
-    assert_eq(env.execute_utility(CrispAztec::at(crisp).get_census_root(ROUND_ID)), hash_2([SLOT_1, CREDITS]));
-}
-
-#[test]
-unconstrained fn members_added_from_l1_build_the_census_tree_the_aztec_path_builds() {
-    let (env, crisp) = open_l1();
-    let slots = [SLOT_1, SLOT_2, SLOT_3];
-    for i in 0..3 {
-        add_member(env, crisp, slots[i]);
-        let root: Field = env.execute_utility(CrispAztec::at(crisp).get_census_root(ROUND_ID));
-        assert_eq(root, CENSUS_ROOTS[i]);
-        assert(env.execute_utility(CrispAztec::at(crisp).is_census_root_known(ROUND_ID, CENSUS_ROOTS[i])));
-    }
-}
-
-#[test]
-unconstrained fn a_voter_registered_from_l1_can_cast() {
-    let (mut env, crisp) = open_l1();
-    let voter = env.create_light_account();
-    add_member(env, crisp, SLOT_1);
-    add_member(env, crisp, SLOT_2);
-    env.mine_block_at(INPUT_START);
-    let census_root = hash_2([hash_2([SLOT_1, CREDITS]), hash_2([SLOT_2, CREDITS])]);
-    // Anyone may carry the ballot: the proof binds the slot, not the sender.
-    cast(env, crisp, voter, FIRST_BALLOT, census_root);
-    assert_eq(env.execute_utility(CrispAztec::at(crisp).get_input_count(ROUND_ID)), 1);
-}
-
-#[test(should_fail)]
-unconstrained fn a_member_message_is_consumed_once() {
-    let (env, crisp) = open_l1();
-    let leaf_index = send_member(env, crisp, SLOT_1);
-    let call = CrispAztec::at(crisp).add_member_from_l1(ROUND_ID, SLOT_1, leaf_index);
-    let _ = env.call_public(KEEPER, call);
-    let _ = env.call_public(KEEPER, call);
-}
-
-#[test(should_fail)]
-unconstrained fn add_member_from_l1_rejects_a_slot_the_message_does_not_carry() {
-    let (env, crisp) = open_l1();
-    let leaf_index = send_member(env, crisp, SLOT_1);
-    let _ = env.call_public(KEEPER, CrispAztec::at(crisp).add_member_from_l1(ROUND_ID, SLOT_2, leaf_index));
-}
-
-#[test(should_fail)]
-unconstrained fn add_member_from_l1_rejects_a_message_of_another_sender() {
-    let (env, crisp) = open_l1();
-    let impostor = EthAddress::from_field(0x2222222222222222222222222222222222222222);
-    let leaf_index = env.send_l1_to_l2_message(member_content(ROUND_ID, SLOT_1), 0, impostor, crisp);
-    let _ = env.call_public(KEEPER, CrispAztec::at(crisp).add_member_from_l1(ROUND_ID, SLOT_1, leaf_index));
-}
-
-#[test(should_fail)]
-unconstrained fn add_member_from_l1_rejects_a_message_of_another_round() {
-    let (env, crisp) = open_l1();
-    let leaf_index = env.send_l1_to_l2_message(member_content(ROUND_ID + 1, SLOT_1), 0, L1_PROGRAM, crisp);
-    let _ = env.call_public(KEEPER, CrispAztec::at(crisp).add_member_from_l1(ROUND_ID, SLOT_1, leaf_index));
-}
-
-#[test(should_fail_with = "round registers on Aztec")]
-unconstrained fn add_member_from_l1_rejects_an_aztec_path_round() {
-    let (env, crisp) = open(LIMIT);
-    add_member(env, crisp, SLOT_1);
-}
-
-#[test(should_fail)]
-unconstrained fn add_member_from_l1_needs_an_open_round() {
-    let (env, crisp) = deploy();
-    add_member(env, crisp, SLOT_1);
-}
-
-#[test(should_fail_with = "slot already registered")]
-unconstrained fn add_member_from_l1_registers_a_slot_once() {
-    let (env, crisp) = open_l1();
-    add_member(env, crisp, SLOT_1);
-    add_member(env, crisp, SLOT_1);
-}
-
-#[test(should_fail_with = "registration closed")]
-unconstrained fn add_member_from_l1_closes_with_the_input_window() {
-    let (mut env, crisp) = open_l1();
-    env.mine_block_at(INPUT_END);
-    add_member(env, crisp, SLOT_1);
-}
-
-#[test(should_fail_with = "round registers on L1")]
-unconstrained fn register_rejects_an_l1_path_round() {
-    let (mut env, crisp) = open_l1();
-    let user = env.create_light_account();
-    env.call_private(user, CrispAztec::at(crisp).register(ROUND_ID, SLOT_1));
-}
-
-#[test(should_fail_with = "round registers on L1")]
-unconstrained fn register_with_age_rejects_an_l1_path_round() {
-    let (mut env, crisp) = open_l1();
-    let user = env.create_light_account();
-    env.call_private(user, CrispAztec::at(crisp).register_with_age(ROUND_ID, SLOT_1));
-}
-
-#[test(should_fail_with = "round registers on L1")]
-unconstrained fn register_with_nationality_rejects_an_l1_path_round() {
-    let (mut env, crisp) = open_l1();
-    let user = env.create_light_account();
-    env.call_private(user, CrispAztec::at(crisp).register_with_nationality(ROUND_ID, SLOT_1));
-}
-
-#[test(should_fail_with = "round registers on L1")]
-unconstrained fn register_with_age_and_nationality_rejects_an_l1_path_round() {
-    let (mut env, crisp) = open_l1();
-    let user = env.create_light_account();
-    env.call_private(user, CrispAztec::at(crisp).register_with_age_and_nationality(ROUND_ID, SLOT_1));
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

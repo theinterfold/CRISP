@@ -61,22 +61,6 @@
         "internalType": "uint256",
         "name": "e3Id",
         "type": "uint256"
-      },
-      {
-        "internalType": "address",
-        "name": "caller",
-        "type": "address"
-      }
-    ],
-    "name": "CallerNotRegistrar",
-    "type": "error"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "e3Id",
-        "type": "uint256"
       }
     ],
     "name": "CommitteeKeyAlreadyRelayed",
@@ -312,17 +296,6 @@
   {
     "inputs": [
       {
-        "internalType": "address",
-        "name": "registrar",
-        "type": "address"
-      }
-    ],
-    "name": "InvalidRegistrar",
-    "type": "error"
-  },
-  {
-    "inputs": [
-      {
         "internalType": "uint256",
         "name": "roundId",
         "type": "uint256"
@@ -392,17 +365,6 @@
   {
     "inputs": [],
     "name": "ProgramNotRegistered",
-    "type": "error"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "e3Id",
-        "type": "uint256"
-      }
-    ],
-    "name": "RegistrationClosed",
     "type": "error"
   },
   {
@@ -595,31 +557,6 @@
     "inputs": [
       {
         "indexed": true,
-        "internalType": "uint256",
-        "name": "e3Id",
-        "type": "uint256"
-      },
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "slot",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "index",
-        "type": "uint256"
-      }
-    ],
-    "name": "MemberSent",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
         "internalType": "address",
         "name": "previousOwner",
         "type": "address"
@@ -661,12 +598,6 @@
         "internalType": "uint256",
         "name": "e3Id",
         "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "registrar",
-        "type": "address"
       },
       {
         "indexed": false,
@@ -972,57 +903,6 @@
     "type": "function"
   },
   {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "e3Id",
-        "type": "uint256"
-      }
-    ],
-    "name": "getRules",
-    "outputs": [
-      {
-        "components": [
-          {
-            "internalType": "address",
-            "name": "registrar",
-            "type": "address"
-          },
-          {
-            "internalType": "bool",
-            "name": "allowMockDocuments",
-            "type": "bool"
-          },
-          {
-            "internalType": "uint8",
-            "name": "nationalityMode",
-            "type": "uint8"
-          },
-          {
-            "internalType": "uint256",
-            "name": "minAge",
-            "type": "uint256"
-          },
-          {
-            "internalType": "bytes32",
-            "name": "countriesHash",
-            "type": "bytes32"
-          },
-          {
-            "internalType": "uint256",
-            "name": "inputEnd",
-            "type": "uint256"
-          }
-        ],
-        "internalType": "struct CRISPRemoteProgram.Rules",
-        "name": "",
-        "type": "tuple"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
     "inputs": [],
     "name": "imageId",
     "outputs": [
@@ -1155,24 +1035,6 @@
     "name": "publishInput",
     "outputs": [],
     "stateMutability": "pure",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "e3Id",
-        "type": "uint256"
-      },
-      {
-        "internalType": "address",
-        "name": "slotAddress",
-        "type": "address"
-      }
-    ],
-    "name": "registerMember",
-    "outputs": [],
-    "stateMutability": "nonpayable",
     "type": "function"
   },
   {

@@ -11,8 +11,7 @@ import { join } from 'node:path'
 import { connectAztec, deployCrispAztec, getBaseVerificationKeys, domainSeparator } from '@crisp-e3/aztec'
 import { destroyBBApi, setCircuits } from '@crisp-e3/sdk'
 import { loadCircuits } from '@crisp-e3/sdk/insecure-64'
-import { createPublicClient, createWalletClient, getAddress, http, type Abi, type Address, type Hex } from 'viem'
-import { foundry } from 'viem/chains'
+import { getAddress, type Address } from 'viem'
 
 import {
   AZTEC_NODE_URL,
@@ -63,9 +62,6 @@ export type Deployment = {
   slashingManager: Address
   program: Address
   programBlock: number
-  /** The program's `ZKPassportRegistrar` (the L1 registration path) and the mock root verifier it verifies with. */
-  registrar: Address
-  mockRootVerifier: Address
   aztecContract: string
   /** Hashes of the verification keys of the three base circuits the contract pins. */
   baseVkHashes: { ct0: string; ct1: string; crisp: string }
@@ -204,38 +200,20 @@ const deployInterfoldAndCrisp = (): Record<string, DeployedRecord> => {
   return readRecords(paths.crispDeployments)
 }
 
-/**
- * ZKPassport's root verifier does not exist on the local chain: stand in a mock one (`MockZKPassport.sol`, which accepts any
- * non-empty proof and reads the committed inputs plainly) so the registrar's own checks run for real.
- */
-const deployMockRootVerifier = async (): Promise<Address> => {
-  const { abi, bytecode } = JSON.parse(readFileSync(paths.mockRootVerifierArtifact, 'utf8')) as { abi: Abi; bytecode: Hex }
-  const wallet = createWalletClient({ account: accounts.deployer.account, chain: foundry, transport: http(L1_RPC_URL) })
-  const hash = await wallet.deployContract({ abi, bytecode, account: accounts.deployer.account })
-  const receipt = await createPublicClient({ chain: foundry, transport: http(L1_RPC_URL) }).waitForTransactionReceipt({ hash })
-  if (!receipt.contractAddress) throw new Error(`The mock ZKPassport verifier deployment ${hash} created no contract`)
-
-  return getAddress(receipt.contractAddress)
-}
-
-/** Deploys the L1 program and its registrar (against `rootVerifier`); the second run, with the L2 address, only wires them up. */
-const deployL1Program = (rootVerifier: Address, l2Address?: string): { program: DeployedRecord; registrar: DeployedRecord } => {
+/** Deploys the L1 program; the second run, with the L2 address, only wires it up. */
+const deployL1Program = (l2Address?: string): DeployedRecord => {
   run('pnpm', ['deploy:localhost'], {
     cwd: paths.l1Pkg,
     env: {
       MNEMONIC,
       AZTEC_NODE_URL,
-      ZKPASSPORT_ROOT_VERIFIER: rootVerifier,
-      ZKPASSPORT_DOMAIN,
       REDEPLOY: l2Address ? 'false' : 'true',
       ...(l2Address ? { CRISP_AZTEC_L2_ADDRESS: l2Address } : {}),
     },
     logName: 'deploy-l1-program',
   })
-  const records = readRecords(paths.l1Deployments)
-  if (!records.ZKPassportRegistrar) throw new Error('The L1 deployment recorded no ZKPassportRegistrar')
 
-  return { program: records.CRISPAztecProgram, registrar: records.ZKPassportRegistrar }
+  return readRecords(paths.l1Deployments).CRISPAztecProgram
 }
 
 /** Seed the ZKPassport registry (a no-op after the first run: the clock was warped 24 hours then) and deploy `crisp_aztec`. */
@@ -328,7 +306,6 @@ const serverEnv = (d: Deployment): Record<string, string> => ({
   INTERFOLD_ADDRESS: d.interfold,
   FEE_TOKEN_ADDRESS: d.feeToken,
   E3_PROGRAM_ADDRESS: d.program,
-  ZKPASSPORT_REGISTRAR_ADDRESS: d.registrar,
   CIPHERNODE_REGISTRY_ADDRESS: d.ciphernodeRegistry,
   E3_PARAM_SET: String(E3_PARAM_SET),
   E3_COMMITTEE_SIZE: String(COMMITTEE_SIZE),
@@ -365,10 +342,9 @@ export const up = async (): Promise<Deployment> => {
   await fund()
 
   const records = deployInterfoldAndCrisp()
-  const mockRootVerifier = await deployMockRootVerifier()
-  const { program: l1Program, registrar } = deployL1Program(mockRootVerifier)
+  const l1Program = deployL1Program()
   const { contract, baseVkHashes, rollupVersion } = await deployAztecSide(getAddress(l1Program.address), records.Interfold.address)
-  deployL1Program(mockRootVerifier, contract)
+  deployL1Program(contract)
 
   const info = await fetch(AZTEC_NODE_URL, {
     method: 'POST',
@@ -384,8 +360,6 @@ export const up = async (): Promise<Deployment> => {
     slashingManager: records.SlashingManager.address,
     program: getAddress(l1Program.address),
     programBlock: l1Program.blockNumber,
-    registrar: getAddress(registrar.address),
-    mockRootVerifier,
     aztecContract: contract,
     baseVkHashes,
     rollupVersion,
@@ -396,7 +370,7 @@ export const up = async (): Promise<Deployment> => {
   }
   state.deployment = deployment
   saveState(state)
-  log(`L1 program ${deployment.program}, registrar ${deployment.registrar}, Aztec contract ${deployment.aztecContract}`)
+  log(`L1 program ${deployment.program}, Aztec contract ${deployment.aztecContract}`)
 
   writeFileSync(paths.interfoldConfig, interfoldConfig(deployment, records, deployment.programBlock))
 

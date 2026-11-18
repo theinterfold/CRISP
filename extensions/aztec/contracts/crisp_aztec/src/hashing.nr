@@ -2,8 +2,7 @@
 // expression; the tests pin each one to a vector produced by that Solidity code.
 
 use crate::constants::{
-    BALLOT_TYPEHASH, INPUT_AVAILABILITY_TYPEHASH, INPUT_ID_TAG, MESSAGE_KEY, MESSAGE_MEMBER, MESSAGE_ROOT,
-    MESSAGE_ROUND,
+    BALLOT_TYPEHASH, INPUT_AVAILABILITY_TYPEHASH, INPUT_ID_TAG, MESSAGE_KEY, MESSAGE_ROOT, MESSAGE_ROUND,
 };
 use aztec::protocol::{address::EthAddress, hash::sha256_to_field, traits::ToField};
 use keccak256::keccak256;
@@ -151,7 +150,6 @@ pub fn round_content(
     scope_hash: Field,
     min_age: u8,
     allow_mock_documents: bool,
-    l1_registration: bool,
     nationality_mode: u8,
     nationality_commitment: Field,
 ) -> Field {
@@ -166,23 +164,13 @@ pub fn round_content(
         scope_hash,
         min_age as Field,
         allow_mock_documents as Field,
-        l1_registration as Field,
         nationality_mode as Field,
         nationality_commitment,
     ];
-    let mut encoded = [0; 416];
-    for i in 0..13 {
+    let mut encoded = [0; 384];
+    for i in 0..12 {
         encoded = put(encoded, i * 32, word(words[i]));
     }
-    sha256_to_field(encoded)
-}
-
-/// Content of the MEMBER message `registerMember` sends from L1: `slot` is `uint256(uint160(slotAddress))`.
-pub fn member_content(round_id: Field, slot: Field) -> Field {
-    let mut encoded = [0; 96];
-    encoded = put(encoded, 0, word(MESSAGE_MEMBER));
-    encoded = put(encoded, 32, word(round_id));
-    encoded = put(encoded, 64, word(slot));
     sha256_to_field(encoded)
 }
 

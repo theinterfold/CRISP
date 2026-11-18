@@ -5,7 +5,7 @@
 // or FITNESS FOR A PARTICULAR PURPOSE.
 
 import { ProofType, getCountryParameterCommitment } from '@zkpassport/utils'
-import { decodeAbiParameters, encodeAbiParameters, getAddress, parseAbiParameters, zeroAddress, type Address, type Hex } from 'viem'
+import { decodeAbiParameters, encodeAbiParameters, parseAbiParameters, type Hex } from 'viem'
 
 import { SNARK_SCALAR_FIELD } from './constants'
 
@@ -21,7 +21,7 @@ export const MAX_MIN_AGE = 99n
 
 /**
  * The rules of a round, as the poll creator passes them to `Interfold.request` in the program's custom parameters:
- * `abi.encode(numOptions, credits, minAge, allowMockDocuments, registrar, nationalityMode, countries, nationalityCommitment)`.
+ * `abi.encode(numOptions, credits, minAge, allowMockDocuments, nationalityMode, countries, nationalityCommitment)`.
  */
 export type RoundRules = {
   numOptions: bigint
@@ -29,23 +29,18 @@ export type RoundRules = {
   /** 0 for no age rule, else at most {@link MAX_MIN_AGE}. */
   minAge: bigint
   allowMockDocuments: boolean
-  /**
-   * The L1 `ZKPassportRegistrar` voters register through, or the zero address for a round whose voters register on Aztec.
-   * A round uses one path, never both.
-   */
-  registrar: Address
   nationalityMode: NationalityMode
   /** ICAO alpha-3 codes (`DEU`, not the MRZ's `D<<`): 1 to {@link MAX_COUNTRIES} of them with a nationality rule, none without. */
   countries: string[]
   /**
-   * Aztec path with a nationality rule: {@link nationalityCommitment} of the list, which the contract verifies the proof
-   * against. Otherwise 0: the L1 registrar checks the list itself.
+   * With a nationality rule: {@link nationalityCommitment} of the list, which the contract verifies the proof
+   * against. Otherwise 0.
    */
   nationalityCommitment: bigint
 }
 
 const CUSTOM_PARAMS = parseAbiParameters(
-  'uint256 numOptions, uint256 credits, uint256 minAge, bool allowMockDocuments, address registrar, uint8 nationalityMode, string[] countries, uint256 nationalityCommitment',
+  'uint256 numOptions, uint256 credits, uint256 minAge, bool allowMockDocuments, uint8 nationalityMode, string[] countries, uint256 nationalityCommitment',
 )
 
 const COUNTRY = /^[A-Z]{3}$/
@@ -59,7 +54,7 @@ export const assertCountries = (countries: readonly string[]): void => {
 
 /**
  * ZKPassport's Poseidon2 parameter commitment of a nationality list: what the proof of a `nationality in` (mode 1) or
- * `nationality not in` (mode 2) request commits to, and what `open_round` of an Aztec-path round stores. An inclusion list
+ * `nationality not in` (mode 2) request commits to, and what `open_round` stores. An inclusion list
  * keeps the order given, an exclusion list is sorted the way ZKPassport sorts it, so any order works for mode 2.
  */
 export const nationalityCommitment = async (mode: typeof NATIONALITY_MODE.IN | typeof NATIONALITY_MODE.OUT, countries: readonly string[]): Promise<bigint> => {
@@ -83,11 +78,8 @@ export const assertRules = (rules: RoundRules): void => {
     return
   }
   assertCountries(rules.countries)
-  const l1Path = getAddress(rules.registrar) !== zeroAddress
-  if (l1Path) {
-    if (rules.nationalityCommitment !== 0n) throw new Error('A round that registers on L1 carries no nationality commitment: the registrar checks the list')
-  } else if (rules.nationalityCommitment <= 0n || rules.nationalityCommitment >= SNARK_SCALAR_FIELD) {
-    throw new Error('A round that registers on Aztec needs the list commitment (`nationalityCommitment`), below the field modulus')
+  if (rules.nationalityCommitment <= 0n || rules.nationalityCommitment >= SNARK_SCALAR_FIELD) {
+    throw new Error('A round with a nationality rule needs the list commitment (`nationalityCommitment`), below the field modulus')
   }
 }
 
@@ -100,7 +92,6 @@ export const encodeCustomParams = (rules: RoundRules): Hex => {
     rules.credits,
     rules.minAge,
     rules.allowMockDocuments,
-    rules.registrar,
     rules.nationalityMode,
     rules.countries,
     rules.nationalityCommitment,
@@ -109,25 +100,21 @@ export const encodeCustomParams = (rules: RoundRules): Hex => {
 
 /** Inverse of {@link encodeCustomParams}; the rules are not re-validated (L1 did that when the round was requested). */
 export const decodeCustomParams = (customParams: Hex): RoundRules => {
-  const [numOptions, credits, minAge, allowMockDocuments, registrar, nationalityMode, countries, commitment] = decodeAbiParameters(CUSTOM_PARAMS, customParams)
+  const [numOptions, credits, minAge, allowMockDocuments, nationalityMode, countries, commitment] = decodeAbiParameters(CUSTOM_PARAMS, customParams)
 
   return {
     numOptions,
     credits,
     minAge,
     allowMockDocuments,
-    registrar: getAddress(registrar),
     nationalityMode: nationalityMode as NationalityMode,
     countries: [...countries],
     nationalityCommitment: commitment,
   }
 }
 
-/** Whether voters of a round register on L1 (through its `ZKPassportRegistrar`) rather than on Aztec. */
-export const registersOnL1 = (rules: Pick<RoundRules, 'registrar'>): boolean => getAddress(rules.registrar) !== zeroAddress
-
 /**
- * Subproofs of the outer ZKPassport proof an Aztec-path round expects: the three every proof has, plus one each for the
+ * Subproofs of the outer ZKPassport proof a round expects: the three every proof has, plus one each for the
  * age rule, the nationality rule and the binding to the voter's account. So 4 (bind), 5 (age or nationality) or 6 (both),
  * the outer circuit sizes `register`, `register_with_age` / `register_with_nationality` and
  * `register_with_age_and_nationality` verify.

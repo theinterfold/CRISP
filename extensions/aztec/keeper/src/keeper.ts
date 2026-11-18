@@ -10,44 +10,35 @@ import {
   type WithOrigin,
   CrispAztec,
   connectAztec,
-  decodeCustomParams,
   getL1Round,
   getRootWitness,
   getRoundConfig,
-  getSentMembers,
   getSentMessages,
   interfoldAbi,
   keyContent,
   programAbi,
   publishCommitteeKey,
   roundContent,
-  registersOnL1,
   roundIdOf,
   submitInputRoot,
-  type SentMember,
 } from '@crisp-e3/aztec'
 import { createPublicClient, createWalletClient, getAddress, hexToBigInt, http, type Hex, type PublicClient, type WalletClient } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 
 import type { KeeperConfig } from './config'
-import { type Action, dueActions, isFinished, pendingMembers, type RoundState } from './plan'
+import { type Action, dueActions, isFinished, type RoundState } from './plan'
 
 export type Log = (message: string) => void
 
-/** What the keeper reads about a round that does not change once the round exists. */
-type RoundFacts = { inputEnd: bigint; l1Registration: boolean; fromBlock: bigint }
-
 /**
  * Drives every CRISP round on Aztec through the steps nobody else has a reason to take: opening it on Aztec,
- * relaying the committee key, carrying the members an L1 registrar registered to Aztec, closing the round, and delivering
- * the input root to L1. Every step is permissionless
+ * relaying the committee key, closing the round, and delivering the input root to L1. Every step is permissionless
  * and checked against on-chain state first, so the keeper can be restarted or run twice without harm.
  */
 export class Keeper {
-  private readonly facts = new Map<bigint, RoundFacts>()
+  /** The end of each known round's input window. */
+  private readonly inputEnds = new Map<bigint, bigint>()
   private readonly finished = new Set<bigint>()
-  /** Members to add, as found by the latest `read` of each round. */
-  private readonly pending = new Map<bigint, SentMember[]>()
   private nextScanBlock: bigint
 
   private constructor(
@@ -107,11 +98,11 @@ export class Keeper {
         fromBlock: this.nextScanBlock,
         toBlock: head,
       })
-      for (const { args, blockNumber } of sent) await this.learn(args.e3Id as bigint, blockNumber)
+      for (const { args } of sent) await this.learn(args.e3Id as bigint)
       this.nextScanBlock = head + 1n
     }
 
-    const open = [...this.facts.keys()].filter((e3Id) => !this.finished.has(e3Id))
+    const open = [...this.inputEnds.keys()].filter((e3Id) => !this.finished.has(e3Id))
     if (open.length === 0) return
 
     const [opened, keyed, closed, latest] = await Promise.all([
@@ -148,15 +139,12 @@ export class Keeper {
     }
   }
 
-  private async learn(e3Id: bigint, fromBlock: bigint): Promise<void> {
-    if (this.facts.has(e3Id)) return
+  private async learn(e3Id: bigint): Promise<void> {
+    if (this.inputEnds.has(e3Id)) return
     const interfold = await this.l1.readContract({ address: this.config.program, abi: programAbi, functionName: 'interfold' })
     const e3 = await this.l1.readContract({ address: interfold, abi: interfoldAbi, functionName: 'getE3', args: [e3Id] })
-    const l1Registration = registersOnL1(decodeCustomParams(e3.customParams))
-    this.facts.set(e3Id, { inputEnd: e3.inputWindow[1], l1Registration, fromBlock })
-    this.log(
-      `Round ${e3Id}: found; its input window ends at ${e3.inputWindow[1]}; voters register on ${l1Registration ? 'L1 (the keeper carries their MEMBER messages)' : 'Aztec'}`,
-    )
+    this.inputEnds.set(e3Id, e3.inputWindow[1])
+    this.log(`Round ${e3Id}: found; its input window ends at ${e3.inputWindow[1]}`)
   }
 
   private async read(e3Id: bigint, l2: Pick<RoundState, 'l2Opened' | 'l2KeyPublished' | 'l2Closed' | 'l2Now'>): Promise<RoundState> {
@@ -166,34 +154,14 @@ export class Keeper {
       getL1Round(this.l1, this.config.program, e3Id),
     ])
 
-    const { inputEnd, l1Registration } = this.facts.get(e3Id)!
-    const registering = l1Registration && l2.l2Opened && !l2.l2Closed && l2.l2Now < inputEnd
-    const pendingMembers = registering ? await this.findPendingMembers(e3Id) : 0
-
     return {
       e3Id,
       stage,
       l1KeyRelayed: l1Round.keyRelayed,
       l1RootSubmitted: l1Round.rootSubmitted,
-      inputEnd,
-      l1Registration,
-      pendingMembers,
+      inputEnd: this.inputEnds.get(e3Id)!,
       ...l2,
     }
-  }
-
-  /**
-   * The MEMBER messages of the round that Aztec has not consumed (see `pendingMembers`), remembered for `perform`.
-   */
-  private async findPendingMembers(e3Id: bigint): Promise<number> {
-    const [sent, registered] = await Promise.all([
-      getSentMembers(this.l1, this.config.program, e3Id, this.facts.get(e3Id)!.fromBlock),
-      this.crisp.logs('MemberRegistered', { e3Id }),
-    ])
-    const pending = pendingMembers(sent, registered.map((log) => log.slot))
-    this.pending.set(e3Id, pending)
-
-    return pending.length
   }
 
   private async perform(action: Action, round: RoundState, closeLog: WithOrigin<RoundClosed> | undefined) {
@@ -222,18 +190,6 @@ export class Keeper {
         if (!message) throw new Error('the program has not sent the KEY message')
         const { txHash } = await this.crisp.publishKey(e3Id, key, message)
         this.log(`Round ${e3Id}: committee key published on Aztec in ${txHash}`)
-        return
-      }
-      case 'addMembers': {
-        // One member failing (its message not in a block yet, the window closing) must not hold back the others.
-        for (const { slot, message } of this.pending.get(e3Id) ?? []) {
-          try {
-            const { txHash } = await this.crisp.addMemberFromL1(e3Id, slot, message)
-            this.log(`Round ${e3Id}: member ${slot} added on Aztec in ${txHash}`)
-          } catch (error) {
-            this.log(`Round ${e3Id}: adding member ${slot} failed: ${describe(error)}`)
-          }
-        }
         return
       }
       case 'closeRound': {

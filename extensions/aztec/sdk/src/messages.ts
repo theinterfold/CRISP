@@ -35,11 +35,9 @@ export type RoundConfig = {
   scopeHash: bigint
   minAge: bigint
   allowMockDocuments: boolean
-  /** The voters register on L1 (ZKPassport registrar, MEMBER messages) instead of on Aztec. */
-  l1Registration: boolean
   /** `NATIONALITY_MODE`: 0 none, 1 nationality in the list, 2 not in it. */
   nationalityMode: number
-  /** The ZKPassport parameter commitment of the list (Aztec path with a nationality rule only, else 0). */
+  /** The ZKPassport parameter commitment of the list: non-zero iff `nationalityMode` is not 0. */
   nationalityCommitment: bigint
 }
 
@@ -50,10 +48,10 @@ const words = (count: number) => Array.from({ length: count }, () => ({ type: 'u
 
 /**
  * `abi.encode(1, roundId, numOptions, credits, inputStart, inputEnd, inputLimit, scopeHash, minAge, allowMock,
- * l1Registration, nationalityMode, nationalityCommitment)`: 13 words.
+ * nationalityMode, nationalityCommitment)`: 12 words.
  */
 export const encodeRoundMessage = (c: RoundConfig): Hex =>
-  encodeAbiParameters(words(13), [
+  encodeAbiParameters(words(12), [
     MESSAGE_KIND.ROUND,
     c.roundId,
     c.numOptions,
@@ -64,7 +62,6 @@ export const encodeRoundMessage = (c: RoundConfig): Hex =>
     c.scopeHash,
     c.minAge,
     c.allowMockDocuments ? 1n : 0n,
-    c.l1Registration ? 1n : 0n,
     BigInt(c.nationalityMode),
     c.nationalityCommitment,
   ])
@@ -77,14 +74,9 @@ export const encodeKeyMessage = (roundId: bigint, committeePublicKey: Hex): Hex 
 export const encodeRootMessage = (roundId: bigint, inputRoot: bigint, numInputs: bigint): Hex =>
   encodeAbiParameters(words(4), [MESSAGE_KIND.ROOT, roundId, inputRoot, numInputs])
 
-/** `abi.encode(4, roundId, slot)`: the L1 registrar's `registerMember` sends it for the voter's slot (`uint160` address). */
-export const encodeMemberMessage = (roundId: bigint, slot: Address): Hex =>
-  encodeAbiParameters(words(3), [MESSAGE_KIND.MEMBER, roundId, BigInt(slot)])
-
 /** The field element the bridge carries for each message: `sha256ToField` of its encoding. */
 export const roundContent = (config: RoundConfig): bigint => sha256ToField(encodeRoundMessage(config))
 export const keyContent = (roundId: bigint, committeePublicKey: Hex): bigint => sha256ToField(encodeKeyMessage(roundId, committeePublicKey))
-export const memberContent = (roundId: bigint, slot: Address): bigint => sha256ToField(encodeMemberMessage(roundId, slot))
 export const rootContent = (roundId: bigint, inputRoot: bigint, numInputs: bigint): bigint =>
   sha256ToField(encodeRootMessage(roundId, inputRoot, numInputs))
 

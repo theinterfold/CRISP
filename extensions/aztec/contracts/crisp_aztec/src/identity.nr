@@ -15,10 +15,9 @@ pub fn service_config(config: Config, round: RoundConfig) -> ServiceConfig {
     }
 }
 
-/// What an `Aztec`-path `register*` entry point may be called for: a round that registers on Aztec whose age and
-/// nationality rules are exactly the ones the entry point proves.
+/// What a `register*` entry point may be called for: a round whose age and nationality rules are exactly the ones the
+/// entry point proves.
 pub fn assert_registration_shape(round: RoundConfig, with_age: bool, with_nationality: bool) {
-    assert(!round.l1_registration, "round registers on L1");
     if with_age {
         assert(round.min_age != 0, "round has no age requirement");
     } else {

@@ -132,12 +132,15 @@ contract CRISPAztecProgram is CRISPRemoteProgram {
       string.concat("crisp-aztec:", Strings.toString(block.chainid), ":", Strings.toHexString(address(this)), ":", Strings.toString(e3Id));
   }
 
-  function _sendToRemote(uint256 e3Id, bytes memory message) internal override returns (bytes32 content, uint256 index) {
+  function _sendToRemote(uint256 e3Id, bytes memory message) internal override returns (bytes32 content) {
     if (l2Program == bytes32(0)) revert L2ProgramNotSet();
 
     content = sha256ToField(message);
-    bytes32 leaf;
-    (leaf, index) = inbox.sendL2Message(AztecDataStructures.L2Actor({ actor: l2Program, version: rollupVersion }), content, SECRET_HASH);
+    (bytes32 leaf, uint256 index) = inbox.sendL2Message(
+      AztecDataStructures.L2Actor({ actor: l2Program, version: rollupVersion }),
+      content,
+      SECRET_HASH
+    );
 
     emit L1ToL2MessageSent(e3Id, content, leaf, index);
   }

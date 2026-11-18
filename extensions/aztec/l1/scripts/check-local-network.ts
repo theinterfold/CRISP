@@ -54,10 +54,10 @@ async function main() {
   await (await program.setL2Program(L2_PROGRAM)).wait()
 
   const now = (await ethers.provider.getBlock('latest'))!.timestamp
-  // numOptions, credits, minAge, allowMockDocuments, registrar (none: voters register on Aztec), nationalityMode, countries, commitment
+  // numOptions, credits, minAge, allowMockDocuments, nationalityMode, countries, commitment
   const customParams = ethers.AbiCoder.defaultAbiCoder().encode(
-    ['uint256', 'uint256', 'uint256', 'bool', 'address', 'uint8', 'string[]', 'uint256'],
-    [3, 100, 18, true, ethers.ZeroAddress, 0, [], 0],
+    ['uint256', 'uint256', 'uint256', 'bool', 'uint8', 'string[]', 'uint256'],
+    [3, 100, 18, true, 0, [], 0],
   )
   const before = await inbox.getTotalMessagesInserted()
   const programAddress = await program.getAddress()

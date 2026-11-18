@@ -37,16 +37,14 @@ struct SubmittedRoot {
 }
 
 /// The custom parameters of a remote-program round: `abi.encode(numOptions, credits, minAge,
-/// allowMockDocuments, registrar, nationalityMode, countries, nationalityCommitment)`. The L1
-/// program validates all of it, and the remote contract (or the `registrar` on L1) enforces the
-/// age, the documents and the nationality rule. The server reads the number of options and the
-/// credits.
+/// allowMockDocuments, nationalityMode, countries, nationalityCommitment)`. The L1 program
+/// validates all of it, and the remote contract enforces the age, the documents and the
+/// nationality rule. The server reads the number of options and the credits.
 type RemoteCustomParams = (
     sol_data::Uint<256>,
     sol_data::Uint<256>,
     sol_data::Uint<256>,
     sol_data::Bool,
-    sol_data::Address,
     sol_data::Uint<8>,
     sol_data::Array<sol_data::String>,
     sol_data::Uint<256>,
@@ -576,13 +574,12 @@ mod tests {
     }
 
     #[test]
-    fn custom_params_of_a_remote_round_come_from_its_eight_words() {
+    fn custom_params_of_a_remote_round_come_from_its_seven_words() {
         let encoded = <RemoteCustomParams as SolType>::abi_encode_params(&(
             U256::from(4),
             U256::from(10),
             U256::from(18),
             true,
-            Address::repeat_byte(0x11),
             1u8,
             vec!["DEU".to_string(), "FRA".to_string()],
             U256::ZERO,
@@ -602,14 +599,13 @@ mod tests {
             U256::from(10),
             U256::from(18),
             true,
-            Address::ZERO,
             0u8,
             Vec::<String>::new(),
             U256::ZERO,
         ));
         assert_eq!(round_params(&plain).unwrap().num_options, "4");
 
-        // The earlier four-word layout and a round of the L1 program are not this layout.
+        // The earlier four-word layout is not this layout.
         let old = (U256::from(4), U256::from(10), U256::from(18), true).abi_encode_params();
         assert!(round_params(&old).is_err());
         assert!(round_params(&[0u8; 31]).is_err());

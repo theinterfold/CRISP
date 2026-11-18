@@ -11,8 +11,7 @@ import { down, up } from './stack'
 const usage = `usage: tsx src/run.ts <command>
 
   up      deploy the stacks and start ciphernodes, program server, CRISP server and keeper
-  round   run one full round per registration path (Aztec, then L1) against a running stack and assert each tally;
-          'round aztec' or 'round l1' runs one
+  round   run one full round against a running stack and assert its tally
   down    stop everything and restore the repo files the deploy scripts rewrote
   all     up, round, down (down also runs when a step fails; set CRISP_E2E_KEEP=1 to leave the stack up)
 `
@@ -26,12 +25,9 @@ const main = async () => {
     case 'down':
       await down()
       break
-    case 'round': {
-      const path = process.argv[3]
-      if (path !== undefined && path !== 'aztec' && path !== 'l1') throw new Error(`Unknown path ${path}: aztec or l1`)
-      await round(path)
+    case 'round':
+      await round()
       break
-    }
     case 'all': {
       let failed = false
       try {

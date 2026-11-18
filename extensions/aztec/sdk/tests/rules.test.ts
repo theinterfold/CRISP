@@ -5,16 +5,15 @@
 // or FITNESS FOR A PARTICULAR PURPOSE.
 
 import { readFileSync } from 'node:fs'
-import { zeroAddress } from 'viem'
 import { describe, expect, it } from 'vitest'
 
+import { SNARK_SCALAR_FIELD } from '../src/constants'
 import {
   NATIONALITY_MODE,
   type RoundRules,
   decodeCustomParams,
   encodeCustomParams,
   nationalityCommitment,
-  registersOnL1,
   registrationSubproofs,
 } from '../src/rules'
 
@@ -27,14 +26,11 @@ const anchor = (name: string): bigint => {
   return BigInt(match[1] as string)
 }
 
-const registrar = '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed'
-
 const rules = (overrides: Partial<RoundRules> = {}): RoundRules => ({
   numOptions: 3n,
   credits: 100n,
   minAge: 18n,
   allowMockDocuments: true,
-  registrar: zeroAddress,
   nationalityMode: NATIONALITY_MODE.NONE,
   countries: [],
   nationalityCommitment: 0n,
@@ -63,18 +59,9 @@ describe('nationalityCommitment', () => {
 })
 
 describe('custom params', () => {
-  it('round-trips an Aztec-path round with a nationality rule', async () => {
-    const aztec = rules({ nationalityMode: NATIONALITY_MODE.IN, countries: ['DEU', 'FRA'], nationalityCommitment: await nationalityCommitment(NATIONALITY_MODE.IN, ['DEU', 'FRA']) })
-    const decoded = decodeCustomParams(encodeCustomParams(aztec))
-    expect(decoded).toEqual(aztec)
-    expect(registersOnL1(decoded)).toBe(false)
-  })
-
-  it('round-trips an L1-path round', () => {
-    const l1 = rules({ registrar, nationalityMode: NATIONALITY_MODE.OUT, countries: ['PRK'] })
-    const decoded = decodeCustomParams(encodeCustomParams(l1))
-    expect(decoded).toEqual(l1)
-    expect(registersOnL1(decoded)).toBe(true)
+  it('round-trips a round with a nationality rule', async () => {
+    const withRule = rules({ nationalityMode: NATIONALITY_MODE.IN, countries: ['DEU', 'FRA'], nationalityCommitment: await nationalityCommitment(NATIONALITY_MODE.IN, ['DEU', 'FRA']) })
+    expect(decodeCustomParams(encodeCustomParams(withRule))).toEqual(withRule)
   })
 
   it('round-trips a round without a nationality rule', () => {
@@ -82,13 +69,13 @@ describe('custom params', () => {
   })
 
   it('encodes in the layout the L1 program decodes', () => {
-    // abi.encode(uint256 numOptions, uint256 credits, uint256 minAge, bool allowMock, address registrar, uint8 mode, string[] countries, uint256 commitment)
+    // abi.encode(uint256 numOptions, uint256 credits, uint256 minAge, bool allowMock, uint8 mode, string[] countries, uint256 commitment)
     const encoded = encodeCustomParams(rules())
     const word = (i: number) => BigInt(`0x${encoded.slice(2 + i * 64, 2 + (i + 1) * 64)}`)
-    expect([word(0), word(1), word(2), word(3), word(4), word(5)]).toEqual([3n, 100n, 18n, 1n, 0n, 0n])
-    expect(word(6)).toBe(8n * 32n) // the offset of the string[]: eight head words
-    expect(word(7)).toBe(0n) // the commitment
-    expect(word(8)).toBe(0n) // the empty list's length
+    expect([word(0), word(1), word(2), word(3), word(4)]).toEqual([3n, 100n, 18n, 1n, 0n])
+    expect(word(5)).toBe(7n * 32n) // the offset of the string[]: seven head words
+    expect(word(6)).toBe(0n) // the commitment
+    expect(word(7)).toBe(0n) // the empty list's length
   })
 
   it('refuses rules the program refuses', () => {
@@ -96,7 +83,10 @@ describe('custom params', () => {
     expect(() => encodeCustomParams(rules({ countries: ['DEU'] }))).toThrow(/without a nationality rule/)
     expect(() => encodeCustomParams(rules({ nationalityMode: NATIONALITY_MODE.IN, countries: [] }))).toThrow(/1 to 200/)
     expect(() => encodeCustomParams(rules({ nationalityMode: NATIONALITY_MODE.IN, countries: ['DEU'] }))).toThrow(/needs the list commitment/)
-    expect(() => encodeCustomParams(rules({ registrar, nationalityMode: NATIONALITY_MODE.IN, countries: ['DEU'], nationalityCommitment: 1n }))).toThrow(/carries no nationality commitment/)
+    expect(() => encodeCustomParams(rules({ nationalityCommitment: 1n }))).toThrow(/without a nationality rule/)
+    expect(() => encodeCustomParams(rules({ nationalityMode: NATIONALITY_MODE.OUT, countries: ['DEU'], nationalityCommitment: SNARK_SCALAR_FIELD }))).toThrow(
+      /below the field modulus/,
+    )
   })
 })
 

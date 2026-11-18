@@ -45,7 +45,6 @@ pub global INPUT_ID_TAG: [u8; 14] = [
 pub global MESSAGE_ROUND: Field = 1;
 pub global MESSAGE_KEY: Field = 2;
 pub global MESSAGE_ROOT: Field = 3;
-pub global MESSAGE_MEMBER: Field = 4;
 
 /// `RoundConfig.nationality_mode`: no nationality rule, nationality in the list, nationality not in the list.
 pub global NATIONALITY_NONE: u8 = 0;

@@ -17,8 +17,6 @@ library CRISPRemoteMessages {
   uint256 internal constant KIND_KEY = 2;
   /// @notice L2 -> L1: the root and size of the round's input tree.
   uint256 internal constant KIND_ROOT = 3;
-  /// @notice L1 -> L2: a voter's slot, registered on L1 through the round's registrar.
-  uint256 internal constant KIND_MEMBER = 4;
 
   /// @dev Word 2 of every message is the round id (`CRISPRemoteProgram.remoteRoundId`: the low 96 bits of the E3 id): a
   /// full E3 id does not fit a field element.
@@ -32,17 +30,15 @@ library CRISPRemoteMessages {
     uint256 scopeHash;
     uint256 minAge;
     bool allowMockDocuments;
-    /// @dev The round registers voters on L1 (MEMBER messages) instead of on the L2.
-    bool l1Registration;
     /// @dev 0 none, 1 nationality in a list, 2 nationality not in a list.
     uint256 nationalityMode;
-    /// @dev ZKPassport's Poseidon2 commitment of the country list the L2 checks proofs against; 0 unless the L2
-    /// verifies nationality (`nationalityMode != 0` and `!l1Registration`).
+    /// @dev ZKPassport's Poseidon2 commitment of the country list the L2 checks proofs against; non-zero iff
+    /// `nationalityMode != 0`.
     uint256 nationalityCommitment;
   }
 
   /// @notice `abi.encode(1, roundId, numOptions, credits, inputStart, inputEnd, inputLimit, scopeHash, minAge, allowMockDocuments,
-  /// l1Registration, nationalityMode, nationalityCommitment)`: 13 words.
+  /// nationalityMode, nationalityCommitment)`: 12 words.
   function round(RoundConfig memory config) internal pure returns (bytes memory) {
     return
       abi.encode(
@@ -56,7 +52,6 @@ library CRISPRemoteMessages {
         config.scopeHash,
         config.minAge,
         config.allowMockDocuments ? uint256(1) : uint256(0),
-        config.l1Registration ? uint256(1) : uint256(0),
         config.nationalityMode,
         config.nationalityCommitment
       );
@@ -70,10 +65,5 @@ library CRISPRemoteMessages {
   /// @notice `abi.encode(3, roundId, inputRoot, numInputs)`.
   function inputRoot(uint256 roundId, uint256 root, uint256 numInputs) internal pure returns (bytes memory) {
     return abi.encode(KIND_ROOT, roundId, root, numInputs);
-  }
-
-  /// @notice `abi.encode(4, roundId, slot)`, `slot = uint256(uint160(slotAddress))`.
-  function member(uint256 roundId, address slotAddress) internal pure returns (bytes memory) {
-    return abi.encode(KIND_MEMBER, roundId, uint256(uint160(slotAddress)));
   }
 }

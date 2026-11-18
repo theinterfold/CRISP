@@ -26,27 +26,18 @@ sequenceDiagram
     S->>L1: publishCiphertextOutput (verify binds proof root to the L2 root)
 ```
 
-## Registration paths
+## Registration and nationality
 
-The creator chooses per poll how voters register (the L1 program's custom parameters):
-
-- **On the L2** (above): the voter proves their identity to the L2 contract, which inserts the slot into the
-  census.
-- **On L1**: the poll names a `ZKPassportRegistrar` (`core/contracts`). The voter's ZKPassport proof, bound to
-  the slot key, is verified on L1 and the program sends the slot to the L2 as a MEMBER message that the keeper
-  consumes (`K->>L2: add member (consume MEMBER)`). The CRISP server relays the voter's registration
-  (`POST /registration/l1`), so a voter needs no Ethereum wallet and no L2 account to register; only the
-  poll creator connects one.
-
-Either way a poll can require a minimum age and a nationality in, or not in, a list of countries. The L1
-registrar checks the list itself; the L2 contract is given only its commitment, so the circuit proves a match
-without a list on the L2. See `aztec/README.md` ("Registration paths and nationality").
+Voters register on the L2: the voter proves their identity to the L2 contract, which inserts the slot into the
+census. A poll can require a minimum age and a nationality in, or not in, a list of countries; the L2 contract
+is given only the list's commitment, so the circuit proves a match without a list on the L2. See `aztec/README.md`
+("Registration and nationality").
 
 ## Layout
 
 | Path | Role |
 | --- | --- |
-| `core/contracts` | `CRISPRemoteProgram`: chain-agnostic L1 E3 program; `CRISPRemoteMessages`: ROUND/KEY/ROOT/MEMBER layouts; `ZKPassportRegistrar`: L1 ZKPassport registration of a round's voters. |
+| `core/contracts` | `CRISPRemoteProgram`: chain-agnostic L1 E3 program; `CRISPRemoteMessages`: ROUND/KEY/ROOT layouts. |
 | `core/remote-input` | Rust crate `crisp-remote-input`: the server seam (`RemoteInputSource`, `InputRootSubmitted`, gating, availability attester, staging pass statement). |
 | `core/circuits/staging_pass` | Noir circuit of the staging pass: an anonymous, rate-limited proof that the sender holds the key of some slot of the round's census, required to stage a ciphertext with the server (see `core/README.md`). |
 | `aztec/` | Reference extension for Aztec v6 (see `aztec/README.md`). |

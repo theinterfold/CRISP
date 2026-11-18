@@ -136,45 +136,27 @@ export interface CustomParamsInput {
   credits?: bigint
   minAge?: bigint
   allowMockDocuments?: boolean
-  /** Zero (default) registers voters on Aztec; a contract registers them on L1. */
-  registrar?: string
   /** 0 none, 1 nationality in `countries`, 2 nationality not in `countries`. */
   nationalityMode?: number
   countries?: string[]
   nationalityCommitment?: bigint
 }
 
-/** `abi.encode(numOptions, credits, minAge, allowMockDocuments, registrar, nationalityMode, countries, nationalityCommitment)`. */
+/** `abi.encode(numOptions, credits, minAge, allowMockDocuments, nationalityMode, countries, nationalityCommitment)`. */
 export function customParams(p: CustomParamsInput = {}): string {
   const {
     numOptions = 3n,
     credits = 100n,
     minAge = 18n,
     allowMockDocuments = true,
-    registrar = ethers.ZeroAddress,
     nationalityMode = 0,
     countries = [],
     nationalityCommitment = 0n,
   } = p
   return abiCoder.encode(
-    ['uint256', 'uint256', 'uint256', 'bool', 'address', 'uint8', 'string[]', 'uint256'],
-    [numOptions, credits, minAge, allowMockDocuments, registrar, nationalityMode, countries, nationalityCommitment],
+    ['uint256', 'uint256', 'uint256', 'bool', 'uint8', 'string[]', 'uint256'],
+    [numOptions, credits, minAge, allowMockDocuments, nationalityMode, countries, nationalityCommitment],
   )
-}
-
-export const ZKPASSPORT_DOMAIN = 'poll.theinterfold.com'
-export const PROOF_VALIDITY = 604_800n
-
-/** A registrar for `f.program` verifying with a mock ZKPassport root verifier (our logic only; not evidence of ZKPassport). */
-export async function deployRegistrar(f: Fixture) {
-  const verifier = await ethers.deployContract('MockZKPassportVerifier')
-  const registrar = await ethers.deployContract('ZKPassportRegistrar', [
-    await verifier.getAddress(),
-    await f.program.getAddress(),
-    ZKPASSPORT_DOMAIN,
-    PROOF_VALIDITY,
-  ])
-  return { registrar, verifier }
 }
 
 /** A window that starts shortly after the latest block and lasts an hour. */

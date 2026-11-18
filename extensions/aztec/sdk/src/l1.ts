@@ -6,8 +6,8 @@
 
 import { parseAbi, type Address, type Hex, type PublicClient, type WalletClient } from 'viem'
 
-import { type RoundConfig, memberContent, roundContent, roundIdOf } from './messages'
-import { decodeCustomParams, registersOnL1, type RoundRules } from './rules'
+import { type RoundConfig, roundContent, roundIdOf } from './messages'
+import { decodeCustomParams, type RoundRules } from './rules'
 
 /** The part of `CRISPAztecProgram` and `CRISPRemoteProgram` this package calls or reads. */
 export const programAbi = parseAbi([
@@ -22,7 +22,6 @@ export const programAbi = parseAbi([
   'event CommitteeKeyRelayed(uint256 indexed e3Id, bytes32 committeePublicKey)',
   'event InputRootSubmitted(uint256 indexed e3Id, uint256 inputRoot, uint256 numInputs)',
   'event L1ToL2MessageSent(uint256 indexed e3Id, bytes32 content, bytes32 leaf, uint256 index)',
-  'event MemberSent(uint256 indexed e3Id, address indexed slot, uint256 index)',
 ])
 
 /** The part of the Interfold controller this package reads. */
@@ -88,7 +87,6 @@ export const getRoundConfig = async (
     scopeHash,
     minAge: rules.minAge,
     allowMockDocuments: rules.allowMockDocuments,
-    l1Registration: registersOnL1(rules),
     nationalityMode: rules.nationalityMode,
     nationalityCommitment: rules.nationalityCommitment,
     rules,
@@ -119,28 +117,6 @@ export const getSentMessages = async (client: PublicClient, program: Address, e3
   })
 
   return logs.map(({ args }) => ({ content: args.content as Hex, leaf: args.leaf as Hex, index: args.index as bigint }))
-}
-
-/** A MEMBER message the L1 registrar's program sent: the voter's slot and the Inbox message that carries it. */
-export type SentMember = { slot: Address; message: L1ToL2Message }
-
-/**
- * Every MEMBER message the program sent for a round (one per `registerMember`), oldest first. The message of a member is
- * the `L1ToL2MessageSent` with the `MemberSent` event's Inbox index, and must hash to the content of `(roundId, slot)`.
- */
-export const getSentMembers = async (client: PublicClient, program: Address, e3Id: bigint, fromBlock = 0n): Promise<SentMember[]> => {
-  const [members, messages] = await Promise.all([
-    client.getContractEvents({ address: program, abi: programAbi, eventName: 'MemberSent', args: { e3Id }, fromBlock }),
-    getSentMessages(client, program, e3Id, fromBlock),
-  ])
-
-  return members.map(({ args }) => {
-    const slot = args.slot as Address
-    const message = messages.find((m) => m.index === args.index && BigInt(m.content) === memberContent(roundIdOf(e3Id), slot))
-    if (!message) throw new Error(`Round ${e3Id}: no MEMBER message at Inbox index ${args.index} for slot ${slot}`)
-
-    return { slot, message }
-  })
 }
 
 /** Relay the committee key to Aztec. Permissionless; the key is read from Interfold. */

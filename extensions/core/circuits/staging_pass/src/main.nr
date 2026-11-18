@@ -38,7 +38,7 @@
 //!
 //! The server keeps every tag of a round and refuses a repeat, so one slot stages at most
 //! `max_requests` ciphertexts per round. The tag hashes the slot PUBLIC KEY, not its address.
-//! The address is public (the L1 registration and the census name it), so a tag over the address
+//! The address is public (the registration and the census name it), so a tag over the address
 //! could be linked to its slot by anyone. The public key is never published: votes' signatures are
 //! private inputs of the ballot proof and the registration binds only the address. A tag is then
 //! unlinkable to a slot unless the slot owner reveals a signature made with the key.

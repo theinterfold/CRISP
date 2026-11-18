@@ -13,19 +13,14 @@ const vectors = JSON.parse(readFileSync(new URL('./fixtures/message-vectors.json
 // The same fixture is the contract with the `crisp_aztec` Noir contract and the TypeScript SDK: they assert their own
 // encoders against these literals.
 describe('message vectors', function () {
-  it('encodes the ROUND, KEY, ROOT and MEMBER messages byte for byte', async function () {
+  it('encodes the ROUND, KEY and ROOT messages byte for byte', async function () {
     const harness = await ethers.deployContract('MessageVectorsHarness')
 
-    for (const kind of ['round', 'roundL1']) {
+    for (const kind of ['round', 'roundNoRule']) {
       const round = await harness.round({ ...vectors[kind].fields })
       expect(round).to.equal(vectors[kind].abiEncoded)
       expect(sha256ToField(round)).to.equal(vectors[kind].content)
     }
-
-    const member = await harness.member(vectors.member.fields.roundId, vectors.member.fields.slotAddress)
-    expect(member).to.equal(vectors.member.abiEncoded)
-    expect(sha256ToField(member)).to.equal(vectors.member.content)
-    expect(BigInt(vectors.member.fields.slotAddress).toString()).to.equal(vectors.member.fields.slot)
 
     const key = await harness.committeeKey(vectors.key.fields.roundId, vectors.key.fields.committeePublicKey)
     expect(key).to.equal(vectors.key.abiEncoded)
@@ -38,7 +33,7 @@ describe('message vectors', function () {
 
   it("hashes message contents with the program's sha256ToField", async function () {
     const { program } = await deployFixture()
-    for (const kind of ['round', 'roundL1', 'key', 'root', 'member']) {
+    for (const kind of ['round', 'roundNoRule', 'key', 'root']) {
       expect(await program.sha256ToField(vectors[kind].abiEncoded)).to.equal(vectors[kind].content)
       expect(BigInt(vectors[kind].content).toString()).to.equal(vectors[kind].contentDecimal)
     }

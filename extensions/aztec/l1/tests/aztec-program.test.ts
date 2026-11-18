@@ -9,6 +9,7 @@ import { expect } from 'chai'
 import {
   abiCoder,
   customParams,
+  type CustomParamsInput,
   defaultWindow,
   deployFixture,
   ethers,
@@ -35,6 +36,13 @@ async function request(f: Awaited<ReturnType<typeof deployFixture>>, params = cu
 
 /** The id the remote chain knows an E3 by: the low 96 bits (`CRISPRemoteProgram.remoteRoundId`). */
 const roundIdOf = (e3Id: bigint) => BigInt.asUintN(96, e3Id)
+
+/** `n` distinct three-letter codes. */
+function countryCodes(n: number): string[] {
+  return Array.from({ length: n }, (_, i) =>
+    String.fromCharCode(65 + (i % 26), 65 + (Math.floor(i / 26) % 26), 65 + (Math.floor(i / 676) % 26)),
+  )
+}
 
 /** `uint160(interfold) << 96 | roundId`: what Interfold issues. */
 async function e3IdOf(f: Awaited<ReturnType<typeof deployFixture>>, roundId: bigint) {
@@ -194,7 +202,7 @@ describe('CRISPAztecProgram', function () {
       const [message] = inboxMessages(f, receipt)
       const sent = message.args.message
       const scopeHash = await f.program.scopeHashOf(e3Id)
-      const expectedBytes = abiCoder.encode(Array(13).fill('uint256'), [
+      const expectedBytes = abiCoder.encode(Array(12).fill('uint256'), [
         1,
         roundIdOf(e3Id),
         3,
@@ -205,7 +213,6 @@ describe('CRISPAztecProgram', function () {
         scopeHash,
         18,
         1,
-        0,
         0,
         0,
       ])
@@ -221,7 +228,7 @@ describe('CRISPAztecProgram', function () {
       expect(message.args.hash).to.equal(l1ToL2Leaf(sent))
 
       await expect(tx).to.emit(f.program, 'RoundConfigSent').withArgs(e3Id, expectedContent)
-      await expect(tx).to.emit(f.program, 'RoundRules').withArgs(e3Id, ethers.ZeroAddress, 18, true, 0, [], 0)
+      await expect(tx).to.emit(f.program, 'RoundRules').withArgs(e3Id, 18, true, 0, [], 0)
       await expect(tx).to.emit(f.program, 'L1ToL2MessageSent').withArgs(e3Id, expectedContent, message.args.hash, sent.index)
 
       const round = await f.program.getRound(e3Id)
@@ -239,7 +246,7 @@ describe('CRISPAztecProgram', function () {
       // The remote contract is told the same limit.
       const [message] = inboxMessages(f, limited.receipt)
       const scopeHash = await f.program.scopeHashOf(limited.e3Id)
-      const bytes = abiCoder.encode(Array(13).fill('uint256'), [
+      const bytes = abiCoder.encode(Array(12).fill('uint256'), [
         1,
         roundIdOf(limited.e3Id),
         3,
@@ -250,7 +257,6 @@ describe('CRISPAztecProgram', function () {
         scopeHash,
         18,
         1,
-        0,
         0,
         0,
       ])
@@ -273,6 +279,70 @@ describe('CRISPAztecProgram', function () {
         'CreditsExceedPlaintextModulus',
       )
       await expect(request(f, '0x')).to.be.revert(ethers)
+    })
+
+    it('emits the nationality rule and sends its commitment in the ROUND message', async function () {
+      const f = await deployFixture()
+      const commitment = BigInt(vectors.round.fields.nationalityCommitment)
+      const { e3Id, inputWindow, tx, receipt } = await request(
+        f,
+        customParams({ nationalityMode: 2, countries: ['PRK', 'IRN'], minAge: 21n, allowMockDocuments: false, nationalityCommitment: commitment }),
+      )
+      await expect(tx).to.emit(f.program, 'RoundRules').withArgs(e3Id, 21, false, 2, ['PRK', 'IRN'], commitment)
+
+      const expected = abiCoder.encode(Array(12).fill('uint256'), [
+        1,
+        roundIdOf(e3Id),
+        3,
+        100,
+        inputWindow[0],
+        inputWindow[1],
+        65536,
+        await f.program.scopeHashOf(e3Id),
+        21,
+        0,
+        2,
+        commitment,
+      ])
+      expect(inboxMessages(f, receipt)[0].args.message.content).to.equal(sha256ToField(expected))
+    })
+
+    it('refuses an unknown nationality mode and country lists that do not fit the mode', async function () {
+      const f = await deployFixture()
+      const commitment = 5n
+      const bad = (p: CustomParamsInput, error: string) =>
+        expect(request(f, customParams(p))).to.be.revertedWithCustomError(f.program, error)
+
+      await bad({ nationalityMode: 3, countries: ['DEU'], nationalityCommitment: commitment }, 'InvalidNationalityMode')
+      // mode 0: no list
+      await bad({ nationalityMode: 0, countries: ['DEU'] }, 'InvalidCountries')
+      // mode 1 and 2: 1..200 entries
+      await bad({ nationalityMode: 1, countries: [], nationalityCommitment: commitment }, 'InvalidCountries')
+      await bad({ nationalityMode: 2, countries: [], nationalityCommitment: commitment }, 'InvalidCountries')
+      await bad({ nationalityMode: 1, countries: countryCodes(201), nationalityCommitment: commitment }, 'InvalidCountries')
+      // exactly three letters A-Z
+      for (const code of ['DE', 'DEUT', 'deu', 'D<<', 'D1U', '']) {
+        await bad({ nationalityMode: 1, countries: ['FRA', code], nationalityCommitment: commitment }, 'InvalidCountries')
+      }
+    })
+
+    it('accepts 200 countries', async function () {
+      const f = await deployFixture()
+      await request(f, customParams({ nationalityMode: 2, countries: countryCodes(200), nationalityCommitment: 7n }))
+    })
+
+    it('requires a nationality commitment exactly when there is a nationality rule', async function () {
+      const f = await deployFixture()
+      const bad = (p: CustomParamsInput) =>
+        expect(request(f, customParams(p))).to.be.revertedWithCustomError(f.program, 'InvalidNationalityCommitment')
+
+      // mode 0 carries none
+      await bad({ nationalityCommitment: 1n })
+      // a rule needs a non-zero field element
+      await bad({ nationalityMode: 1, countries: ['DEU'], nationalityCommitment: 0n })
+      await bad({ nationalityMode: 1, countries: ['DEU'], nationalityCommitment: FIELD_MODULUS })
+      await bad({ nationalityMode: 2, countries: ['DEU'], nationalityCommitment: FIELD_MODULUS + 1n })
+      await request(f, customParams({ nationalityMode: 2, countries: ['DEU'], nationalityCommitment: FIELD_MODULUS - 1n }))
     })
 
     it('can only be called by the bound Interfold', async function () {

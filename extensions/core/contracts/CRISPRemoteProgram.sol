@@ -48,9 +48,7 @@ struct BfvParameters {
 /// guest, program server) is shared; see `extensions/README.md`. This contract has no input tree and takes no
 /// inputs on L1, so `publishInput` always reverts.
 ///
-/// Voters register on the L2 (a ZKPassport proof the L2 verifies) or, when the round names a `registrar`, on L1: the
-/// registrar (see `ZKPassportRegistrar`) verifies the proof and calls {registerMember}, which sends the voter's slot
-/// to the L2. Never both: they would be two uniqueness domains.
+/// Voters register on the L2: a ZKPassport proof the L2 verifies.
 ///
 /// An adapter supplies only transport: {_sendToRemote}, {scopeOf}, and an entry point that authenticates the L2's
 /// root message and calls {_acceptInputRoot}. Everything else is chain-agnostic.
@@ -67,27 +65,12 @@ abstract contract CRISPRemoteProgram is IE3Program, IE3ProgramDataAvailability, 
     uint256 numInputs;
   }
 
-  /// @notice Who may join a round's electorate, kept on L1 for the round's registrar and for off-chain readers.
-  struct Rules {
-    /// @notice The only account that may call {registerMember}; zero when voters register on the L2.
-    address registrar;
-    bool allowMockDocuments;
-    /// @notice 0 none, 1 nationality in `countries`, 2 nationality not in `countries`.
-    uint8 nationalityMode;
-    uint256 minAge;
-    /// @notice `keccak256(abi.encode(countries))`.
-    bytes32 countriesHash;
-    /// @notice End of the input window: the last moment a voter can be registered.
-    uint256 inputEnd;
-  }
-
   /// @notice The decoded `customParams`.
   struct CustomParams {
     uint256 numOptions;
     uint256 credits;
     uint256 minAge;
     bool allowMockDocuments;
-    address registrar;
     uint8 nationalityMode;
     string[] countries;
     uint256 nationalityCommitment;
@@ -132,7 +115,6 @@ abstract contract CRISPRemoteProgram is IE3Program, IE3ProgramDataAvailability, 
   uint256 public immutable remoteFinalityWindow;
 
   mapping(uint256 e3Id => Round) internal rounds;
-  mapping(uint256 e3Id => Rules) internal rules;
 
   error CallerNotAuthorized();
   error E3AlreadyInitialized();
@@ -151,17 +133,11 @@ abstract contract CRISPRemoteProgram is IE3Program, IE3ProgramDataAvailability, 
   error ComputeWindowTooShort(uint256 e3Id, uint256 computeWindow, uint256 required);
   error InvalidNumOptions();
   error InvalidMinAge(uint256 minAge);
-  /// @notice `registrar` is not a contract.
-  error InvalidRegistrar(address registrar);
   error InvalidNationalityMode(uint256 mode);
   /// @notice A country list that is empty or too long for the mode, or holds an entry that is not three letters `A-Z`.
   error InvalidCountries();
-  /// @notice Zero or not a field element where the L2 checks nationality, or non-zero where it does not.
+  /// @notice Zero or not a field element with a nationality rule, or non-zero without one.
   error InvalidNationalityCommitment(uint256 commitment);
-  /// @notice {registerMember} was called by an account other than the round's registrar (none, for an L2-registration round).
-  error CallerNotRegistrar(uint256 e3Id, address caller);
-  /// @notice {registerMember} after the round's input window ended.
-  error RegistrationClosed(uint256 e3Id);
   error CreditsExceedPlaintextModulus(uint256 credits, uint256 plaintextModulus);
   error VotingStartsBeforeKeyDeadline(uint256 e3Id, uint256 earliestStart, uint256 actualStart);
   error VotingWindowTooShort(uint256 e3Id, uint256 votingStartsAt, uint256 votingEndsAt, uint256 required);
@@ -181,20 +157,16 @@ abstract contract CRISPRemoteProgram is IE3Program, IE3ProgramDataAvailability, 
   event InterfoldBound(address indexed interfold);
   /// @notice The round configuration was handed to the remote chain. `content` is what the bridge carries.
   event RoundConfigSent(uint256 indexed e3Id, bytes32 content);
-  /// @notice Who may join a round: the decoded rules, for the registrar and for apps that recompute the nationality
-  /// commitment (`nationalityCommitment` is zero unless the L2 verifies nationality).
+  /// @notice Who may join a round: the decoded rules, for apps that recompute the nationality commitment and build the
+  /// ZKPassport request (`nationalityCommitment` is zero iff `nationalityMode` is 0).
   event RoundRules(
     uint256 indexed e3Id,
-    address registrar,
     uint256 minAge,
     bool allowMockDocuments,
     uint8 nationalityMode,
     string[] countries,
     uint256 nationalityCommitment
   );
-  /// @notice A voter's slot was handed to the remote chain by the round's registrar. `index` is the position of the
-  /// message in the bridge's queue (see {_sendToRemote}).
-  event MemberSent(uint256 indexed e3Id, address indexed slot, uint256 index);
   /// @notice The committee key was handed to the remote chain.
   event CommitteeKeyRelayed(uint256 indexed e3Id, bytes32 committeePublicKey);
   /// @notice The remote chain's input root was authenticated and recorded.
@@ -233,8 +205,7 @@ abstract contract CRISPRemoteProgram is IE3Program, IE3ProgramDataAvailability, 
 
   /// @notice Deliver `message` (one of the {CRISPRemoteMessages} layouts) to the remote contract.
   /// @return content The value the bridge carries for this message; reported in events.
-  /// @return index The message's position in the bridge's queue (the Aztec Inbox leaf index), which the L2 consumes it with.
-  function _sendToRemote(uint256 e3Id, bytes memory message) internal virtual returns (bytes32 content, uint256 index);
+  function _sendToRemote(uint256 e3Id, bytes memory message) internal virtual returns (bytes32 content);
 
   /// @notice The scope string a voter's identity proof is bound to for this round.
   /// @dev Must be unique per program, chain, and round so a proof cannot be replayed into another round.
@@ -292,25 +263,16 @@ abstract contract CRISPRemoteProgram is IE3Program, IE3ProgramDataAvailability, 
     round.paramsHash = keccak256(e3ProgramParams);
     round.numOptions = config.numOptions;
     round.inputLimit = config.inputLimit;
-    rules[e3Id] = Rules({
-      registrar: params.registrar,
-      allowMockDocuments: params.allowMockDocuments,
-      nationalityMode: params.nationalityMode,
-      minAge: params.minAge,
-      countriesHash: keccak256(abi.encode(params.countries)),
-      inputEnd: config.inputEnd
-    });
 
     emit RoundRules(
       e3Id,
-      params.registrar,
       params.minAge,
       params.allowMockDocuments,
       params.nationalityMode,
       params.countries,
       params.nationalityCommitment
     );
-    (bytes32 content, ) = _sendToRemote(e3Id, CRISPRemoteMessages.round(config));
+    bytes32 content = _sendToRemote(e3Id, CRISPRemoteMessages.round(config));
     emit RoundConfigSent(e3Id, content);
 
     return ENCRYPTION_SCHEME_ID;
@@ -330,18 +292,6 @@ abstract contract CRISPRemoteProgram is IE3Program, IE3ProgramDataAvailability, 
     _sendToRemote(e3Id, CRISPRemoteMessages.committeeKey(remoteRoundId(e3Id), committeePublicKey));
 
     emit CommitteeKeyRelayed(e3Id, committeePublicKey);
-  }
-
-  /// @notice Register a voter's slot on the remote chain. Only the round's registrar, which has verified the voter's
-  /// ZKPassport proof for this round, may call it.
-  /// @dev Sends MEMBER; the remote chain applies its own window, uniqueness and capacity checks when it consumes it.
-  function registerMember(uint256 e3Id, address slotAddress) external {
-    Rules storage r = rules[e3Id];
-    if (r.registrar == address(0) || msg.sender != r.registrar) revert CallerNotRegistrar(e3Id, msg.sender);
-    if (block.timestamp >= r.inputEnd) revert RegistrationClosed(e3Id);
-
-    (, uint256 index) = _sendToRemote(e3Id, CRISPRemoteMessages.member(remoteRoundId(e3Id), slotAddress));
-    emit MemberSent(e3Id, slotAddress, index);
   }
 
   /// @notice Record the input root the remote chain reported for a round.
@@ -438,11 +388,6 @@ abstract contract CRISPRemoteProgram is IE3Program, IE3ProgramDataAvailability, 
     return rounds[e3Id];
   }
 
-  /// @notice Who may join a round. All zero for an unknown E3.
-  function getRules(uint256 e3Id) external view returns (Rules memory) {
-    return rules[e3Id];
-  }
-
   /// @notice Params hash of an E3: `keccak256(e3ProgramParams)`.
   function getParamsHash(uint256 e3Id) external view returns (bytes32) {
     return rounds[e3Id].paramsHash;
@@ -485,29 +430,26 @@ abstract contract CRISPRemoteProgram is IE3Program, IE3ProgramDataAvailability, 
   // ---------------------------------------------------------------------------------------------
 
   /// @notice Decode and validate `customParams`.
-  /// @dev `abi.encode(uint256 numOptions, uint256 credits, uint256 minAge, bool allowMockDocuments, address registrar,
-  /// uint8 nationalityMode, string[] countries, uint256 nationalityCommitment)`.
+  /// @dev `abi.encode(uint256 numOptions, uint256 credits, uint256 minAge, bool allowMockDocuments, uint8 nationalityMode,
+  /// string[] countries, uint256 nationalityCommitment)`.
   ///
-  /// - `registrar == 0`: voters register on the L2. With a nationality rule the L2 checks ZKPassport's commitment of the
-  ///   list, which L1 cannot recompute, so it only checks that one is given (a wrong one makes the round unregistrable).
-  /// - `registrar != 0`: voters register on L1 through that contract, which checks the list itself, so no commitment.
   /// - mode 0: no list and no commitment; mode 1 or 2: 1..{MAX_COUNTRIES} alpha-3 codes, three letters `A-Z` each.
-  function _decodeCustomParams(bytes calldata customParams) internal view returns (CustomParams memory params) {
+  /// - with a nationality rule the L2 checks ZKPassport's commitment of the list, which L1 cannot recompute, so it only
+  ///   checks that one is given (a wrong one makes the round unregistrable).
+  function _decodeCustomParams(bytes calldata customParams) internal pure returns (CustomParams memory params) {
     (
       params.numOptions,
       params.credits,
       params.minAge,
       params.allowMockDocuments,
-      params.registrar,
       params.nationalityMode,
       params.countries,
       params.nationalityCommitment
-    ) = abi.decode(customParams, (uint256, uint256, uint256, bool, address, uint8, string[], uint256));
+    ) = abi.decode(customParams, (uint256, uint256, uint256, bool, uint8, string[], uint256));
 
     // The circuit asserts `num_options <= MAX_OPTIONS`; a larger round would accept no ballot at all.
     if (params.numOptions < 2 || params.numOptions > MAX_VOTE_OPTIONS) revert InvalidNumOptions();
     if (params.minAge > MAX_MIN_AGE) revert InvalidMinAge(params.minAge);
-    if (params.registrar != address(0) && params.registrar.code.length == 0) revert InvalidRegistrar(params.registrar);
 
     uint256 mode = params.nationalityMode;
     if (mode > 2) revert InvalidNationalityMode(mode);
@@ -522,8 +464,7 @@ abstract contract CRISPRemoteProgram is IE3Program, IE3ProgramDataAvailability, 
     }
 
     uint256 commitment = params.nationalityCommitment;
-    bool l2Checks = mode != 0 && params.registrar == address(0);
-    if (l2Checks ? (commitment == 0 || commitment >= FIELD_MODULUS) : commitment != 0) revert InvalidNationalityCommitment(commitment);
+    if (mode != 0 ? (commitment == 0 || commitment >= FIELD_MODULUS) : commitment != 0) revert InvalidNationalityCommitment(commitment);
   }
 
   /// @notice Build the ROUND message from validated parameters.
@@ -551,7 +492,6 @@ abstract contract CRISPRemoteProgram is IE3Program, IE3ProgramDataAvailability, 
       scopeHash: scopeHashOf(e3Id),
       minAge: params.minAge,
       allowMockDocuments: params.allowMockDocuments,
-      l1Registration: params.registrar != address(0),
       nationalityMode: params.nationalityMode,
       nationalityCommitment: params.nationalityCommitment
     });

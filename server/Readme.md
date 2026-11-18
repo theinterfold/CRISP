@@ -97,10 +97,6 @@ The server exposes several RESTful API endpoints:
   one-time tag, `STAGING_MAX_REQUESTS_PER_SLOT` per slot and round) that is verified with `bb` 6.0.0:
   the server needs `STAGING_PASS_VK_PATH` and `BB_BINARY_PATH` (the Docker image ships both) and refuses to
   start without them. In that mode `/voting/broadcast` and `/rounds/request` refuse. See `../extensions/aztec/README.md`.
-- `POST /registration/l1`: only with `PROGRAM_KIND=aztec` and `ZKPASSPORT_REGISTRAR_ADDRESS` set; relays
-  `ZKPassportRegistrar.register` calldata from the server key, so a voter needs no Ethereum wallet. The
-  call is simulated first and a refusal comes back as 400 with the registrar's error; the answer is
-  `{ "txHash": "0x…" }`. `GET /voting/remote-input/config` lists the registrar as `zkpassport_registrar`.
 
 ## Upgrading across an input-format change
 

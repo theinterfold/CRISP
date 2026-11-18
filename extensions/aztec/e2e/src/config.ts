@@ -31,7 +31,6 @@ export const paths = {
   serverBinary: join(REPO, 'target', 'debug', 'server'),
   /** The staging pass circuit's verification key the server checks passes with (`extensions/core/circuits/staging_pass`). */
   stagingPassVk: join(REPO, 'extensions', 'core', 'circuits', 'staging_pass', 'compiled', 'staging_pass.vk'),
-  mockRootVerifierArtifact: join(REPO, 'extensions', 'aztec', 'l1', 'artifacts', 'contracts', 'test', 'MockZKPassport.sol', 'MockZKPassportVerifier.json'),
   keeperMain: join(REPO, 'extensions', 'aztec', 'keeper', 'dist', 'main.js'),
   contractArtifact: join(REPO, 'extensions', 'aztec', 'contracts', 'target', 'crisp_aztec-CrispAztec.json'),
   interfoldBin: join(WORK, 'bin', 'interfold'),

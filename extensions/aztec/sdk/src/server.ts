@@ -18,8 +18,6 @@ export type RemoteInputConfig = {
   signer: Address
   /** The signer's secp256k1 public key, `0x` + 64 bytes (`x ‖ y`): what `deployCrispAztec` takes as `availabilitySignerPublicKey`. */
   signer_public_key: Hex
-  /** The L1 `ZKPassportRegistrar` the server relays registrations to (`POST /registration/l1`); absent when it is not configured. */
-  zkpassport_registrar?: Address
   /** Staging passes one slot key may use per round (`STAGING_MAX_REQUESTS_PER_SLOT`); the circuit's `max_requests`. */
   staging_max_requests: number
 }
@@ -99,22 +97,4 @@ export const stageInput = async (
     signature: body.signature,
     signer: body.signer,
   }
-}
-
-/**
- * Have the CRISP server send a voter's `ZKPassportRegistrar.register` transaction (`registerOnL1Calldata`). The voter needs no
- * wallet or funds: the proof binds the voter's slot, so the relayer can neither redirect nor alter the registration. The server
- * simulates the call first and answers 400 with the revert reason when it would fail.
- */
-export const relayRegistrationOnL1 = async (serverUrl: string, calldata: Hex, fetchImpl: typeof fetch = fetch): Promise<{ txHash: Hex }> => {
-  const response = await fetchImpl(`${serverUrl}/registration/l1`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ calldata }),
-  })
-  if (!response.ok) throw await failure('L1 registration', response)
-
-  const body = (await response.json()) as { txHash: Hex }
-
-  return { txHash: body.txHash }
 }

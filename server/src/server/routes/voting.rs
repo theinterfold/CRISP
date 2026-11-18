@@ -440,9 +440,6 @@ async fn remote_input_config(availability: web::Data<AvailabilityService>) -> im
         aztec_contract: encode_prefixed(contract),
         signer: signer.to_string(),
         signer_public_key: encode_prefixed(public_key),
-        zkpassport_registrar: CONFIG
-            .zkpassport_registrar()
-            .map(|registrar| registrar.to_string()),
         staging_max_requests,
     })
 }

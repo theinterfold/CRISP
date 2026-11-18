@@ -155,11 +155,6 @@ pub struct Config {
     /// The first Aztec block that can hold a log of the contract. Absent starts at the first block.
     #[serde(default)]
     pub aztec_start_block: Option<u64>,
-    /// The `ZKPassportRegistrar` of `E3_PROGRAM_ADDRESS`. With it, `PROGRAM_KIND=aztec` relays
-    /// L1 ZKPassport registrations (`POST /registration/l1`) from the server key, so a voter needs
-    /// no Ethereum wallet. Absent: no round of this server registers on L1.
-    #[serde(default)]
-    pub zkpassport_registrar_address: Option<String>,
     /// How many staging passes one slot key may use per round (`PROGRAM_KIND=aztec`). Each
     /// `POST /voting/remote-input`, vote or mask, spends one, so a slot stages at most this many
     /// ciphertexts a round. The pass circuit takes it as a public input and the SDK proves
@@ -214,30 +209,7 @@ impl Config {
             .map_err(|_| invalid("AZTEC_CONTRACT_ADDRESS must be a 32-byte hex address"))
     }
 
-    /// The registrar that `POST /registration/l1` relays to. `from_env` refuses a malformed one.
-    pub fn zkpassport_registrar(&self) -> Option<Address> {
-        self.zkpassport_registrar_address
-            .as_deref()
-            .and_then(|address| address.trim().parse().ok())
-    }
-
     fn validate_program(&self) -> Result<(), ConfigError> {
-        if let Some(address) = self
-            .zkpassport_registrar_address
-            .as_deref()
-            .filter(|address| !address.trim().is_empty())
-        {
-            if !self.is_aztec() {
-                return Err(invalid(
-                    "ZKPASSPORT_REGISTRAR_ADDRESS is only for PROGRAM_KIND=aztec",
-                ));
-            }
-            if address.trim().parse::<Address>().is_err() {
-                return Err(invalid(
-                    "ZKPASSPORT_REGISTRAR_ADDRESS must be an Ethereum address",
-                ));
-            }
-        }
         if !self.is_aztec() {
             return Ok(());
         }
@@ -763,48 +735,5 @@ mod tests {
         assert!(valid.is_aztec());
         assert_eq!(valid.staging_max_requests_per_slot, 16);
         assert_eq!(valid.bb_binary_path, "bb");
-    }
-
-    #[test]
-    fn the_zkpassport_registrar_is_an_address_and_only_for_an_aztec_instance() {
-        let contract = format!("0x{}", "ab".repeat(32));
-        let registrar = format!("0x{}", "cd".repeat(20));
-        let aztec = |extra: serde_json::Value| {
-            let mut program = serde_json::json!({
-                "program_kind": "aztec",
-                "aztec_node_url": "http://127.0.0.1:8080",
-                "aztec_contract_address": contract,
-                "staging_pass_vk_path": "staging_pass.vk"
-            });
-            program
-                .as_object_mut()
-                .unwrap()
-                .extend(extra.as_object().unwrap().clone());
-            config_with(program)
-        };
-
-        // Optional: an Aztec instance without one relays no registrations.
-        let none = aztec(serde_json::json!({}));
-        assert!(none.validate_program().is_ok());
-        assert_eq!(none.zkpassport_registrar(), None);
-
-        let set = aztec(serde_json::json!({ "zkpassport_registrar_address": registrar }));
-        assert!(set.validate_program().is_ok());
-        assert_eq!(
-            set.zkpassport_registrar(),
-            Some(registrar.parse::<super::Address>().unwrap())
-        );
-
-        assert!(
-            aztec(serde_json::json!({ "zkpassport_registrar_address": "0x1234" }))
-                .validate_program()
-                .is_err()
-        );
-        // An L1 `CRISPProgram` has no registrar.
-        assert!(
-            config_with(serde_json::json!({ "zkpassport_registrar_address": registrar }))
-                .validate_program()
-                .is_err()
-        );
     }
 }
