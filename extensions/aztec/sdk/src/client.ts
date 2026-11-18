@@ -65,7 +65,7 @@ export type DeployParams = {
   ct1VkHash: bigint
   crispVkHash: bigint
   zkpassportDomainHash: bigint
-  /** The ZKPassport circuits release, packed (`0x16` in the top byte for 0.22.0). */
+  /** The ZKPassport circuits release, packed (`0x17` in the top byte for 0.23.0, the only release the contract verifies). */
   zkpassportCircuitVersion: bigint
   zkpassportValiditySeconds: bigint
   zkpassportRegistry: AztecAddress

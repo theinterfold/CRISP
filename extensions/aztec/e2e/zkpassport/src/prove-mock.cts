@@ -50,9 +50,7 @@ const {
   getCommitmentFromDSCProof,
   getCommitmentInFromDisclosureProof,
   getCommitmentInFromIDDataProof,
-  getCommitmentInFromIntegrityProof,
   getCommitmentOutFromIDDataProof,
-  getCommitmentOutFromIntegrityProof,
   getMerkleRootFromDSCProof,
   getOuterCircuitInputs,
   getParameterCommitmentFromDisclosureProof,
@@ -72,6 +70,8 @@ const assert = (condition: boolean, message: string) => {
   if (!condition) throw new Error(`ASSERT FAILED: ${message}`)
 }
 const hex = (value: bigint) => `0x${value.toString(16).padStart(64, '0')}`
+/** `verification_method` of an issuer-signed eMRTD chip read, the last public input of every outer_count_K proof (circuits >= 0.23.0). */
+const ICAO_CHIP = 100n
 
 type Request = {
   /** `roots`: only report what a registry must hold for this authority and release; nothing is proved. */
@@ -261,8 +261,12 @@ const main = async () => {
   assert(getCommitmentInFromIDDataProof(idR.proof) === cscToDscCommitment, 'id commitment_in == dsc commitment_out')
 
   const integrityR = await proveSubproof('data_check_integrity_sa_sha256_dg_sha256', await helper.generateCircuitInputs('integrity', now))
-  assert(getCommitmentInFromIntegrityProof(integrityR.proof) === getCommitmentOutFromIDDataProof(idR.proof), 'integrity commitment_in == id commitment_out')
-  const integrityToDisclosure = getCommitmentOutFromIntegrityProof(integrityR.proof)
+  // The integrity proof's outputs are [commitment_in, commitment_out, verification_method] since 0.23.0; the checkout's pinned
+  // @zkpassport/utils reads them from the end of the list, so they are read by position here.
+  const [integrityIn, integrityOut] = integrityR.proof.publicInputs.map((x: string) => BigInt(x))
+  assert(integrityR.proof.publicInputs.length === 3 && BigInt(integrityR.proof.publicInputs[2]) === ICAO_CHIP, 'integrity proof outputs the ICAO chip verification method')
+  assert(integrityIn === getCommitmentOutFromIDDataProof(idR.proof), 'integrity commitment_in == id commitment_out')
+  const integrityToDisclosure = integrityOut
 
   const disclosures: { name: string; subproof: Subproof }[] = []
   const chainCheck = (name: string, r: { proof: { proof: string[]; publicInputs: string[] } }) =>
@@ -309,15 +313,19 @@ const main = async () => {
   const chain = [toSubproof(dscR), toSubproof(idR), toSubproof(integrityR)]
   const merkle = []
   for (const s of [...chain, ...disclosures.map((d) => d.subproof)]) merkle.push(await getCircuitMerkleProof(s.vkeyHash, manifest))
-  assert(merkle[0].root === manifest.root, `the manifest's circuits hash to its root ${manifest.root}`)
+  // Compared as numbers: the utils return the root without its leading zeros, the manifest with them.
+  assert(BigInt(merkle[0].root) === BigInt(manifest.root), `the manifest's circuits hash to its root ${manifest.root}`)
 
-  const outerInputs = await getOuterCircuitInputs(
+  const outerBase = await getOuterCircuitInputs(
     subproofInput(chain[0], merkle[0]),
     subproofInput(chain[1], merkle[1]),
     subproofInput(chain[2], merkle[2]),
     disclosures.map((d, i) => subproofInput(d.subproof, merkle[3 + i])),
     manifest.root,
   )
+  // The outer circuit takes the integrity proof's third output as a public input of its own since 0.23.0; the checkout's
+  // pinned @zkpassport/utils predates it and does not add it.
+  const outerInputs = { ...outerBase, verification_method: integrityR.proof.publicInputs[2] }
   const outerPackaged = await packagedCircuit(outerName)
   const outerCircuit = new Circuit(outerPackaged, outerName)
   log(`proving ${outerName} ...`)
@@ -327,10 +335,12 @@ const main = async () => {
   await outerCircuit.destroy()
   assert(outerVkeyHash === manifest.circuits[outerName].hash, `${outerName} vk hash == the manifest's`)
 
-  // Public inputs: [certRoot, circuitRoot, currentDate, domain, scope, paramCommitments(K-3)..., nullifierType, scopedNullifier, oprfPkHash]
+  // Public inputs (circuits 0.23.0): [certRoot, circuitRoot, currentDate, domain, scope, paramCommitments(K-3)..., nullifierType,
+  // scopedNullifier, oprfPkHash, verificationMethod]
   const publicInputs: string[] = outer.publicInputs
   const k = disclosures.length + 3
-  assert(publicInputs.length === k + 5, `outer public inputs: ${publicInputs.length} == ${k + 5}`)
+  assert(publicInputs.length === k + 6, `outer public inputs: ${publicInputs.length} == ${k + 6}`)
+  assert(BigInt(publicInputs[k + 6 - 1]) === ICAO_CHIP, `verification method public input == ${ICAO_CHIP} (ICAO chip)`)
   assert(certificateRegistryRoot === BigInt(packagedCerts.root), 'the DSC proof commits to the authority the registry will hold')
   assert(BigInt(publicInputs[2]) === BigInt(now), 'current_date public input == now')
   assert(BigInt(publicInputs[3]) === domain && BigInt(publicInputs[4]) === scope, 'domain and scope public inputs as asked')
@@ -348,8 +358,8 @@ const main = async () => {
         certificateRegistryRoot: hex(certificateRegistryRoot),
         circuitRegistryRoot: manifest.root,
         vkeyHash: outerVkeyHash,
-        nullifierType: Number(BigInt(publicInputs[k + 5 - 3])),
-        scopedNullifier: publicInputs[k + 5 - 2],
+        nullifierType: Number(BigInt(publicInputs[k + 6 - 4])),
+        scopedNullifier: publicInputs[k + 6 - 3],
         vkeyFields: outerVkey,
         proofFields: outer.proof,
         publicInputs,

@@ -46,10 +46,12 @@ pub(crate) global BIND_ACCOUNT: Field =
 pub(crate) global BIND_COMMITMENT: Field =
     0x1fe004f678d9cf91bf41adf1ee3cd1b12f30799a167cc8c4c9307fa9a7399970;
 
-/// Public inputs transcribed from a real outer_count_4 proof (a byte-disclosure check against a
+/// Public inputs transcribed from a real outer_count_4 proof of circuits release 0.22.0 (a byte-disclosure check against a
 /// synthetic certificate registry and a circuits release's circuit registry, current_date
-/// 2050-01-01), in the K=4 layout parse.nr decodes.
-pub(crate) global FIXTURE_PUBLIC_INPUTS: [Field; 9] = [
+/// 2050-01-01), in the K=4 layout parse.nr decodes. CRISP PATCH: the verification method (100, the last public input
+/// of release 0.23.0) is appended by hand. These tests exercise parsing and policy only, never the proof; the real
+/// 0.23.0 proof is `fixtures::proof::AGE_FIXTURE_BLOB`.
+pub(crate) global FIXTURE_PUBLIC_INPUTS: [Field; 10] = [
     0x27465e0ef850b441de340e5d0223edc6e21b6902fb57550bb367b5df382375f9, // cert root
     0x0289526299c3d1afa2ad1113678fb426ed587156a1a4ba622023d81989728210, // circuit root
     0x00000000000000000000000000000000000000000000000000000000967a7600, // current_date
@@ -59,6 +61,7 @@ pub(crate) global FIXTURE_PUBLIC_INPUTS: [Field; 9] = [
     0x0000000000000000000000000000000000000000000000000000000000000000, // nullifier_type
     0x1c2de0aff0b433e96e0f1da31cec1d9e8b5e98c75d8d5c2e3e255ad689fe6354, // scoped_nullifier
     0x0000000000000000000000000000000000000000000000000000000000000000, // oprf_pk_hash
+    0x0000000000000000000000000000000000000000000000000000000000000064, // verification_method (ICAO chip, 100)
 ];
 
 // A real age proof for tests, written by test-harness/generate-proof-fixtures.sh.

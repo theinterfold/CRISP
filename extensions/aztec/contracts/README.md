@@ -56,10 +56,10 @@ aztec-nr and the vendored ZKPassport verifier, not from this contract.
 
 `vendor/zkpassport/{core,registry_contract,verifier}` are copied from
 [`zkpassport/zkpassport-packages`](https://github.com/zkpassport/zkpassport-packages)
-`packages/aztec/noir` at commit `bc1c080fb56e3c2679f8b396056a0679637a3308` (Apache-2.0), with one
-patch (below). They are vendored because Nargo can only pin a git dependency to a tag and the upstream
+`packages/aztec/noir` at commit `bc1c080fb56e3c2679f8b396056a0679637a3308` (Apache-2.0), with two
+patches (below). They are vendored because Nargo can only pin a git dependency to a tag and the upstream
 repository has no tag for these packages. The only things they pull from the network are `aztec-nr`
-v6.0.0 and the tag `noir-v1.0.0` of `zkpassport/circuits`. The registry is a workspace member so that TXE
+v6.0.0 and the tag `noir-v1.0.0` of `zkpassport/circuits` (the commitment libraries, unchanged in release 0.23.0). The registry is a workspace member so that TXE
 can deploy it, and the verifier is one so that `aztec test` runs its tests. Replace the directory with a
 tagged dependency once upstream publishes one.
 
@@ -72,6 +72,19 @@ verifier for a nationality subproof with that exact commitment. The method build
 Three unit tests in `query.nr` cover it, and the SDK computes the commitment with
 `@zkpassport/utils` `getCountryParameterCommitment`, checked against the Noir fixtures. Drop the patch
 when upstream exposes the same.
+
+**CRISP patch: ZKPassport circuits release 0.23.0 only (`verification_method`)**
+(`vendor/zkpassport/core/src/{constants,parse,verify}.nr`, `vendor/zkpassport/verifier/src/verify.nr`).
+Upstream's library is still on the 0.22.0 layout. Release 0.23.0 adds one public input to every
+`outer_count_K` proof, the `verification_method`, last: `K + 6` public inputs instead of `K + 5`, so the
+proof capsule is `vk(115) ‖ proof(458) ‖ public_inputs(K + 6)` (`VK_FIELDS` and `PROOF_FIELDS` are unchanged).
+`parse_public_inputs` reads it into `PublicInputs.verification_method`, and `verify_outer_proof_core` asserts
+it equals 100, an eMRTD chip read (`VERIFICATION_METHOD_ICAO_CHIP`), the only method CRISP accepts. Release
+0.22.0 proofs are rejected on their size and by the registry (a `ServiceConfig.version` of `packed("0.23.0")`,
+`0x17` in the top byte, has none of their vks); there is no support for both. The test fixture
+`core/src/fixtures/proof.nr` is a real `outer_count_5` proof of release 0.23.0 (made by
+`e2e/zkpassport/src/prove-mock.cts` at the circuits commit `4d90f1f`, checked with `bb verify` 6.0.0), and the SDK
+builds the same capsule (`sdk/src/zkpassport.ts`). Drop the patch when `@zkpassport/aztec` supports release 0.23.0.
 
 ## Storage
 
@@ -254,7 +267,7 @@ to the local-network run:
 
 - ROUND and KEY consumption, replay and tampered arguments, limit and window validation.
 - Registration: capsule delivery, registry lookups (a vendored registry deployed and seeded at the local
-  network's canonical address, using ZKPassport's own age fixture), bound-address and scope mismatches, one
+  network's canonical address, using the real release 0.23.0 age proof of `vendor/zkpassport/core/src/fixtures/proof.nr`), bound-address and scope mismatches, one
   registration per document and per slot, the registration window, the age and no-age entry points.
 - Nationality: the `register_with_nationality*` entry points accept a proof whose commitment equals the
   round's (in and not-in lists), refuse another list, another account and a wrong subproof count, and every

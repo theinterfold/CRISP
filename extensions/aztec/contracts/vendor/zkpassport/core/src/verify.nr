@@ -1,6 +1,7 @@
 use crate::constants::{
     NULLIFIER_TYPE_NON_SALTED, NULLIFIER_TYPE_NON_SALTED_MOCK, NULLIFIER_TYPE_NONE,
-    NULLIFIER_TYPE_SALTED, NULLIFIER_TYPE_SALTED_MOCK, PROOF_FIELDS, VK_FIELDS,
+    NULLIFIER_TYPE_SALTED, NULLIFIER_TYPE_SALTED_MOCK, PROOF_FIELDS, VERIFICATION_METHOD_ICAO_CHIP,
+    VK_FIELDS,
 };
 use crate::parse::{parse_public_inputs, PublicInputs};
 use bb_proof_verification::verify_honk_proof;
@@ -15,7 +16,7 @@ pub struct VerifiedOuterProof<let K: u32> {
 pub fn verify_outer_proof_core<let K: u32>(
     vk: [Field; VK_FIELDS],
     proof: [Field; PROOF_FIELDS],
-    public_inputs: [Field; K + 5],
+    public_inputs: [Field; K + 6],
     domain: Field,
     scope: Field,
     dev_mode: bool,
@@ -30,6 +31,14 @@ pub fn verify_outer_proof_core<let K: u32>(
 
     assert(parsed.domain == domain, "wrong service domain");
     assert(parsed.scope == scope, "wrong service scope");
+
+    // CRISP PATCH (circuits 0.23.0): only an eMRTD chip read, signed by the issuing country, registers a voter. The
+    // outer_count_K circuits' integrity proofs output nothing else, so this is defence in depth against a vk of
+    // another scheme (a camera read, Aadhaar) ever being accepted by the registry.
+    assert(
+        parsed.verification_method == VERIFICATION_METHOD_ICAO_CHIP,
+        "unsupported verification method",
+    );
 
     let nt = parsed.nullifier_type;
     let is_standard = (nt == NULLIFIER_TYPE_NON_SALTED)
@@ -145,16 +154,17 @@ mod test {
     fn accepts_swapped_commitments() {
         let vk = [0; 115];
         let proof = [0; 458];
-        let mut pis = [0; 10];
+        let mut pis = [0; 11];
         for i in 0..8 {
             pis[i] = crate::fixtures::FIXTURE_PUBLIC_INPUTS[i];
         }
-        // K=5 layout: [5], [6] are the two param commitments; tail moves to [7..9].
+        // K=5 layout: [5], [6] are the two param commitments; tail moves to [7..10].
         pis[5] = 0xaaaa;
         pis[6] = 0xbbbb;
         pis[7] = crate::fixtures::FIXTURE_PUBLIC_INPUTS[6]; // nullifier_type
         pis[8] = crate::fixtures::FIXTURE_PUBLIC_INPUTS[7]; // scoped_nullifier
         pis[9] = crate::fixtures::FIXTURE_PUBLIC_INPUTS[8]; // oprf_pk_hash
+        pis[10] = crate::fixtures::FIXTURE_PUBLIC_INPUTS[9]; // verification_method
         let out = verify_outer_proof_core::<5>(vk, proof, pis, 0, 0, false, [0xbbbb, 0xaaaa]);
         assert(out.parsed.param_commitments[0] == 0xaaaa);
         assert(out.parsed.param_commitments[1] == 0xbbbb);
@@ -166,7 +176,7 @@ mod test {
     fn rejects_duplicate_expectation_over_single_slot() {
         let vk = [0; 115];
         let proof = [0; 458];
-        let mut pis = [0; 10];
+        let mut pis = [0; 11];
         for i in 0..8 {
             pis[i] = crate::fixtures::FIXTURE_PUBLIC_INPUTS[i];
         }
@@ -175,6 +185,7 @@ mod test {
         pis[7] = crate::fixtures::FIXTURE_PUBLIC_INPUTS[6];
         pis[8] = crate::fixtures::FIXTURE_PUBLIC_INPUTS[7];
         pis[9] = crate::fixtures::FIXTURE_PUBLIC_INPUTS[8];
+        pis[10] = crate::fixtures::FIXTURE_PUBLIC_INPUTS[9];
         let _ = verify_outer_proof_core::<5>(vk, proof, pis, 0, 0, false, [0xaaaa, 0xaaaa]);
     }
 
@@ -192,5 +203,16 @@ mod test {
         let out = verify_outer_proof_core::<4>(vk, proof, pis, 0, 0, false, [pis[5]]);
         assert(out.parsed.nullifier_type == 4);
         assert(out.parsed.scoped_nullifier == 0);
+    }
+
+    // CRISP PATCH: a proof whose verification method is not an eMRTD chip read (a camera read, 200 or 201, or Aadhaar,
+    // 101) is rejected.
+    #[test(should_fail_with = "unsupported verification method")]
+    fn non_chip_verification_method_rejected() {
+        let vk = [0; 115];
+        let proof = [0; 458];
+        let mut pis = crate::fixtures::FIXTURE_PUBLIC_INPUTS;
+        pis[9] = 200; // ATTESTED_CAPTURE_IOS
+        let _ = verify_outer_proof_core::<4>(vk, proof, pis, 0, 0, false, [pis[5]]);
     }
 }

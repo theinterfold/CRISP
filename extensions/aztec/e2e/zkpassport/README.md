@@ -4,8 +4,8 @@ Dev tooling that lets `CrispAztec.register` / `register_with_age` / `register_wi
 ZKPassport proofs**, no passport and no phone needed.
 
 What is real: every subproof (certificate, ID data, integrity, age, nationality, bind) is proved with `bb` 6.0.0 and aggregated
-by the published `outer_count_4` / `outer_count_5` / `outer_count_6` circuits of ZKPassport circuits release **0.22.0** (the release
-built for bb 6.0.0), exactly as the ZKPassport app produces a `compressed`-mode proof. What is synthetic: the
+by the published `outer_count_4` / `outer_count_5` / `outer_count_6` circuits of ZKPassport circuits release **0.23.0** (the release
+built for bb 6.0.0 whose outer proofs end with the `verification_method` public input), exactly as the ZKPassport app produces a `compressed`-mode proof. What is synthetic: the
 passport (issuing country `ZKR`, ICAO's mock code, so the nullifier type is `NON_SALTED_MOCK`) and the certificate
 authority that signs it. The contract accepts mock documents only for rounds opened with `allowMockDocuments`
 (`dev_mode`); nothing in the contract is bypassed.
@@ -80,9 +80,9 @@ hold (certificate root, circuit root, `outer_count_4/5/6` vk hashes) without pro
 ## Files and caches
 
 - `src/proof.ts`: `generateMockRegistrationProof`, `mockRegistryRoots`, `scopeHash`, `packCircuitVersion`.
-- `src/prove-mock.cts`: the prover. It runs inside a checkout of `zkpassport/circuits` at tag `noir-v1.0.0` (commit
-  `327d19e`, built for bb 6.0.0) with that checkout's own dependencies, because `@zkpassport/utils` must not be
-  loaded twice. `scripts/setup-circuits.mjs` creates the checkout on first use.
+- `src/prove-mock.cts`: the prover. It runs inside a checkout of `zkpassport/circuits` at commit `4d90f1f` ("Release 0.23.0",
+  built for bb 6.0.0; the release has no git tag) with that checkout's own dependencies, because `@zkpassport/utils` must not be
+  loaded twice. `scripts/setup-circuits.mjs` creates the checkout on first use; delete `.cache/circuits` of an older release first.
 - `src/registry.ts`: deploy and seed the registry, `warpTo`, `chainTime`, `domainHash`, `circuitsVersionField`.
 - `.cache/` (gitignored): the circuits checkout, the circuit manifest and compiled circuits, the synthetic authority
   (`pki.json`, so the certificate root stays the same and the registry is seeded once) and its DSC proof.
@@ -90,6 +90,6 @@ hold (certificate root, circuit root, `outer_count_4/5/6` vk hashes) without pro
 ## Real ZKPassport app (not exercised here)
 
 On a network where the real registry is seeded, a proof from the ZKPassport app works unchanged: circuits release
-0.22.0, `mode: 'compressed'`, `bind: { user_address }` set to the voter's Aztec address, `scope` = the round scope
+0.23.0, `mode: 'compressed'`, `bind: { user_address }` set to the voter's Aztec address, `scope` = the round scope
 string, `domain` such that its hash equals the contract's `zkpassport_domain`, and `devMode: true` only for mock
 documents (rounds with `allowMockDocuments`).

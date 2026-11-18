@@ -31,7 +31,7 @@ use zkpassport::{
     commitments::{
         age_commitment, bind_user_address_commitment, nationality_exclusion_commitment, nationality_inclusion_commitment,
     },
-    constants::{PI_PARAMS_START, PROOF_CAPSULE_SLOT, PROOF_FIELDS, VK_FIELDS},
+    constants::{NULLIFIER_TYPE_NON_SALTED, PI_PARAMS_START, PROOF_CAPSULE_SLOT, PROOF_FIELDS, VK_FIELDS},
     fixtures::proof::{
         AGE_FIXTURE_BLOB, AGE_FIXTURE_CERT_ROOT, AGE_FIXTURE_CIRCUIT_ROOT,
         AGE_FIXTURE_CURRENT_DATE, AGE_FIXTURE_VK_HASH,
@@ -48,8 +48,8 @@ global NUM_OPTIONS: Field = 3;
 global CREDITS: Field = 100;
 global L1_PROGRAM: EthAddress = EthAddress::from_field(0x1111111111111111111111111111111111111111);
 global INTERFOLD: EthAddress = EthAddress::from_field(0xdfa59d66c173a00643ebe80e172af5a8cf244b30);
-// packed("0.22.0"), the circuits release the ZKPassport age fixture was proved with.
-global ZKPASSPORT_VERSION: Field = 0x0000001600000000000000000000000000000000000000000000000000000000;
+// packed("0.23.0"): the circuits release the ZKPassport age fixture was proved with.
+global ZKPASSPORT_VERSION: Field = 0x0000001700000000000000000000000000000000000000000000000000000000;
 // The ZKPassport fixture is future-dated; the TXE clock starts a day after its date, inside its validity period.
 global T0: u64 = AGE_FIXTURE_CURRENT_DATE + DAY + 1;
 global INPUT_START: u64 = T0 + 100;
@@ -217,7 +217,9 @@ fn committee_key() -> Field {
 /// The ZKPassport age fixture (`outer_count_5`: `age(18)` and a bind) re-bound to `user`, with its unique identifier
 /// moved by `identifier_offset` so one fixture stands for several documents. The fixture is bound to a fixed address
 /// that TXE has no account for, and TXE does not check the proof, so the substitution is possible here and only here.
-unconstrained fn age_proof(user: AztecAddress, identifier_offset: Field) -> [Field; 583] {
+/// The same goes for the nullifier type: the fixture is the proof of a mock (ZKR) document, which the tests make an
+/// ordinary (non-salted) one, so that rounds that do not allow mock documents accept it.
+unconstrained fn age_proof(user: AztecAddress, identifier_offset: Field) -> [Field; 584] {
     let mut blob = AGE_FIXTURE_BLOB;
     let params = VK_FIELDS + PROOF_FIELDS + PI_PARAMS_START;
     for i in params..params + 2 {
@@ -225,14 +227,15 @@ unconstrained fn age_proof(user: AztecAddress, identifier_offset: Field) -> [Fie
             blob[i] = bind_user_address_commitment(user.to_field());
         }
     }
+    blob[params + 2] = NULLIFIER_TYPE_NON_SALTED as Field;
     blob[581] += identifier_offset;
     blob
 }
 
 /// The same proof for a query without an age check (`outer_count_4`: a bind alone).
-unconstrained fn bind_proof(user: AztecAddress, identifier_offset: Field) -> [Field; 582] {
+unconstrained fn bind_proof(user: AztecAddress, identifier_offset: Field) -> [Field; 583] {
     let age = age_proof(user, identifier_offset);
-    let mut blob = [0; 582];
+    let mut blob = [0; 583];
     let params = VK_FIELDS + PROOF_FIELDS + PI_PARAMS_START;
     for i in 0..params {
         blob[i] = age[i];
@@ -241,34 +244,35 @@ unconstrained fn bind_proof(user: AztecAddress, identifier_offset: Field) -> [Fi
     blob[params + 1] = age[params + 2];
     blob[params + 2] = age[params + 3];
     blob[params + 3] = age[params + 4];
+    blob[params + 4] = age[params + 5];
     blob
 }
 
 /// An outer proof with `N` parameter commitments (`outer_count_{N + 3}`), made from the age fixture's header and
-/// trailer (nullifier type, unique identifier moved by `identifier_offset`, OPRF key hash).
-unconstrained fn proof_with<let N: u32>(identifier_offset: Field, commitments: [Field; N]) -> [Field; 581 + N] {
+/// trailer (nullifier type, unique identifier moved by `identifier_offset`, OPRF key hash, verification method).
+unconstrained fn proof_with<let N: u32>(identifier_offset: Field, commitments: [Field; N]) -> [Field; 582 + N] {
     let age = age_proof(AztecAddress::from_field(1), identifier_offset);
     let params = VK_FIELDS + PROOF_FIELDS + PI_PARAMS_START;
-    let mut blob = [0; 581 + N];
+    let mut blob = [0; 582 + N];
     for i in 0..params {
         blob[i] = age[i];
     }
     for i in 0..N {
         blob[params + i] = commitments[i];
     }
-    for i in 0..3 {
+    for i in 0..4 {
         blob[params + N + i] = age[params + 2 + i];
     }
     blob
 }
 
 /// The proof for a query with a nationality rule and a bind (`outer_count_5`).
-unconstrained fn nationality_proof(user: AztecAddress, identifier_offset: Field, commitment: Field) -> [Field; 583] {
+unconstrained fn nationality_proof(user: AztecAddress, identifier_offset: Field, commitment: Field) -> [Field; 584] {
     proof_with(identifier_offset, [commitment, bind_user_address_commitment(user.to_field())])
 }
 
 /// The proof for a query with an age check, a nationality rule and a bind (`outer_count_6`).
-unconstrained fn age_nationality_proof(user: AztecAddress, identifier_offset: Field, commitment: Field) -> [Field; 584] {
+unconstrained fn age_nationality_proof(user: AztecAddress, identifier_offset: Field, commitment: Field) -> [Field; 585] {
     proof_with(
         identifier_offset,
         [age_commitment(18, 0), commitment, bind_user_address_commitment(user.to_field())],

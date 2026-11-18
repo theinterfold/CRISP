@@ -18,8 +18,8 @@ const here = dirname(fileURLToPath(import.meta.url))
 const root = resolve(here, '..')
 const circuitsDir = join(root, '.cache', 'circuits')
 
-/** The ZKPassport circuits release the generated proofs belong to (zkpassport/circuits `noir-v1.0.0`, built for bb 6.0.0). */
-export const CIRCUITS_VERSION = '0.22.0'
+/** The ZKPassport circuits release the generated proofs belong to (zkpassport/circuits "Release 0.23.0", built for bb 6.0.0). */
+export const CIRCUITS_VERSION = '0.23.0'
 
 /** Aztec's `sha256_to_field` and ZKPassport's `getServiceScopeHash`: SHA-256 with the last byte dropped. */
 export const scopeHash = (value: string): bigint => BigInt(sha256(stringToBytes(value))) >> 8n
@@ -149,7 +149,7 @@ export type MockRegistryRoots = {
 
 /**
  * The registry roots and outer vk hashes of the mock proofs: the certificate root of the (cached) synthetic authority and
- * the circuit root and vk hashes of circuits release 0.22.0. `seedLocalRegistry` takes them.
+ * the circuit root and vk hashes of circuits release 0.23.0. `seedLocalRegistry` takes them.
  */
 export const mockRegistryRoots = async (): Promise<MockRegistryRoots> => {
   const result = await runProver<{
@@ -170,7 +170,7 @@ export const mockRegistryRoots = async (): Promise<MockRegistryRoots> => {
 /**
  * Prove a real ZKPassport outer proof of a synthetic mock-country document, bound to `aztecAddress`, `domain` and `scope`.
  * Every subproof (certificate, ID data, integrity, age, bind) is proved with bb 6.0.0 and aggregated by the published
- * `outer_count_4`/`outer_count_5` circuit of release 0.22.0, exactly as the ZKPassport app does; only the passport and the
+ * `outer_count_4`/`outer_count_5` circuit of release 0.23.0, exactly as the ZKPassport app does; only the passport and the
  * certificate authority that signed it are synthetic. Takes about half a minute. The circuits are downloaded on first use.
  */
 export const generateMockRegistrationProof = async (options: MockRegistrationProofOptions): Promise<MockRegistrationProof> => {

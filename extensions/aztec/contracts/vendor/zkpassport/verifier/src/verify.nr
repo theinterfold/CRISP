@@ -185,7 +185,8 @@ pub fn verify_zkpassport_proof_with_registry<let K: u32, let D: u32>(
     // Capsule load is unconstrained oracle data, everything downstream constrains it (as it must).
     // Safety: the loaded blob is untrusted input; verify_outer_proof_core and the freshness/
     // registry checks below constrain every field derived from it.
-    let blob: Option<[Field; VK_FIELDS + PROOF_FIELDS + K + 5]> =
+    // CRISP PATCH (circuits 0.23.0): K + 6 public inputs, the last being the verification method.
+    let blob: Option<[Field; VK_FIELDS + PROOF_FIELDS + K + 6]> =
         unsafe { capsules::load(context.this_address(), PROOF_CAPSULE_SLOT, capsule_scope) };
 
     assert(blob.is_some(), "missing zkpassport proof capsule");
@@ -202,8 +203,8 @@ pub fn verify_zkpassport_proof_with_registry<let K: u32, let D: u32>(
         proof[i] = blob[VK_FIELDS + i];
     }
 
-    let mut public_inputs = [0; K + 5];
-    for i in 0..K + 5 {
+    let mut public_inputs = [0; K + 6];
+    for i in 0..K + 6 {
         public_inputs[i] = blob[VK_FIELDS + PROOF_FIELDS + i];
     }
 
