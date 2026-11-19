@@ -84,7 +84,8 @@ impl AvailabilityService {
             .map_err(from_eyre)
     }
 
-    /// Send `publishInput` from the relay key, with the voting chain's fees (`rpc::gnosis_fees`).
+    /// Send `publishInput` from the relay key, at the voting chain's fees
+    /// (`rpc::gnosis_wallet_provider`).
     async fn relay_publish_input(
         &self,
         gnosis: &GnosisInputs,
@@ -96,16 +97,13 @@ impl AvailabilityService {
             .parse()
             .map_err(|error| eyre::eyre!("invalid relay key: {error}"))?;
         let from = signer.address();
-        let provider = rpc::wallet_provider(&gnosis.rpc_url, signer)?;
+        let provider = rpc::gnosis_wallet_provider(&gnosis.rpc_url, signer)?;
         let voting = IGnosisRelay::new(gnosis.voting, &provider);
-        let mut call = voting.publishInput(e3_id, data);
-        if let Some((max_fee, tip)) = rpc::gnosis_fees(&provider).await? {
-            call = call.max_fee_per_gas(max_fee).max_priority_fee_per_gas(tip);
-        }
-        let receipt = e3_sdk::evm::nonce::send_with_next_nonce(call, from)
-            .await?
-            .get_receipt()
-            .await?;
+        let receipt =
+            e3_sdk::evm::nonce::send_with_next_nonce(voting.publishInput(e3_id, data), from)
+                .await?
+                .get_receipt()
+                .await?;
         eyre::ensure!(receipt.status(), "publishInput transaction reverted");
         Ok(receipt)
     }

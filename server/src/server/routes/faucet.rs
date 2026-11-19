@@ -67,7 +67,7 @@ async fn faucet_account() -> eyre::Result<&'static (DynProvider, Address)> {
                 .parse()
                 .map_err(|_| eyre::eyre!("FAUCET_PRIVATE_KEY is not a private key"))?;
             let address = signer.address();
-            Ok((rpc::wallet_provider(&CONFIG.gnosis_rpc_url, signer)?, address))
+            Ok((rpc::gnosis_wallet_provider(&CONFIG.gnosis_rpc_url, signer)?, address))
         })
         .await
 }
@@ -115,11 +115,7 @@ async fn mint(to: Address) -> Result<FaucetResponse, Refused> {
             },
         );
     }
-    let mut call = token.faucetMint(to);
-    if let Some((max_fee, tip)) = rpc::gnosis_fees(provider).await.map_err(unavailable)? {
-        call = call.max_fee_per_gas(max_fee).max_priority_fee_per_gas(tip);
-    }
-    let receipt = send_with_next_nonce(call, *from)
+    let receipt = send_with_next_nonce(token.faucetMint(to), *from)
         .await
         .map_err(unavailable)?
         .get_receipt()

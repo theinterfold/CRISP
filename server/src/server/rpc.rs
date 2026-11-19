@@ -13,10 +13,14 @@ use std::sync::LazyLock;
 use std::time::Duration;
 
 use alloy::eips::BlockNumberOrTag;
-use alloy::providers::{DynProvider, Provider, ProviderBuilder};
+use alloy::network::Ethereum;
+use alloy::providers::{
+    utils::Eip1559Estimation, DynProvider, PendingTransactionBuilder, Provider, ProviderBuilder,
+    RootProvider, SendableTx,
+};
 use alloy::rpc::client::RpcClient;
 use alloy::signers::local::PrivateKeySigner;
-use alloy::transports::http::Http;
+use alloy::transports::{http::Http, TransportErrorKind, TransportResult};
 use tokio::sync::OnceCell;
 
 use crate::config::CONFIG;
@@ -83,20 +87,59 @@ pub async fn sender() -> eyre::Result<&'static (DynProvider, alloy::primitives::
         .await
 }
 
-/// The `(max fee, priority fee)` of a voting-chain transaction when `GNOSIS_PRIORITY_FEE_WEI` is
-/// set: that tip, and twice the latest base fee plus it. `None` leaves the fees to alloy, whose tip
-/// floor (1 gwei) makes a relayed ballot cost thousands of times what the chain charges.
-pub async fn gnosis_fees(provider: &impl Provider) -> eyre::Result<Option<(u128, u128)>> {
-    let Some(tip) = CONFIG.gnosis_priority_fee_wei else {
-        return Ok(None);
-    };
-    let base_fee = provider
-        .get_block_by_number(BlockNumberOrTag::Latest)
-        .await?
-        .and_then(|block| block.header.base_fee_per_gas)
-        .ok_or_else(|| eyre::eyre!("the voting chain's latest block has no base fee"))?;
-    let tip = u128::from(tip);
-    Ok(Some((u128::from(base_fee) * 2 + tip, tip)))
+/// A wallet provider on the voting chain for the relay and the faucet. With
+/// `GNOSIS_PRIORITY_FEE_WEI` set, its fee estimate is that tip over twice the latest base fee;
+/// unset, alloy's estimate applies, whose 1 gwei tip floor makes a relayed ballot cost thousands of
+/// times what a Gnosis chain charges.
+pub fn gnosis_wallet_provider(url: &str, signer: PrivateKeySigner) -> eyre::Result<DynProvider> {
+    let inner = wallet_provider(url, signer)?;
+    Ok(match CONFIG.gnosis_priority_fee_wei {
+        Some(tip) => FixedTipProvider::new(inner, u128::from(tip)).erased(),
+        None => inner,
+    })
+}
+
+/// A wallet provider whose EIP-1559 estimate is a fixed tip over twice the latest base fee.
+///
+/// The fee lives in the provider because `send_with_next_nonce` overwrites the fees of the call it
+/// sends with `provider.estimate_eip1559_fees()`. Sends go to the wrapped provider, which signs;
+/// reads use the default methods over its root.
+#[derive(Clone)]
+pub struct FixedTipProvider {
+    inner: DynProvider,
+    tip: u128,
+}
+
+impl FixedTipProvider {
+    pub fn new(inner: DynProvider, tip: u128) -> Self {
+        Self { inner, tip }
+    }
+}
+
+#[async_trait::async_trait]
+impl Provider for FixedTipProvider {
+    fn root(&self) -> &RootProvider {
+        self.inner.root()
+    }
+
+    async fn send_transaction_internal(
+        &self,
+        tx: SendableTx<Ethereum>,
+    ) -> TransportResult<PendingTransactionBuilder<Ethereum>> {
+        self.inner.send_transaction_internal(tx).await
+    }
+
+    async fn estimate_eip1559_fees(&self) -> TransportResult<Eip1559Estimation> {
+        let base_fee = self
+            .get_block_by_number(BlockNumberOrTag::Latest)
+            .await?
+            .and_then(|block| block.header.base_fee_per_gas)
+            .ok_or_else(|| TransportErrorKind::custom_str("the latest block has no base fee"))?;
+        Ok(Eip1559Estimation {
+            max_fee_per_gas: u128::from(base_fee) * 2 + self.tip,
+            max_priority_fee_per_gas: self.tip,
+        })
+    }
 }
 
 /// The timestamp of the latest block.
@@ -106,4 +149,47 @@ pub async fn latest_timestamp(provider: &impl Provider) -> eyre::Result<u64> {
         .await?
         .map(|block| block.header.timestamp)
         .ok_or_else(|| eyre::eyre!("the RPC returned no latest block"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::consensus::Transaction as _;
+    use alloy::contract::CallBuilder;
+    use alloy::node_bindings::Anvil;
+    use alloy::primitives::{Address, Bytes};
+
+    /// `send_with_next_nonce` replaces the fees of the call it sends with the provider's estimate,
+    /// so the tip must come from that estimate: alloy's own floors it at 1 gwei.
+    #[tokio::test]
+    async fn a_nonce_managed_send_pays_the_fixed_tip() {
+        let anvil = Anvil::new().args(["--base-fee", "7"]).try_spawn().unwrap();
+        let signer = PrivateKeySigner::from(anvil.keys()[0].clone());
+        let from = signer.address();
+        let wallet = wallet_provider(&anvil.endpoint(), signer).unwrap();
+        let provider = FixedTipProvider::new(wallet, 1_000).erased();
+
+        let call = CallBuilder::new_raw(&provider, Bytes::new()).to(Address::repeat_byte(1));
+        let receipt = e3_sdk::evm::nonce::send_with_next_nonce(call, from)
+            .await
+            .unwrap()
+            .get_receipt()
+            .await
+            .unwrap();
+
+        let sent = provider
+            .get_transaction_by_hash(receipt.transaction_hash)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(sent.max_priority_fee_per_gas(), Some(1_000));
+        assert!(sent.max_fee_per_gas() < 1_000_000);
+        let block = provider
+            .get_block_by_number(receipt.block_number.unwrap().into())
+            .await
+            .unwrap()
+            .unwrap();
+        let base_fee = u128::from(block.header.base_fee_per_gas.unwrap());
+        assert_eq!(receipt.effective_gas_price, base_fee + 1_000);
+    }
 }
