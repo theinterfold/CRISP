@@ -1,0 +1,10 @@
+{
+  "chainId": 11155111,
+  "deployBlock": 12168232,
+  "interfold": "0xb35EE9ed8BE5967daabBA8c2e817C52D0b57ac26",
+  "program": "0xf08c978803790ce478958Cfb4136d5694a15Eaab",
+  "owner": "0x8837e47c4Bb520ADE83AAB761C3B60679443af1B",
+  "foreignAmb": "0xf2546D6648BD2af6a008A7e7C1542BB240329E11",
+  "openVmVerifier": "0x226436d8A72357c7992896B37f0A2E00dCb6A341",
+  "dataAvailabilityVerifier": "0xB5cDE772357C9dB2d2515Cf94Daa0696c9a2FB17"
+}

@@ -1,0 +1,23 @@
+{
+  "name": "@crisp-e3/gnosis-contracts",
+  "version": "0.28.1",
+  "private": true,
+  "description": "CRISP on Gnosis Chain: the Sepolia E3 program, the Chiado voting contract and the Zodiac governance module (Foundry)",
+  "license": "LGPL-3.0-only",
+  "scripts": {
+    "build": "forge build",
+    "test": "forge test",
+    "export:abi": "node scripts/export-abi.mjs"
+  },
+  "dependencies": {
+    "@crisp-e3/contracts": "workspace:^",
+    "@crisp-e3/extension-core": "workspace:^",
+    "@interfold/contracts": "0.20.0-dev.3",
+    "@openzeppelin/contracts": "^5.0.2",
+    "@zk-kit/lazy-imt.sol": "2.0.0-beta.12",
+    "poseidon-solidity": "^0.0.5"
+  },
+  "devDependencies": {
+    "forge-std": "github:foundry-rs/forge-std#v1.9.4"
+  }
+}

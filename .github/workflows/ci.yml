@@ -96,6 +96,7 @@ jobs:
               - 'crates/**'
               - 'extensions/core/remote-input/**'
               - 'extensions/aztec/ingest/**'
+              - 'extensions/gnosis/ingest/**'
               - 'program/**'
               - 'server/**'
               # The server and the program tests embed these files with include_str!.

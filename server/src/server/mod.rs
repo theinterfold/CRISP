@@ -127,6 +127,10 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let chain_rate_limiter = web::Data::new(rate_limit::ChainRateLimiter::with_trust(
         CONFIG.trust_proxy_headers,
     ));
+    // Its own type for the same reason: the faucet's windows are not the relay's.
+    let faucet_rate_limiter = web::Data::new(rate_limit::FaucetRateLimiter::new(
+        CONFIG.faucet_rate_limit_per_ip_per_day,
+    ));
     let server = HttpServer::new(move || {
         let cors = Cors::default()
             .allow_any_origin()
@@ -142,6 +146,7 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             .app_data(web::Data::from(availability.clone()))
             .app_data(rate_limiter.clone())
             .app_data(chain_rate_limiter.clone())
+            .app_data(faucet_rate_limiter.clone())
             .configure(routes::setup_routes)
     })
     .bind(&bind_addr)?;

@@ -1,0 +1,17 @@
+[package]
+name = "crisp-gnosis-ingest"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Reads CRISP inputs from the CrispGnosisVoting contract through a Gnosis-chain RPC"
+repository.workspace = true
+
+[dependencies]
+alloy = { workspace = true }
+async-trait = { version = "=0.1.88" }
+crisp-remote-input = { path = "../../core/remote-input" }
+eyre = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+tokio.workspace = true

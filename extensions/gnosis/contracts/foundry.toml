@@ -1,0 +1,21 @@
+[profile.default]
+src = "contracts"
+test = "test"
+script = "script"
+out = "out"
+cache_path = "cache"
+solc_version = "0.8.28"
+evm_version = "paris"
+optimizer = true
+optimizer_runs = 1
+bytecode_hash = "none"
+gas_limit = 100000000
+fs_permissions = [
+  { access = "read-write", path = "./test/fixtures" },
+  { access = "read-write", path = "./deployments" },
+  { access = "read", path = "./out" },
+  { access = "read", path = "./abi" },
+]
+
+[lint]
+lint_on_build = false

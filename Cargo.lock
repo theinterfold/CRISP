@@ -2425,6 +2425,7 @@ dependencies = [
  "clap",
  "config",
  "crisp-aztec-ingest",
+ "crisp-gnosis-ingest",
  "crisp-remote-input",
  "crisp-utils",
  "derivative",
@@ -2468,6 +2469,18 @@ dependencies = [
  "crisp-remote-input",
  "eyre",
  "reqwest",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "crisp-gnosis-ingest"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "async-trait",
+ "crisp-remote-input",
+ "eyre",
  "serde_json",
  "tokio",
 ]

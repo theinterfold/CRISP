@@ -9,6 +9,10 @@ packages:
   - extensions/aztec/sdk
   - extensions/aztec/keeper
   - extensions/aztec/e2e
+  - extensions/gnosis/contracts
+  - extensions/gnosis/sdk
+  - extensions/gnosis/keeper
+  - extensions/gnosis/e2e
 linkWorkspacePackages: true
 # Keep in sync with "pnpm.overrides" in package.json; pnpm versions differ in which one they read.
 overrides:

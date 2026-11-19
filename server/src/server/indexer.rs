@@ -443,7 +443,7 @@ async fn handle_e3_requested<S: DataStore>(
         return Ok(());
     }
     info!("[e3_id={e3_id}] E3Requested: {event:?}");
-    if CONFIG.is_aztec() {
+    if CONFIG.is_remote() {
         return remote_input::handle_e3_requested(event, ctx).await;
     }
 
@@ -685,7 +685,7 @@ async fn activate_round_if_ready<S: DataStore>(
     }
 
     // A remote round computes when its input root reaches L1, not at a deadline.
-    let deadline_passes = !CONFIG.is_aztec();
+    let deadline_passes = !CONFIG.is_remote();
     if deadline_passes {
         for at in deadline_attempt_times(expiration, unix_now()) {
             let e3_id = e3_id.to_string();
@@ -769,7 +769,7 @@ async fn restore_round_deadline_callback<S: DataStore>(
     }
 
     // The ingest task picks up an unfinished remote round by its status; there is no deadline.
-    if CONFIG.is_aztec() {
+    if CONFIG.is_remote() {
         return Ok(());
     }
     let expiration = repo.get_input_deadline().await?;
@@ -1512,7 +1512,7 @@ async fn register_handlers<S: DataStore>(
             Ok(())
         })
         .await;
-    if CONFIG.is_aztec() {
+    if CONFIG.is_remote() {
         indexer
             .add_event_handler(|event: InputRootSubmitted, ctx| {
                 remote_input::handle_input_root_submitted(event, ctx)
@@ -1544,9 +1544,10 @@ pub fn spawn_recovery_tasks<S: DataStore>(
     store: SharedStore<S>,
     availability: Arc<AvailabilityService>,
 ) {
-    // A remote program has no L1 input deadline, finalization jobs, or holder discovery: its round
-    // is computed once the input root reaches L1 and the inputs have been ingested.
-    if CONFIG.is_aztec() {
+    // A remote program has no L1 input deadline or finalization jobs: its round is computed once
+    // the input root reaches L1 and the inputs have been ingested. A Gnosis round also owes its
+    // holder discovery, which the ingest task runs.
+    if CONFIG.is_remote() {
         tokio::spawn(supervise("remote-input ingest", move || {
             remote_input::run_ingest(store.clone(), Arc::clone(&availability))
         }));

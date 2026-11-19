@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 
-//! Rounds whose inputs are accepted on a remote chain (`PROGRAM_KIND=aztec`).
+//! Rounds whose inputs are accepted on a remote chain (`PROGRAM_KIND=aztec` or `gnosis`).
 //!
 //! The L1 round of such a program holds no inputs. The remote contract accepts them, and the server
 //! learns them from the remote chain's public logs, in the shape the L1 `InputCommitted` handler
@@ -10,6 +10,8 @@
 use super::*;
 use alloy_primitives::B256;
 use crisp_remote_input::{readiness, Readiness, RemoteInput, RemoteInputSource};
+use crate::server::token_holders::rpc_logs;
+use crisp_gnosis_ingest::GnosisInputSource;
 use e3_compute_provider::{ComputeInput, FHEInputs, PublishedData};
 use e3_user_program::policy::crisp;
 use fhe::bfv::BfvParameters;
@@ -70,6 +72,40 @@ fn round_params(custom_params: &[u8]) -> eyre::Result<CustomParams> {
     })
 }
 
+/// The custom parameters of a Gnosis round: `abi.encode(censusMode, censusRoot, censusTotal,
+/// proposalHash, metadataCid)`, five flat words with no leading offset. The L1 program validates
+/// them and the voting contract enforces them; the server reads nothing from them.
+type GnosisCustomParams = (
+    sol_data::Uint<8>,
+    sol_data::FixedBytes<32>,
+    sol_data::Uint<256>,
+    sol_data::FixedBytes<32>,
+    sol_data::String,
+);
+
+/// The three options of a Gnosis ballot: For, Against, Abstain.
+const GNOSIS_NUM_OPTIONS: &str = "3";
+
+/// The widest `eth_getLogs` range of holder discovery when `INDEX_CHUNK_SIZE` is not set.
+const GNOSIS_LOG_CHUNK_SIZE: u64 = 10_000;
+
+fn gnosis_round_params(custom_params: &[u8], token: Address) -> eyre::Result<CustomParams> {
+    <GnosisCustomParams as SolType>::abi_decode_params(custom_params)
+        .context("Failed to decode custom params from E3 event")?;
+    Ok(CustomParams {
+        token_address: token.to_string(),
+        balance_threshold: "0".to_string(),
+        num_options: GNOSIS_NUM_OPTIONS.to_string(),
+        // The contract weighs a ballot by the slot's voting power over the round's divisor.
+        credit_mode: CreditMode::Custom,
+        credits: None,
+        // The contract reads each slot's power itself, so the server lists nobody as the
+        // electorate: the holders it discovers are mask targets.
+        census_mode: CensusMode::Onchain,
+        voting_power_divisor: "0".to_string(),
+    })
+}
+
 /// Record a round requested for the remote program.
 pub(super) async fn handle_e3_requested<S: DataStore>(
     event: E3Requested,
@@ -89,7 +125,12 @@ pub(super) async fn handle_e3_requested<S: DataStore>(
     .await
     .map_err(report)?;
 
-    let custom_params = round_params(&event.e3.customParams)?;
+    let gnosis = CONFIG.is_gnosis();
+    let custom_params = if gnosis {
+        gnosis_round_params(&event.e3.customParams, CONFIG.gnosis_token()?)?
+    } else {
+        round_params(&event.e3.customParams)?
+    };
     let input_deadline = e3.inputWindow[1].saturating_to::<u64>();
     let request_time = event.e3.requestBlock.saturating_to::<u64>();
 
@@ -99,9 +140,18 @@ pub(super) async fn handle_e3_requested<S: DataStore>(
         e3.requester.to_string(),
         input_deadline,
         input_deadline,
-        request_time.saturating_sub(1),
+        // A Gnosis round's snapshot is the one the voting contract stores, which it clamps to its
+        // own clock: it is read with the round (`discover_gnosis_holders`).
+        if gnosis {
+            UNKNOWN_SNAPSHOT
+        } else {
+            request_time.saturating_sub(1)
+        },
     )
     .await?;
+    if gnosis {
+        repo.set_discovery_pending(true).await?;
+    }
     CurrentRoundRepository::new(store)
         .record_round(&e3_id)
         .await?;
@@ -423,6 +473,48 @@ async fn round_is_over(interfold: &InterfoldContract<ReadOnly>, e3_id: &str) -> 
     ))
 }
 
+/// How often a round that still owes its holder discovery is tried again.
+const DISCOVERY_RETRY_INTERVAL: Duration = Duration::from_secs(30);
+
+/// Discover the holders a Gnosis round draws mask targets from, once the voting contract holds the
+/// round: the delegates of the token whose votes at the round's snapshot carry weight. Returns
+/// without a result while the ROUND message has not reached the contract. The electorate is not
+/// this list: the contract reads each slot's power itself, so a failure costs only mask cover.
+async fn discover_gnosis_holders<S: DataStore>(
+    e3_id: &str,
+    store: SharedStore<S>,
+    voting: &GnosisInputSource,
+) -> eyre::Result<()> {
+    let mut repo = CrispE3Repository::new(store, e3_id);
+    let round = repo.get_crisp().await?;
+    if !round.discovery_pending {
+        return Ok(());
+    }
+    let Some(onchain) = voting.round(e3_id_to_u256(e3_id).map_err(report)?).await? else {
+        return Ok(());
+    };
+    let threshold = voting.min_voting_power().await?.max(onchain.divisor);
+    let mut holders = rpc_logs::get_token_holders_with_voting_power(
+        rpc::http_provider(&CONFIG.gnosis_rpc_url)?,
+        CONFIG.gnosis_token()?,
+        CONFIG.gnosis_token_start(),
+        CONFIG.index_chunk_size.unwrap_or(GNOSIS_LOG_CHUNK_SIZE),
+        onchain.snapshot,
+        threshold,
+        onchain.divisor,
+    )
+    .await?;
+    order_token_holders(&mut holders);
+    info!(
+        "[e3_id={e3_id}] Found {} mask target(s) at snapshot {}",
+        holders.len(),
+        onchain.snapshot
+    );
+    repo.set_snapshot_block(onchain.snapshot).await?;
+    repo.set_eligible_addresses(holders).await?;
+    repo.set_discovery_pending(false).await
+}
+
 /// Ingest the inputs of every unfinished remote round and compute those whose root has arrived.
 ///
 /// Polls: the remote chain is read over HTTP, so there is no event to wait on.
@@ -432,12 +524,14 @@ pub(super) async fn run_ingest<S: DataStore>(
 ) -> eyre::Result<()> {
     let source = availability
         .remote_source()
-        .ok_or_else(|| eyre!("PROGRAM_KIND=aztec has no remote input source"))?;
+        .ok_or_else(|| eyre!("PROGRAM_KIND has no remote input source"))?;
+    let gnosis = availability.gnosis_source();
     // A round that is over is not read again until a restart.
     let mut done = std::collections::HashSet::<String>::new();
     let mut last_compute = HashMap::<String, Instant>::new();
     let mut reported_missing = HashMap::<String, (u64, B256)>::new();
     let mut last_liveness = HashMap::<String, Instant>::new();
+    let mut last_discovery = HashMap::<String, Instant>::new();
     let interfold =
         InterfoldContractFactory::create_read(&CONFIG.http_rpc_url, &CONFIG.interfold_address)
             .await?;
@@ -484,6 +578,20 @@ pub(super) async fn run_ingest<S: DataStore>(
                     Ok(false) => {}
                     Err(error) => {
                         warn!("[e3_id={e3_id}] Could not read the round stage: {error:#}")
+                    }
+                }
+            }
+            if let Some(voting) = &gnosis {
+                if matches!(status.as_str(), REQUESTED | ACTIVE)
+                    && last_discovery
+                        .get(&e3_id)
+                        .is_none_or(|at| at.elapsed() >= DISCOVERY_RETRY_INTERVAL)
+                {
+                    last_discovery.insert(e3_id.clone(), Instant::now());
+                    if let Err(error) =
+                        discover_gnosis_holders(&e3_id, store.clone(), voting).await
+                    {
+                        warn!("[e3_id={e3_id}] Holder discovery failed, will retry: {error:#}");
                     }
                 }
             }
@@ -609,6 +717,31 @@ mod tests {
         let old = (U256::from(4), U256::from(10), U256::from(18), true).abi_encode_params();
         assert!(round_params(&old).is_err());
         assert!(round_params(&[0u8; 31]).is_err());
+    }
+
+    #[test]
+    fn custom_params_of_a_gnosis_round_come_from_its_five_flat_words() {
+        let token = Address::repeat_byte(0x77);
+        let encoded = <GnosisCustomParams as SolType>::abi_encode_params(&(
+            2u8,
+            B256::repeat_byte(0x11),
+            U256::from(12),
+            B256::repeat_byte(0x22),
+            "bafy-metadata".to_string(),
+        ));
+
+        let params = gnosis_round_params(&encoded, token).unwrap();
+
+        assert_eq!(params.token_address, token.to_string());
+        assert_eq!(params.num_options, "3");
+        assert_eq!(params.credit_mode, CreditMode::Custom);
+        assert_eq!(params.credits, None);
+        assert_eq!(params.census_mode, CensusMode::Onchain);
+        assert_eq!(params.balance_threshold, "0");
+
+        // The data of another layout, or none, is not a Gnosis round.
+        assert!(gnosis_round_params(&encoded[..encoded.len() - 33], token).is_err());
+        assert!(gnosis_round_params(&[0u8; 31], token).is_err());
     }
 
     #[test]

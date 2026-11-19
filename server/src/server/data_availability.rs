@@ -40,10 +40,15 @@ use std::{
 use tokio::{sync::Semaphore, task::JoinSet};
 use tracing::{info, warn};
 
+mod gnosis;
 mod remote_input;
 mod staging_pass;
+mod output_upload;
 pub use remote_input::RemoteInputRequest;
 use remote_input::RemoteInputs;
+pub use gnosis::GnosisBroadcast;
+use gnosis::GnosisInputs;
+use output_upload::{OutputUploader, UploadRetries};
 
 const JOB_POLL_INTERVAL: Duration = Duration::from_secs(30);
 // An Avail submission can use 20 seconds to connect, 30 seconds to submit, 300 seconds to
@@ -768,6 +773,8 @@ pub struct AvailabilityService {
     staging_tags: Tree,
     /// Set when this instance serves a remote program.
     remote: Option<RemoteInputs>,
+    /// Set when this instance serves the Gnosis program (`gnosis`).
+    gnosis: Option<GnosisInputs>,
     input_duration_seconds: u64,
     proof_lead_seconds: u64,
     max_pending_bytes: u64,
@@ -779,6 +786,13 @@ pub struct AvailabilityService {
     external_outputs_lock: Arc<Mutex<()>>,
     /// Zero turns `store_external_output` off.
     external_outputs_max_bytes: u64,
+    /// The route that this server uploads its own aggregate ciphertexts to
+    /// (`EXTERNAL_OUTPUT_UPLOAD_URL`). `None` uploads nothing.
+    output_uploader: Option<OutputUploader>,
+    /// One entry for each output job whose upload is over, keyed by job ID. Every `Submitted`
+    /// output job without one still owes an upload (`drive_output_uploads`).
+    output_uploads: Tree,
+    output_upload_retries: Arc<Mutex<UploadRetries>>,
 }
 
 struct ActiveJobGuard<'a> {
@@ -847,6 +861,7 @@ impl AvailabilityService {
                 remote_objects: db.open_tree("data-availability-remote-objects")?,
                 staging_tags: db.open_tree("data-availability-staging-tags")?,
                 remote: RemoteInputs::from_config(config)?,
+                gnosis: GnosisInputs::from_config(config)?,
                 input_duration_seconds: config.e3_duration,
                 proof_lead_seconds: config.avail_proof_lead(),
                 max_pending_bytes: config.data_availability_max_pending_bytes,
@@ -857,6 +872,14 @@ impl AvailabilityService {
                 } else {
                     0
                 },
+                output_uploader: config
+                    .external_output_upload_url
+                    .as_deref()
+                    .filter(|_| config.data_availability_mode() == "mock")
+                    .map(OutputUploader::new)
+                    .transpose()?,
+                output_uploads: db.open_tree("data-availability-output-uploads")?,
+                output_upload_retries: Arc::default(),
             };
         service.validate_storage()?;
         Ok(service)
@@ -909,7 +932,7 @@ impl AvailabilityService {
     /// Check the post-key input duration against the current CRISP contract values. A remote
     /// program has neither window: its inputs need no Avail finalization.
     pub async fn validate_onchain_configuration(&self) -> anyhow::Result<()> {
-        if !self.is_avail() || self.remote.is_some() {
+        if !self.is_avail() || self.remote.is_some() || self.gnosis.is_some() {
             return Ok(());
         }
         let contract = self.crisp().await?;
@@ -1634,15 +1657,19 @@ impl AvailabilityService {
             // Keep one bounded batch alive. An unbounded fan-out turns a backlog that any client
             // can stage into a memory and RPC spike, and queues the request-path steps of new
             // inputs behind every pending job on the FIFO `job_slots` semaphore.
-            let mut tasks = JoinSet::new();
-            for id in self.pending_ids() {
-                while tasks.len() >= MAX_CONCURRENT_JOB_STEPS {
-                    tasks.join_next().await;
+            let drive_jobs = async {
+                let mut tasks = JoinSet::new();
+                for id in self.pending_ids() {
+                    while tasks.len() >= MAX_CONCURRENT_JOB_STEPS {
+                        tasks.join_next().await;
+                    }
+                    let service = Arc::clone(&self);
+                    tasks.spawn(async move { service.process(&id).await });
                 }
-                let service = Arc::clone(&self);
-                tasks.spawn(async move { service.process(&id).await });
-            }
-            while tasks.join_next().await.is_some() {}
+                while tasks.join_next().await.is_some() {}
+            };
+            // Uploads run beside the jobs, so a receiver that answers slowly delays no job.
+            tokio::join!(drive_jobs, self.drive_output_uploads());
             tokio::time::sleep(JOB_POLL_INTERVAL).await;
         }
     }
@@ -2209,10 +2236,15 @@ impl AvailabilityService {
     /// least `RELAY_MIN_BALANCE_ETH`. A balance that cannot be read counts as too low, so a failed
     /// read neither spends nor stops the job: the job takes the wallet path.
     async fn relay_may_send(&self) -> bool {
+        self.relay_may_send_on(&self.http_rpc_url).await
+    }
+
+    /// `relay_may_send` for the chain at `rpc_url`, where the relay key pays.
+    async fn relay_may_send_on(&self, rpc_url: &str) -> bool {
         if !self.relay.enabled {
             return false;
         }
-        match self.relay_has_funds().await {
+        match self.relay_has_funds(rpc_url).await {
             Ok(funded) => funded,
             Err(error) => {
                 warn!(%error, "Could not read the relay balance; voters' wallets send new commitments");
@@ -2224,12 +2256,12 @@ impl AvailabilityService {
     /// Whether the server key holds at least `RELAY_MIN_BALANCE_ETH`. The same key pays for
     /// `finalizeInput`, so the floor keeps relays from spending the funds that finalization needs.
     /// Every balance meets a zero floor, so a zero floor reads no balance.
-    async fn relay_has_funds(&self) -> anyhow::Result<bool> {
+    async fn relay_has_funds(&self, rpc_url: &str) -> anyhow::Result<bool> {
         let Some(floor) = self.relay.min_balance.filter(|floor| !floor.is_zero()) else {
             return Ok(true);
         };
-        let balance = self
-            .provider()?
+        let balance = rpc::http_provider(rpc_url)
+            .map_err(from_eyre)?
             .get_balance(self.signer()?.address())
             .await?;
         if balance < floor {
@@ -2275,11 +2307,26 @@ impl AvailabilityService {
             anyhow::bail!("aggregate ciphertext jobs have no input commitment to relay");
         };
         let (_, envelope) = job.input()?;
+        self.reserve_relay_slot(e3_id, envelope.slotAddress, &job.id, *commitment_deadline)
+    }
+
+    /// `reserve_relay` for one input of `slot` in round `e3_id`, named `id`, whose commitment may be
+    /// sent until `commitment_deadline`.
+    fn reserve_relay_slot(
+        &self,
+        e3_id: &str,
+        slot_address: Address,
+        id: &str,
+        commitment_deadline: u64,
+    ) -> anyhow::Result<bool> {
+        if !self.relay.enabled {
+            return Ok(false);
+        }
         // The E3 identifier is canonical decimal, so the separator makes each round prefix match
         // only its own round: round 1 does not count the records of round 12.
         let round = format!("{e3_id}/");
-        let slot = format!("{round}{}/", hex::encode(envelope.slotAddress));
-        let key = format!("{slot}{}", job.id);
+        let slot = format!("{round}{}/", hex::encode(slot_address));
+        let key = format!("{slot}{id}");
         // Read before the lock: the input window of a round never changes, and the read decodes
         // the complete round record.
         let ledger_holds_round = self.ledger_holds_round(e3_id);
@@ -2290,14 +2337,14 @@ impl AvailabilityService {
         }
         if !ledger_holds_round {
             info!(
-                e3_id = e3_id.as_str(),
+                e3_id,
                 "The round opened before the relay ledger started; voters' wallets send its commitments"
             );
             return Ok(false);
         }
         if holds_at_least(&self.relayed_inputs, &slot, self.relay.max_per_slot)? {
             info!(
-                job_id = job.id.as_str(),
+                job_id = id,
                 "The slot reached its relay limit for this round; the voter's wallet sends the commitment"
             );
             return Ok(false);
@@ -2305,8 +2352,8 @@ impl AvailabilityService {
         if let Some(max_per_round) = self.relay.max_per_round {
             if holds_at_least(&self.relayed_inputs, &round, max_per_round)? {
                 warn!(
-                    job_id = job.id.as_str(),
-                    e3_id = e3_id.as_str(),
+                    job_id = id,
+                    e3_id,
                     "The round reached its relay limit; voters' wallets send new commitments"
                 );
                 return Ok(false);
@@ -2335,6 +2382,11 @@ impl AvailabilityService {
     /// The start of the input window of a round, from the round record that the indexer stores
     /// when the committee key is published (`E3Repository`). `None` when there is no record yet.
     fn input_window_start(&self, e3_id: &str) -> anyhow::Result<Option<u64>> {
+        Ok(self.input_window(e3_id)?.map(|window| window[0]))
+    }
+
+    /// The input window of a round, `[start, end]` in L1 seconds, from the same record.
+    fn input_window(&self, e3_id: &str) -> anyhow::Result<Option<[u64; 2]>> {
         /// The one field of the indexer's round record that this service reads.
         #[derive(Deserialize)]
         struct IndexedRound {
@@ -2344,7 +2396,7 @@ impl AvailabilityService {
             return Ok(None);
         };
         let round: IndexedRound = serde_json::from_slice(&record)?;
-        Ok(Some(round.input_window[0]))
+        Ok(Some(round.input_window))
     }
 
     /// Remove the relay records of rounds whose commitment cutoff passed before `now`, with a
@@ -2759,12 +2811,16 @@ mod tests {
             remote_objects: db.open_tree("remote-objects").unwrap(),
             staging_tags: db.open_tree("staging-tags").unwrap(),
             remote: None,
+            gnosis: None,
             input_duration_seconds: 0,
             proof_lead_seconds: 0,
             max_pending_bytes,
             external_outputs: db.open_tree("external-outputs").unwrap(),
             external_outputs_lock: Arc::default(),
             external_outputs_max_bytes: 0,
+            output_uploader: None,
+            output_uploads: db.open_tree("output-uploads").unwrap(),
+            output_upload_retries: Arc::default(),
         }
     }
 

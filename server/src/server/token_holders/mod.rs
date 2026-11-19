@@ -8,6 +8,7 @@ pub mod etherscan;
 pub mod hashes;
 pub mod merkle_tree;
 pub mod requester_census;
+pub mod rpc_logs;
 
 pub use etherscan::{get_mock_token_holders, token_snapshot, EtherscanClient};
 pub use hashes::compute_token_holder_hashes;

@@ -5,6 +5,8 @@
 // or FITNESS FOR A PARTICULAR PURPOSE.
 
 mod chain;
+mod faucet;
+mod gnosis_voting;
 mod members;
 mod proposals;
 mod rounds;
@@ -35,4 +37,5 @@ pub fn setup_routes(config: &mut web::ServiceConfig) {
     chain::setup_routes(config);
     members::setup_routes(config);
     proposals::setup_routes(config);
+    faucet::setup_routes(config);
 }

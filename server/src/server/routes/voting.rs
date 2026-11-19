@@ -6,6 +6,7 @@
 
 use super::{
     chain::{admit, charge, identify},
+    gnosis_voting,
     state::job_response,
 };
 use crate::server::{
@@ -45,13 +46,17 @@ pub fn setup_routes(config: &mut web::ServiceConfig) {
             .route(web::get().to(get_available_object))
             .route(web::put().to(put_external_output)),
     );
+    let broadcast = web::resource("/broadcast").app_data(crate::server::payloads::encrypted_json());
+    // A Gnosis instance relays to the voting contract on the Gnosis chain instead of running an
+    // availability job on L1.
+    let broadcast = if CONFIG.is_gnosis() {
+        broadcast.route(web::post().to(gnosis_voting::broadcast))
+    } else {
+        broadcast.route(web::post().to(broadcast_encrypted_vote))
+    };
     config.service(
         web::scope("/voting")
-            .service(
-                web::resource("/broadcast")
-                    .app_data(crate::server::payloads::encrypted_json())
-                    .route(web::post().to(broadcast_encrypted_vote)),
-            )
+            .service(broadcast)
             .route(
                 "/availability/{job_id}",
                 web::get().to(get_availability_status),
@@ -68,7 +73,7 @@ pub fn setup_routes(config: &mut web::ServiceConfig) {
 }
 
 /// A `FailedBroadcast` body that carries only `message`.
-fn failed(message: impl Into<String>) -> VoteResponse {
+pub(super) fn failed(message: impl Into<String>) -> VoteResponse {
     VoteResponse {
         status: VoteResponseStatus::FailedBroadcast,
         tx_hash: None,
@@ -80,7 +85,7 @@ fn failed(message: impl Into<String>) -> VoteResponse {
 
 /// The answer to an availability-service error: 400 when the service conclusively rejected the
 /// ballot, 503 for any other failure.
-fn availability_error(e3_key: &str, error: &anyhow::Error) -> HttpResponse {
+pub(super) fn availability_error(e3_key: &str, error: &anyhow::Error) -> HttpResponse {
     if let Some(message) = input_rejection_message(error) {
         warn!("[e3_id={e3_key}] Vote rejected: {error}");
         return HttpResponse::BadRequest().json(failed(message));
@@ -424,6 +429,9 @@ async fn stage_remote_input(
 /// Where to submit a staged input: the remote chain, its contract, and the address that signs
 /// the attestation. 404 when this server serves the L1 program.
 async fn remote_input_config(availability: web::Data<AvailabilityService>) -> impl Responder {
+    if CONFIG.is_gnosis() {
+        return gnosis_voting::config(&availability).await;
+    }
     let (Some((signer, public_key)), Some(node), Ok(contract), Some(staging_max_requests)) = (
         availability.remote_signer(),
         CONFIG.aztec_node_url.as_deref(),

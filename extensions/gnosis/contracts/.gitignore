@@ -1,0 +1,4 @@
+# The root .gitignore ignores every `deployments` directory; this one holds the tracked templates.
+!deployments
+# Written by `script/DeployLocal.s.sol`.
+deployments/localhost.json

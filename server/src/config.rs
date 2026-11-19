@@ -29,6 +29,8 @@ pub enum ProgramKind {
     #[default]
     Crisp,
     Aztec,
+    /// A `CRISPGnosisProgram`, whose inputs live on a Gnosis-chain voting contract.
+    Gnosis,
 }
 
 // Do not derive `Debug`: this structure owns private keys and other secrets.
@@ -79,6 +81,13 @@ pub struct Config {
     /// zero (the default) turns the upload route off.
     #[serde(default)]
     pub external_outputs_max_bytes: u64,
+    /// Base URL of another CRISP server's availability route, for example
+    /// `https://private-crisp.theinterfold.com/availability`. When set, this server uploads each
+    /// aggregate ciphertext it publishes to `PUT {url}/objects/{hash}?e3_id={id}`, so ciphernodes
+    /// that read that server in `mock_http` mode can fetch it. Mock data availability only; absent
+    /// (the default) uploads nothing.
+    #[serde(default)]
+    pub external_output_upload_url: Option<String>,
     /// Shared secret for the round-scheduler endpoint. Absent disables the endpoint.
     #[serde(default)]
     pub cron_api_key: Option<String>,
@@ -174,6 +183,49 @@ pub struct Config {
     /// network and no writable home to verify a pass.
     #[serde(default)]
     pub bb_crs_path: Option<String>,
+
+    /// The HTTP RPC of the chain that holds the ballots (`PROGRAM_KIND=gnosis`): Chiado. The
+    /// Interfold chain stays `HTTP_RPC_URL`.
+    #[serde(default = "default_gnosis_rpc_url")]
+    pub gnosis_rpc_url: String,
+    /// The id of that chain: the EIP-712 domain of the ballot and of the availability attestation.
+    #[serde(default = "default_gnosis_chain_id")]
+    pub gnosis_chain_id: u64,
+    /// The `CrispGnosisVoting` contract. Required for `PROGRAM_KIND=gnosis`.
+    #[serde(default)]
+    pub gnosis_voting_address: Option<String>,
+    /// The voting token (`CrispDemoToken`). Required for `PROGRAM_KIND=gnosis`.
+    #[serde(default)]
+    pub gnosis_token_address: Option<String>,
+    /// The first voting-chain block that can hold a log of the voting contract. Required for
+    /// `PROGRAM_KIND=gnosis`.
+    #[serde(default)]
+    pub gnosis_start_block: Option<u64>,
+    /// The first block that can hold a log of the token, where holder discovery starts. Absent:
+    /// `GNOSIS_START_BLOCK`.
+    #[serde(default)]
+    pub gnosis_token_start_block: Option<u64>,
+    /// How long an availability attestation stays valid, counted from the voting chain's latest
+    /// block.
+    #[serde(default = "default_gnosis_attestation_ttl_seconds")]
+    pub gnosis_attestation_ttl_seconds: u64,
+    /// The block explorer of the voting chain, served to clients by the config endpoint.
+    #[serde(default = "default_gnosis_explorer_url")]
+    pub gnosis_explorer_url: String,
+    /// The Gnosis-chain RPC served to browsers by the config endpoint, which may differ from the
+    /// server's own `GNOSIS_RPC_URL` (that one can carry an API key).
+    #[serde(default = "default_gnosis_rpc_url")]
+    pub gnosis_public_rpc_url: String,
+    /// Mount `POST /faucet`, which mints voting tokens to the caller's address.
+    #[serde(default)]
+    pub faucet_enabled: bool,
+    /// The key authorised as the token's `faucet`. Required when the faucet is enabled. It is not
+    /// `PRIVATE_KEY`: a faucet key that can only mint cannot spend the relay's funds.
+    #[serde(default)]
+    pub faucet_private_key: Option<String>,
+    /// Faucet claims one IP address may make per day, on top of the per-minute caller window.
+    #[serde(default = "default_faucet_rate_limit_per_ip_per_day")]
+    pub faucet_rate_limit_per_ip_per_day: u32,
 }
 
 impl Config {
@@ -198,6 +250,65 @@ impl Config {
         self.program_kind == ProgramKind::Aztec
     }
 
+    /// Whether this instance serves rounds whose inputs live on a Gnosis-chain voting contract.
+    pub fn is_gnosis(&self) -> bool {
+        self.program_kind == ProgramKind::Gnosis
+    }
+
+    /// Whether the inputs of this instance's rounds live on another chain than the L1 program.
+    pub fn is_remote(&self) -> bool {
+        matches!(self.program_kind, ProgramKind::Aztec | ProgramKind::Gnosis)
+    }
+
+    /// The `CrispGnosisVoting` address of a Gnosis instance. `from_env` refuses a missing or
+    /// malformed one.
+    pub fn gnosis_voting(&self) -> Result<Address, ConfigError> {
+        gnosis_address("GNOSIS_VOTING_ADDRESS", self.gnosis_voting_address.as_deref())
+    }
+
+    /// The voting token address of a Gnosis instance. `from_env` refuses a missing or malformed
+    /// one.
+    pub fn gnosis_token(&self) -> Result<Address, ConfigError> {
+        gnosis_address("GNOSIS_TOKEN_ADDRESS", self.gnosis_token_address.as_deref())
+    }
+
+    /// The first block of token logs that holder discovery reads.
+    pub fn gnosis_token_start(&self) -> u64 {
+        self.gnosis_token_start_block
+            .or(self.gnosis_start_block)
+            .unwrap_or_default()
+    }
+
+    fn validate_gnosis(&self) -> Result<(), ConfigError> {
+        self.gnosis_voting()?;
+        self.gnosis_token()?;
+        if self.gnosis_start_block.is_none() {
+            return Err(invalid("GNOSIS_START_BLOCK is required for PROGRAM_KIND=gnosis"));
+        }
+        if self.gnosis_rpc_url.trim().is_empty() {
+            return Err(invalid("GNOSIS_RPC_URL must not be empty"));
+        }
+        if self.gnosis_attestation_ttl_seconds == 0 {
+            return Err(invalid(
+                "GNOSIS_ATTESTATION_TTL_SECONDS must be greater than zero",
+            ));
+        }
+        if self.faucet_enabled {
+            let key = self
+                .faucet_private_key
+                .as_deref()
+                .ok_or_else(|| invalid("FAUCET_PRIVATE_KEY is required when FAUCET_ENABLED=true"))?;
+            key.parse::<alloy::signers::local::PrivateKeySigner>()
+                .map_err(|_| invalid("FAUCET_PRIVATE_KEY is not a private key"))?;
+            if self.faucet_rate_limit_per_ip_per_day == 0 {
+                return Err(invalid(
+                    "FAUCET_RATE_LIMIT_PER_IP_PER_DAY must be greater than zero",
+                ));
+            }
+        }
+        Ok(())
+    }
+
     /// The `CrispAztec` contract address of an Aztec instance. `from_env` refuses a missing or
     /// malformed one.
     pub fn aztec_contract(&self) -> Result<alloy::primitives::B256, ConfigError> {
@@ -210,6 +321,9 @@ impl Config {
     }
 
     fn validate_program(&self) -> Result<(), ConfigError> {
+        if self.is_gnosis() {
+            return self.validate_gnosis();
+        }
         if !self.is_aztec() {
             return Ok(());
         }
@@ -309,6 +423,10 @@ impl Config {
             &config.data_availability_mode(),
             config.external_outputs_max_bytes,
         )?;
+        Self::validate_external_output_upload(
+            &config.data_availability_mode(),
+            config.external_output_upload_url.as_deref(),
+        )?;
         Self::validate_relay(
             config.chain_id,
             config.mainnet_relay,
@@ -332,6 +450,16 @@ impl Config {
             "CHAIN_ID ({}) does not match the chain of HTTP_RPC_URL ({rpc_chain_id})",
             self.chain_id
         );
+        if self.is_gnosis() {
+            let provider =
+                rpc::http_provider(&self.gnosis_rpc_url).map_err(anyhow::Error::msg)?;
+            let rpc_chain_id = provider.get_chain_id().await?;
+            anyhow::ensure!(
+                rpc_chain_id == self.gnosis_chain_id,
+                "GNOSIS_CHAIN_ID ({}) does not match the chain of GNOSIS_RPC_URL ({rpc_chain_id})",
+                self.gnosis_chain_id
+            );
+        }
         Ok(())
     }
 
@@ -443,6 +571,38 @@ impl Config {
         Ok(())
     }
 
+    /// Refuse an upload URL outside mock data availability, where ciphernodes read Avail and
+    /// never the other server, and one that cannot be the base of `{url}/objects/{hash}`. The
+    /// messages never repeat the URL, which can name a private host.
+    fn validate_external_output_upload(mode: &str, url: Option<&str>) -> Result<(), ConfigError> {
+        let Some(url) = url else {
+            return Ok(());
+        };
+        if mode != "mock" {
+            return Err(invalid(
+                "EXTERNAL_OUTPUT_UPLOAD_URL requires DATA_AVAILABILITY_MODE=mock",
+            ));
+        }
+        let url: reqwest::Url = url
+            .parse()
+            .map_err(|_| invalid("EXTERNAL_OUTPUT_UPLOAD_URL is not a valid URL"))?;
+        if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
+            return Err(invalid(
+                "EXTERNAL_OUTPUT_UPLOAD_URL must be an http(s) URL with a host",
+            ));
+        }
+        if !url.username().is_empty()
+            || url.password().is_some()
+            || url.query().is_some()
+            || url.fragment().is_some()
+        {
+            return Err(invalid(
+                "EXTERNAL_OUTPUT_UPLOAD_URL must be the availability route itself, without credentials, query or fragment",
+            ));
+        }
+        Ok(())
+    }
+
     fn validate_e3_param_set(chain_id: u64, param_set: u8) -> Result<(), ConfigError> {
         if param_set != 0 && param_set != 2 {
             return Err(invalid(format!(
@@ -496,6 +656,34 @@ const fn default_relay_max_inputs_per_slot() -> u32 {
 
 const fn default_aztec_attestation_ttl_seconds() -> u64 {
     900
+}
+
+const fn default_gnosis_chain_id() -> u64 {
+    10_200
+}
+
+fn default_gnosis_rpc_url() -> String {
+    "https://rpc.chiadochain.net".to_owned()
+}
+
+fn default_gnosis_explorer_url() -> String {
+    "https://gnosis-chiado.blockscout.com".to_owned()
+}
+
+const fn default_gnosis_attestation_ttl_seconds() -> u64 {
+    3_600
+}
+
+const fn default_faucet_rate_limit_per_ip_per_day() -> u32 {
+    5
+}
+
+fn gnosis_address(name: &str, value: Option<&str>) -> Result<Address, ConfigError> {
+    value
+        .ok_or_else(|| invalid(format!("{name} is required for PROGRAM_KIND=gnosis")))?
+        .trim()
+        .parse()
+        .map_err(|_| invalid(format!("{name} is not an address")))
 }
 
 const fn default_staging_max_requests_per_slot() -> u32 {
@@ -556,6 +744,32 @@ mod tests {
         assert!(Config::validate_external_outputs("avail", object).is_err());
         assert!(Config::validate_external_outputs("mock", object - 1).is_err());
         assert!(Config::validate_external_outputs("mock", object).is_ok());
+    }
+
+    #[test]
+    fn an_output_upload_url_needs_mock_data_availability_and_an_http_route() {
+        let route = Some("https://private-crisp.theinterfold.com/availability");
+        assert!(Config::validate_external_output_upload("avail", None).is_ok());
+        assert!(Config::validate_external_output_upload("mock", None).is_ok());
+        assert!(Config::validate_external_output_upload("mock", route).is_ok());
+        assert!(Config::validate_external_output_upload(
+            "mock",
+            Some("http://127.0.0.1:4000/availability/")
+        )
+        .is_ok());
+        assert!(Config::validate_external_output_upload("avail", route).is_err());
+        for refused in [
+            "private-crisp.theinterfold.com/availability",
+            "ftp://private-crisp.theinterfold.com/availability",
+            "https://user:secret@private-crisp.theinterfold.com/availability",
+            "https://private-crisp.theinterfold.com/availability?key=1",
+            "https://private-crisp.theinterfold.com/availability#top",
+        ] {
+            let error = Config::validate_external_output_upload("mock", Some(refused))
+                .expect_err(refused)
+                .to_string();
+            assert!(!error.contains("secret"), "{error}");
+        }
     }
 
     #[test]
@@ -735,5 +949,65 @@ mod tests {
         assert!(valid.is_aztec());
         assert_eq!(valid.staging_max_requests_per_slot, 16);
         assert_eq!(valid.bb_binary_path, "bb");
+    }
+
+    #[test]
+    fn a_gnosis_instance_needs_its_contracts_and_start_block_and_a_faucet_key_when_enabled() {
+        let address = "0x00000000000000000000000000000000000000aa";
+        let gnosis = |extra: serde_json::Value| {
+            let mut program = serde_json::json!({ "program_kind": "gnosis" });
+            program
+                .as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            config_with(program)
+        };
+        let valid = serde_json::json!({
+            "gnosis_voting_address": address,
+            "gnosis_token_address": address,
+            "gnosis_start_block": 7
+        });
+
+        assert!(gnosis(serde_json::json!({})).validate_program().is_err());
+        assert!(gnosis(serde_json::json!({ "gnosis_voting_address": address }))
+            .validate_program()
+            .is_err());
+        assert!(gnosis(serde_json::json!({
+            "gnosis_voting_address": address,
+            "gnosis_token_address": "0x1234",
+            "gnosis_start_block": 7
+        }))
+        .validate_program()
+        .is_err());
+        let config = gnosis(valid.clone());
+        assert!(config.validate_program().is_ok());
+        assert!(config.is_gnosis() && config.is_remote() && !config.is_aztec());
+        assert_eq!(config.gnosis_chain_id, 10_200);
+        assert_eq!(config.gnosis_rpc_url, "https://rpc.chiadochain.net");
+        assert_eq!(config.gnosis_attestation_ttl_seconds, 3_600);
+        assert_eq!(config.faucet_rate_limit_per_ip_per_day, 5);
+        assert_eq!(config.gnosis_token_start(), 7);
+
+        let enabled = |extra: serde_json::Value| {
+            let mut program = valid.clone();
+            program["faucet_enabled"] = serde_json::json!(true);
+            program
+                .as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            gnosis(program)
+        };
+        assert!(enabled(serde_json::json!({})).validate_program().is_err());
+        assert!(enabled(serde_json::json!({ "faucet_private_key": "nope" }))
+            .validate_program()
+            .is_err());
+        assert!(enabled(serde_json::json!({
+            "faucet_private_key": format!("0x{}", "11".repeat(32))
+        }))
+        .validate_program()
+        .is_ok());
+
+        // The other kinds are not gnosis.
+        assert!(!config_with(serde_json::json!({})).is_remote());
     }
 }

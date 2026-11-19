@@ -1,0 +1,30 @@
+{
+  "name": "@crisp-e3/gnosis-keeper",
+  "version": "0.28.1",
+  "private": true,
+  "type": "module",
+  "description": "Permissionless keeper for CRISP rounds on Gnosis Chain: relays the committee key, closes rounds, delivers the input root over the AMB and relays the result",
+  "license": "LGPL-3.0-only",
+  "files": [
+    "dist"
+  ],
+  "bin": {
+    "crisp-gnosis-keeper": "./dist/main.js"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "start": "node dist/main.js",
+    "test": "vitest --run --passWithNoTests"
+  },
+  "dependencies": {
+    "@crisp-e3/gnosis": "workspace:*",
+    "viem": "2.38.6"
+  },
+  "devDependencies": {
+    "@types/node": "22.7.5",
+    "tsup": "^8.5.0",
+    "typescript": "5.8.3",
+    "vitest": "^1.6.1"
+  }
+}

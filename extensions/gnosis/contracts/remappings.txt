@@ -1,0 +1,10 @@
+@interfold/contracts/=node_modules/@interfold/contracts/
+@openzeppelin/contracts/=node_modules/@openzeppelin/contracts/
+@zk-kit/lazy-imt.sol=node_modules/@zk-kit/lazy-imt.sol
+poseidon-solidity/=node_modules/poseidon-solidity/
+@crisp-e3/extension-core/=node_modules/@crisp-e3/extension-core/
+@crisp-e3/contracts/=node_modules/@crisp-e3/contracts/
+forge-std/=node_modules/forge-std/src/
+@gnosis-guild/zodiac-core/contracts/=vendor/zodiac-core/
+vendor/zodiac-core-2.1.2/:@gnosis.pm/safe-contracts/contracts/=vendor/safe-contracts/
+vendor/zodiac-core-2.1.2/:@openzeppelin/contracts-upgradeable/=vendor/openzeppelin-contracts-upgradeable-5.0.2/

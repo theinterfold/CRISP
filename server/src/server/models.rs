@@ -184,6 +184,46 @@ pub struct RemoteInputConfig {
     pub staging_max_requests: u32,
 }
 
+/// What a client needs to vote on the Gnosis chain through this server.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct GnosisInputConfig {
+    pub kind: String,
+    /// The chain of the voting contract: the EIP-712 domain of the ballot and the attestation.
+    pub chain_id: u64,
+    pub voting_address: String,
+    pub token_address: String,
+    pub rpc_url: String,
+    pub explorer_url: String,
+    /// The L1 program of the rounds.
+    pub program: String,
+    /// The same program, under the name that clients of the Sepolia side read.
+    pub sepolia_program: String,
+    /// Seconds an attestation stays valid, counted from the voting chain's latest block.
+    pub attestation_ttl: u64,
+    /// The address that signs the attestations: the contract's `inputAvailabilitySigner`.
+    pub signer: String,
+    pub faucet: FaucetConfig,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct FaucetConfig {
+    pub enabled: bool,
+    /// Wei per claim, as a decimal string. Zero when the faucet is off.
+    pub amount: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct FaucetRequest {
+    pub address: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct FaucetResponse {
+    pub tx_hash: String,
+    /// Wei minted, as a decimal string.
+    pub amount: String,
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct GetRoundRequest {
     pub round_id: String,

@@ -108,10 +108,10 @@ enum ClockMode {
 }
 
 #[derive(Debug)]
-struct PotentialVoter {
-    address: Address,
-    token_balance: U256,
-    has_delegation: bool,
+pub(super) struct PotentialVoter {
+    pub(super) address: Address,
+    pub(super) token_balance: U256,
+    pub(super) has_delegation: bool,
 }
 
 /// True when the node evaluated a metadata call and the token refused it.
@@ -789,7 +789,7 @@ async fn block_at_or_before(provider: &impl Provider, timestamp: u64) -> Result<
 /// Balances are read with `getPastVotes` at the snapshot, never replaced by a current balance,
 /// which can exceed the supply that sized the divisor. A failed read is retried; a voter whose
 /// read keeps failing fails the census, because a voter left out of the one root can never vote.
-async fn verify_voting_power<P: Provider>(
+pub(super) async fn verify_voting_power<P: Provider>(
     token: &ERC20Votes::ERC20VotesInstance<P>,
     potential_voters: &[PotentialVoter],
     timepoint: u64,

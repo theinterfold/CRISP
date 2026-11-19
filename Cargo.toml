@@ -9,6 +9,7 @@ members = [
   "crates/crisp-utils",
   "extensions/core/remote-input",
   "extensions/aztec/ingest",
+  "extensions/gnosis/ingest",
 ]
 resolver = "3"
 

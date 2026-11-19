@@ -196,7 +196,7 @@ async fn request_new_round(data: web::Json<RoundRequest>) -> HttpResponse {
     }
     // A remote program's rounds are requested on L1 by the poll creator, with the program's own
     // parameters. Requesting one here would run the CRISP token-census flow against another program.
-    if CONFIG.is_aztec() {
+    if CONFIG.is_remote() {
         return json_message(
             StatusCode::BAD_REQUEST,
             "Rounds of this program are requested on L1 by the poll creator",

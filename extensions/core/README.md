@@ -11,20 +11,25 @@ always reverts.
 
 | Hook                                                         | Contract                                                                                                                                         |
 | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `_sendToRemote(e3Id, message) returns (content)`             | Deliver one of the `CRISPRemoteMessages` layouts to the remote CRISP contract. Called inside `validate` (ROUND) and `publishCommitteeKey` (KEY). |
+| `_initRound(e3Id, e3, plaintextModulus, customParams) returns (message, numOptions, inputLimit)` | Decode and validate the request's custom parameters, emit any adapter event, and build the ROUND message (the layout is the adapter's) with the round's option count and input limit. Called once from `validate`, after the base's checks and the input-timing check. |
+| `_sendToRemote(e3Id, message) returns (content)`             | Deliver one of the messages to the remote CRISP contract. Called inside `validate` (ROUND) and `publishCommitteeKey` (KEY). |
 | `scopeOf(e3Id)`                                              | The string a voter's identity proof is bound to. Unique per program, chain and round.                                                            |
 | an entry point calling `_acceptInputRoot(e3Id, root, count)` | Authenticate the ROOT message through the L2's own bridge first. Everything the base needs is the root and the count.                            |
 
-`CRISPAztecProgram` (`extensions/aztec/l1`) is the reference implementation. A new L2 adds a sibling under `extensions/<l2>/`,
-imports `@crisp-e3/extension-core/contracts/CRISPRemoteProgram.sol`, and implements the three hooks.
+`_committeeReservation(timeouts)` is `virtual` as well: an adapter whose transport adds latency before the key can be used
+(the Gnosis AMB) adds it to the base's worst-case time to a key, so `validate` and `earliestVotingStart` agree.
 
-## Round rules
+`CRISPAztecProgram` (`extensions/aztec/l1`) is the reference implementation. A new L2 adds a sibling under `extensions/<l2>/`,
+imports `@crisp-e3/extension-core/contracts/CRISPRemoteProgram.sol`, and implements the hooks above. `extensions/gnosis/contracts`
+is a second adapter, with its own custom parameters and ROUND layout.
+
+## Round rules (Aztec adapter)
 
 A round's custom parameters are `abi.encode(numOptions, credits, minAge, allowMockDocuments, nationalityMode, countries,
 nationalityCommitment)` (see `aztec/README.md`). With a nationality rule the L2 checks ZKPassport's Poseidon2 commitment of the country
 list, which L1 cannot recompute: `nationalityCommitment` must be a non-zero field element (0 without a rule), and a wrong one only
-makes the poll unregistrable, so apps recompute it from `RoundRules` and refuse a mismatch. `validate` emits `RoundRules(...)`, the
-one place a client reads the list a round was created with.
+makes the poll unregistrable, so apps recompute it from `RoundRules` and refuse a mismatch. `CRISPAztecProgram._initRound` emits
+`RoundRules(...)`, the one place a client reads the list a round was created with.
 
 ## Invariants every adapter inherits
 
@@ -37,9 +42,9 @@ one place a client reads the list a round was created with.
   hashes per transaction.
 - **A root is accepted once, while the E3 is in `KeyPublished`, and never zero.** `verify` rejects a compute proof whose
   `inputRoot` is not the delivered root.
-- **Message layouts are a protocol.** `CRISPRemoteMessages` fixes them as 32-byte ABI words with the message kind first (ROUND has
-  12 words). The L2 contract and every off-chain encoder copy them by hand; a change is a cross-component change. The Aztec byte
-  vectors live in `extensions/aztec/l1/tests/fixtures/message-vectors.json`.
+- **Message layouts are a protocol.** `CRISPRemoteMessages` fixes them as 32-byte ABI words with the message kind first. KEY and
+  ROOT are shared; ROUND is the adapter's (12 words on Aztec, 14 on Gnosis). The L2 contract and every off-chain encoder copy them by
+  hand; a change is a cross-component change. The Aztec byte vectors live in `extensions/aztec/l1/tests/fixtures/message-vectors.json`.
 - **`minVotingDuration` of zero turns off the timing checks** (local networks only).
 - **`remoteFinalityWindow` guards the compute deadline.** Interfold's compute deadline counts from the end of the input window, but
   the remote root only becomes deliverable after the L2 closes the round and settles. `validate` reverts `ComputeWindowTooShort` if

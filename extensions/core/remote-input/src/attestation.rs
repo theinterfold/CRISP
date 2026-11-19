@@ -80,8 +80,10 @@ pub struct Attestation {
     pub input_id: B256,
     pub expires_at: u64,
     /// `r || s` of the signature over the EIP-712 digest, with `s` in the lower half of the curve
-    /// order. A circuit that verifies a bare ECDSA signature takes no recovery byte.
     pub signature: [u8; 64],
+    /// The recovery byte, `27 + parity`. An EVM contract that recovers the signer takes
+    /// `r || s || v`; the Aztec circuit ignores it.
+    pub v: u8,
     pub signer: Address,
 }
 
@@ -156,6 +158,7 @@ impl AvailabilityAttester {
             input_id,
             expires_at,
             signature: rs,
+            v: 27 + u8::from(signature.v()),
             signer: self.signer.address(),
         })
     }
@@ -269,16 +272,13 @@ mod tests {
         assert_eq!(attestation.signer, signer.address());
         assert_eq!(attestation.input_id, input_id(PROGRAM, &statement));
         let digest = attester.digest(statement.e3_id, attestation.input_id, 900);
-        let recovered = [27u8, 28u8].into_iter().find_map(|v| {
-            let mut bytes = attestation.signature.to_vec();
-            bytes.push(v);
-            alloy::primitives::Signature::from_raw(&bytes)
-                .ok()?
-                .recover_address_from_prehash(&digest)
-                .ok()
-                .filter(|address| *address == signer.address())
-        });
-        assert_eq!(recovered, Some(signer.address()));
+        let mut bytes = attestation.signature.to_vec();
+        bytes.push(attestation.v);
+        let recovered = alloy::primitives::Signature::from_raw(&bytes)
+            .unwrap()
+            .recover_address_from_prehash(&digest)
+            .unwrap();
+        assert_eq!(recovered, signer.address());
     }
 
     /// The contract stores the key, and the server publishes the address: they must be one signer.

@@ -263,6 +263,69 @@ impl RateLimiter {
     }
 }
 
+/// Faucet claims one caller may make per minute.
+const FAUCET_PER_CALLER_LIMIT: usize = 3;
+
+/// Faucet claims across all callers per minute.
+const FAUCET_GLOBAL_LIMIT: usize = 30;
+
+/// The window of the per-caller daily limit.
+const DAY: Duration = Duration::from_secs(24 * 60 * 60);
+
+/// The limiter for `POST /faucet`.
+///
+/// A distinct type for the reason `ChainRateLimiter` is one: actix keys `app_data` by type. A claim
+/// has to clear four windows: the caller's per-minute window, the global per-minute window, the
+/// target address's per-minute window (one claim a minute, which also keeps one address from being
+/// refilled by many callers), and the caller's daily window. The token contract adds its own
+/// cooldown per address.
+pub struct FaucetRateLimiter {
+    /// Per-minute windows of callers, and the global one.
+    callers: RateLimiter,
+    /// One claim per target address per minute.
+    addresses: RateLimiter,
+    /// Claims of each caller in the last day.
+    days: Mutex<HashMap<String, Vec<Instant>>>,
+    per_caller_per_day: usize,
+}
+
+impl FaucetRateLimiter {
+    pub fn new(per_caller_per_day: u32) -> Self {
+        Self {
+            callers: RateLimiter::with_limits(FAUCET_PER_CALLER_LIMIT, FAUCET_GLOBAL_LIMIT),
+            addresses: RateLimiter::with_limits(1, usize::MAX),
+            days: Mutex::new(HashMap::new()),
+            per_caller_per_day: per_caller_per_day as usize,
+        }
+    }
+
+    /// Record a claim of `address` by `caller`, or refuse it. A refused claim is recorded by no
+    /// window it did not reach, but the windows it passed before the refusal keep their hit.
+    pub fn check(&self, caller: &str, address: &str) -> Result<(), RateLimitExceeded> {
+        self.check_at(caller, address, Instant::now())
+    }
+
+    fn check_at(&self, caller: &str, address: &str, now: Instant) -> Result<(), RateLimitExceeded> {
+        self.callers.check_caller_at(caller, 1, now)?;
+        let global = self.callers.try_reserve_global_at(now)?;
+        self.addresses.check_caller_at(address, 1, now)?;
+
+        let mut days = self.days.lock().unwrap_or_else(PoisonError::into_inner);
+        let recent = |at: &Instant| now.checked_sub(DAY).is_none_or(|cutoff| *at > cutoff);
+        days.retain(|_, claims| {
+            claims.retain(recent);
+            !claims.is_empty()
+        });
+        let claims = days.entry(caller.to_owned()).or_default();
+        if claims.len() >= self.per_caller_per_day {
+            return Err(RateLimitExceeded);
+        }
+        claims.push(now);
+        global.commit();
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -439,5 +502,66 @@ mod tests {
         assert_eq!(limiter.check_caller("a"), Ok(()));
         drop(reservation);
         assert!(limiter.try_reserve_global().is_ok());
+    }
+
+    #[test]
+    fn the_faucet_limits_a_caller_a_minute_and_an_address_a_minute() {
+        let limiter = FaucetRateLimiter::new(100);
+        let start = Instant::now();
+
+        // One address once a minute, however many callers ask.
+        assert_eq!(limiter.check_at("ip-1", "0xa", start), Ok(()));
+        assert_eq!(
+            limiter.check_at("ip-2", "0xa", start),
+            Err(RateLimitExceeded)
+        );
+        let later = start + WINDOW + Duration::from_secs(1);
+        assert_eq!(limiter.check_at("ip-2", "0xa", later), Ok(()));
+
+        // One caller up to its minute limit, with a fresh address each time.
+        let mut admitted = 0;
+        for index in 0..10 {
+            let address = format!("0x{index:x}b");
+            if limiter.check_at("ip-3", &address, start).is_ok() {
+                admitted += 1;
+            }
+        }
+        assert_eq!(admitted, FAUCET_PER_CALLER_LIMIT);
+    }
+
+    #[test]
+    fn the_faucet_limits_a_caller_a_day_and_forgets_after_it() {
+        let limiter = FaucetRateLimiter::new(2);
+        let start = Instant::now();
+        let minute = WINDOW + Duration::from_secs(1);
+
+        assert_eq!(limiter.check_at("ip", "0x1", start), Ok(()));
+        assert_eq!(limiter.check_at("ip", "0x2", start + minute), Ok(()));
+        assert_eq!(
+            limiter.check_at("ip", "0x3", start + 2 * minute),
+            Err(RateLimitExceeded)
+        );
+        // Another caller has its own day.
+        assert_eq!(limiter.check_at("other", "0x4", start + 2 * minute), Ok(()));
+        // A day after the first claim, one slot is free again.
+        assert_eq!(
+            limiter.check_at("ip", "0x5", start + DAY + Duration::from_secs(1)),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn a_faucet_claim_refused_late_does_not_keep_a_global_slot() {
+        let limiter = FaucetRateLimiter::new(1);
+        let start = Instant::now();
+        assert_eq!(limiter.check_at("ip", "0x1", start), Ok(()));
+        // Refused by the daily window after it took a global slot.
+        let soon = start + Duration::from_secs(1);
+        assert_eq!(
+            limiter.check_at("ip", "0x2", soon),
+            Err(RateLimitExceeded)
+        );
+        let state = limiter.callers.state();
+        assert_eq!(state.global.len(), 1);
     }
 }

@@ -94,6 +94,37 @@ The server exposes several RESTful API endpoints:
 - `POST /voting/remote-input`, `GET /voting/remote-input/config`: only with `PROGRAM_KIND=aztec`; they stage a ciphertext against
   a staging pass and sign an availability attestation. The server needs `STAGING_PASS_VK_PATH` and `BB_BINARY_PATH` (`bb` 6.0.0;
   the Docker image ships both). In that mode `/voting/broadcast` and `/rounds/request` refuse. See `../extensions/aztec/README.md`.
+- With `PROGRAM_KIND=gnosis` (ballots on `CrispGnosisVoting`, see `../extensions/gnosis/README.md`):
+  - `POST /voting/broadcast` `{round_id, encoded_proof, send_from_wallet?}` checks the ballot with an `eth_call` of
+    `validateInputProof`, signs the availability attestation and relays `publishInput`. It returns `success` with `tx_hash`, or
+    `ready_for_commitment` with `encoded_proof` for the voter's wallet when the relay is off, over its limits or out of funds, or
+    `send_from_wallet` is set. A refused or already-sent ballot is a 400.
+  - `GET /voting/remote-input/config` returns the chain, the contracts, the attestation signer and the faucet, with
+    `GNOSIS_PUBLIC_RPC_URL` as `rpc_url`.
+  - `POST /faucet` `{address}` (only with `FAUCET_ENABLED=true`) mints the voting token from `FAUCET_PRIVATE_KEY`, limited per
+    caller, per address and by the token's cooldown.
+  - The indexer reads inputs from the voting contract's `InputCommitted` logs, and the voting token's delegates from chain logs.
+
+## Sharing aggregate ciphertexts between servers (mock data availability)
+
+With `DATA_AVAILABILITY_MODE=mock`, ciphernodes with `mode: mock_http` read every E3 output from one
+CRISP server's `/availability` route. A server whose program that route's server does not run must
+get its output there too:
+
+- The receiving server sets `EXTERNAL_OUTPUTS_MAX_BYTES` (at least one object, 1 MiB). It then accepts
+  `PUT /availability/objects/<0x keccak256>?e3_id=<decimal id>` with the raw bytes as the body, and stores them only if Interfold
+  holds that hash as the output of an E3 in `CiphertextReady`, before its decryption deadline. It answers 200 when it stored the
+  object or already holds it.
+- The sending server (any `PROGRAM_KIND`, including `aztec` and `gnosis`) sets `EXTERNAL_OUTPUT_UPLOAD_URL` to the receiver's
+  route, for example `https://private-crisp.theinterfold.com/availability`. The URL must be http(s) and the mode `mock`, or the
+  server does not start. Once Interfold references the output of a round, the server sends the exact bytes to
+  `{url}/objects/0x<keccak256>?e3_id=<id>`.
+
+The upload is a durable obligation of the output job: every published output without a finished upload is sent again after a
+restart. A transient failure (a connection error, a 5xx, 408, 409, 425 or 429) retries after 30 s, doubling to at most 10 min,
+until the E3's decryption deadline passes, which the server reads from Interfold as the receiver does. A final refusal (any other
+status, including a redirect, which is never followed) is logged as an error and not retried. An unset variable uploads nothing.
+The result of each upload is kept in the `data-availability-output-uploads` tree of the server database.
 
 ## Upgrading across an input-format change
 

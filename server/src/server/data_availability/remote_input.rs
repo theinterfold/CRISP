@@ -121,6 +121,9 @@ fn staging_key(e3_id: U256, content_hash: B256) -> [u8; 64] {
 impl AvailabilityService {
     /// The source of the remote inputs, when this instance serves a remote program.
     pub fn remote_source(&self) -> Option<Arc<dyn RemoteInputSource>> {
+        if let Some(gnosis) = &self.gnosis {
+            return Some(gnosis.source.clone());
+        }
         self.remote
             .as_ref()
             .map(|remote| Arc::clone(&remote.source))
@@ -129,6 +132,12 @@ impl AvailabilityService {
     /// The signer of the attestations: its address, and the public key (`x || y`) that the remote
     /// contract stores to verify them.
     pub fn remote_signer(&self) -> Option<(Address, [u8; 64])> {
+        if let Some(gnosis) = &self.gnosis {
+            return Some((
+                gnosis.attester.signer_address(),
+                gnosis.attester.signer_public_key(),
+            ));
+        }
         self.remote.as_ref().map(|remote| {
             (
                 remote.attester.signer_address(),
@@ -286,7 +295,7 @@ impl AvailabilityService {
     /// The staged bytes are bounded like the pending objects of the L1 path. Unlike that path they
     /// are not backed by a verified proof, so the bound and the caller limits of the route are all
     /// that stop unproved bytes from filling the allowance until their round ends.
-    fn admit_remote_object(
+    pub(super) fn admit_remote_object(
         &self,
         e3_id: U256,
         content_hash: B256,
@@ -303,7 +312,7 @@ impl AvailabilityService {
     }
 
     /// Whether `len` more bytes fit the staging allowance. Bytes already staged cost nothing again.
-    fn ensure_remote_capacity(
+    pub(super) fn ensure_remote_capacity(
         &self,
         e3_id: U256,
         content_hash: B256,

@@ -1,0 +1,22 @@
+{
+  "name": "@crisp-e3/gnosis-e2e",
+  "version": "0.28.1",
+  "private": true,
+  "type": "module",
+  "description": "End-to-end harness: one full CRISP-on-Gnosis proposal on a local anvil with a mock AMB (real proofs, real compute, real decryption)",
+  "license": "LGPL-3.0-only",
+  "scripts": {
+    "e2e": "tsx src/run.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@crisp-e3/gnosis": "workspace:*",
+    "@crisp-e3/sdk": "workspace:*",
+    "viem": "2.38.6"
+  },
+  "devDependencies": {
+    "@types/node": "22.7.5",
+    "tsx": "4.20.6",
+    "typescript": "5.8.3"
+  }
+}
