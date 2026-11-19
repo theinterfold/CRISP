@@ -13,6 +13,9 @@ COPY runner ./runner
 COPY program ./program
 COPY server ./server
 COPY crates ./crates
+# Workspace members: Cargo loads every manifest even though the runner links neither.
+COPY extensions/core/remote-input ./extensions/core/remote-input
+COPY extensions/aztec/ingest ./extensions/aztec/ingest
 RUN cargo build --locked --release --bin program-runner
 # Mount the separately built OpenVM workers, their configuration, and the proving artifacts, and
 # set OPENVM_PROVER_BIN, OPENVM_PROVER_BIN_CUDA, OPENVM_PROVER_CONFIG and OPENVM_BACKEND.
