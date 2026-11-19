@@ -216,6 +216,11 @@ pub struct Config {
     /// server's own `GNOSIS_RPC_URL` (that one can carry an API key).
     #[serde(default = "default_gnosis_rpc_url")]
     pub gnosis_public_rpc_url: String,
+    /// The priority fee, in wei, of the transactions this server sends on the voting chain (the
+    /// relay's `publishInput`, the faucet's mint), with a max fee of twice the latest base fee plus
+    /// it. Absent: alloy's estimate, whose tip floor is 1 gwei, far above what Gnosis chains need.
+    #[serde(default)]
+    pub gnosis_priority_fee_wei: Option<u64>,
     /// Mount `POST /faucet`, which mints voting tokens to the caller's address.
     #[serde(default)]
     pub faucet_enabled: bool,

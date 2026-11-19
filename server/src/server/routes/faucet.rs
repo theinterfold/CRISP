@@ -20,11 +20,9 @@ use crate::server::{
 use actix_web::{web, HttpRequest, HttpResponse, Responder};
 use alloy::{
     primitives::{Address, U256},
-    providers::{DynProvider, Provider, ProviderBuilder},
-    rpc::client::RpcClient,
+    providers::DynProvider,
     signers::local::PrivateKeySigner,
     sol,
-    transports::http::Http,
 };
 use e3_sdk::evm::nonce::send_with_next_nonce;
 use log::{error, info, warn};
@@ -69,16 +67,7 @@ async fn faucet_account() -> eyre::Result<&'static (DynProvider, Address)> {
                 .parse()
                 .map_err(|_| eyre::eyre!("FAUCET_PRIVATE_KEY is not a private key"))?;
             let address = signer.address();
-            let url: reqwest::Url = CONFIG
-                .gnosis_rpc_url
-                .parse()
-                .map_err(|error| eyre::eyre!("GNOSIS_RPC_URL is not a valid URL: {error}"))?;
-            let transport = Http::with_client(rpc::HTTP.clone(), url);
-            let provider = ProviderBuilder::new()
-                .wallet(signer)
-                .connect_client(RpcClient::new(transport, false))
-                .erased();
-            Ok((provider, address))
+            Ok((rpc::wallet_provider(&CONFIG.gnosis_rpc_url, signer)?, address))
         })
         .await
 }
@@ -126,7 +115,11 @@ async fn mint(to: Address) -> Result<FaucetResponse, Refused> {
             },
         );
     }
-    let receipt = send_with_next_nonce(token.faucetMint(to), *from)
+    let mut call = token.faucetMint(to);
+    if let Some((max_fee, tip)) = rpc::gnosis_fees(provider).await.map_err(unavailable)? {
+        call = call.max_fee_per_gas(max_fee).max_priority_fee_per_gas(tip);
+    }
+    let receipt = send_with_next_nonce(call, *from)
         .await
         .map_err(unavailable)?
         .get_receipt()

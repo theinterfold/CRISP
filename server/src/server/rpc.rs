@@ -54,6 +54,18 @@ pub async fn provider() -> eyre::Result<&'static DynProvider> {
         .await
 }
 
+/// A provider that signs with `signer` and sends to `url`, on the shared, timeout-bounded client.
+pub fn wallet_provider(url: &str, signer: PrivateKeySigner) -> eyre::Result<DynProvider> {
+    let url: reqwest::Url = url
+        .parse()
+        .map_err(|error| eyre::eyre!("the RPC URL is not a valid URL: {error}"))?;
+    let transport = Http::with_client(HTTP.clone(), url);
+    Ok(ProviderBuilder::new()
+        .wallet(signer)
+        .connect_client(RpcClient::new(transport, false))
+        .erased())
+}
+
 /// The provider that sends transactions from the server key (`PRIVATE_KEY`) to `HTTP_RPC_URL`,
 /// built once, with the server key's address. Transactions go through `send_with_next_nonce`, the
 /// process-wide nonce sequence of that key.
@@ -66,18 +78,25 @@ pub async fn sender() -> eyre::Result<&'static (DynProvider, alloy::primitives::
                 .parse()
                 .map_err(|error| eyre::eyre!("invalid server key: {error}"))?;
             let address = signer.address();
-            let url: reqwest::Url = CONFIG
-                .http_rpc_url
-                .parse()
-                .map_err(|error| eyre::eyre!("the RPC URL is not a valid URL: {error}"))?;
-            let transport = Http::with_client(HTTP.clone(), url);
-            let provider = ProviderBuilder::new()
-                .wallet(signer)
-                .connect_client(RpcClient::new(transport, false))
-                .erased();
-            Ok((provider, address))
+            Ok((wallet_provider(&CONFIG.http_rpc_url, signer)?, address))
         })
         .await
+}
+
+/// The `(max fee, priority fee)` of a voting-chain transaction when `GNOSIS_PRIORITY_FEE_WEI` is
+/// set: that tip, and twice the latest base fee plus it. `None` leaves the fees to alloy, whose tip
+/// floor (1 gwei) makes a relayed ballot cost thousands of times what the chain charges.
+pub async fn gnosis_fees(provider: &impl Provider) -> eyre::Result<Option<(u128, u128)>> {
+    let Some(tip) = CONFIG.gnosis_priority_fee_wei else {
+        return Ok(None);
+    };
+    let base_fee = provider
+        .get_block_by_number(BlockNumberOrTag::Latest)
+        .await?
+        .and_then(|block| block.header.base_fee_per_gas)
+        .ok_or_else(|| eyre::eyre!("the voting chain's latest block has no base fee"))?;
+    let tip = u128::from(tip);
+    Ok(Some((u128::from(base_fee) * 2 + tip, tip)))
 }
 
 /// The timestamp of the latest block.

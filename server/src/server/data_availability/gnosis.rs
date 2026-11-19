@@ -16,6 +16,13 @@ use crisp_remote_input::{AvailabilityAttester, InputStatement, RemoteInputSource
 /// The widest `eth_getLogs` range when `INDEX_CHUNK_SIZE` is not set.
 const DEFAULT_LOG_CHUNK_SIZE: u64 = 10_000;
 
+alloy::sol! {
+    #[sol(rpc)]
+    interface IGnosisRelay {
+        function publishInput(uint256 e3Id, bytes data) external;
+    }
+}
+
 /// What this service needs of the voting chain.
 #[derive(Clone)]
 pub(super) struct GnosisInputs {
@@ -75,6 +82,32 @@ impl AvailabilityService {
         CRISPContract::new(&gnosis.rpc_url, &self.private_key, &gnosis.voting.to_string())
             .await
             .map_err(from_eyre)
+    }
+
+    /// Send `publishInput` from the relay key, with the voting chain's fees (`rpc::gnosis_fees`).
+    async fn relay_publish_input(
+        &self,
+        gnosis: &GnosisInputs,
+        e3_id: U256,
+        data: Bytes,
+    ) -> eyre::Result<TransactionReceipt> {
+        let signer: alloy::signers::local::PrivateKeySigner = self
+            .private_key
+            .parse()
+            .map_err(|error| eyre::eyre!("invalid relay key: {error}"))?;
+        let from = signer.address();
+        let provider = rpc::wallet_provider(&gnosis.rpc_url, signer)?;
+        let voting = IGnosisRelay::new(gnosis.voting, &provider);
+        let mut call = voting.publishInput(e3_id, data);
+        if let Some((max_fee, tip)) = rpc::gnosis_fees(&provider).await? {
+            call = call.max_fee_per_gas(max_fee).max_priority_fee_per_gas(tip);
+        }
+        let receipt = e3_sdk::evm::nonce::send_with_next_nonce(call, from)
+            .await?
+            .get_receipt()
+            .await?;
+        eyre::ensure!(receipt.status(), "publishInput transaction reverted");
+        Ok(receipt)
     }
 
     /// The voting chain reader, when this instance serves the Gnosis program.
@@ -192,7 +225,7 @@ impl AvailabilityService {
         contract
             .simulate_publish_input(e3_id_value, data.clone())
             .await?;
-        match contract.publish_input(e3_id_value, data).await {
+        match self.relay_publish_input(gnosis, e3_id_value, data).await {
             Ok(receipt) => Ok(GnosisBroadcast::Relayed {
                 tx_hash: receipt.transaction_hash.to_string(),
             }),
