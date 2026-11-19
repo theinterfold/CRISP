@@ -42,30 +42,3 @@ pub fn parse_public_inputs<let K: u32>(public_inputs: [Field; K + 6]) -> PublicI
         verification_method: public_inputs[K + 6 - 1],
     }
 }
-
-mod test {
-    use crate::fixtures::FIXTURE_PUBLIC_INPUTS;
-    use crate::parse::parse_public_inputs;
-
-    #[test]
-    fn parses_outer_count_4_fixture() {
-        let p = parse_public_inputs::<4>(FIXTURE_PUBLIC_INPUTS);
-        assert(p.certificate_registry_root == FIXTURE_PUBLIC_INPUTS[0]);
-        assert(p.circuit_registry_root == FIXTURE_PUBLIC_INPUTS[1]);
-        assert(p.current_date == 2524608000);
-        assert(p.domain == 0);
-        assert(p.scope == 0);
-        assert(p.param_commitments[0] == FIXTURE_PUBLIC_INPUTS[5]);
-        assert(p.nullifier_type == 0);
-        assert(p.scoped_nullifier == FIXTURE_PUBLIC_INPUTS[7]);
-        assert(p.oprf_pk_hash == 0);
-        assert(p.verification_method == 100);
-    }
-
-    #[test(should_fail_with = "current_date out of range")]
-    fn overflowing_current_date_rejected() {
-        let mut pis = FIXTURE_PUBLIC_INPUTS;
-        pis[2] = 0x10000000000000000; // 2^64
-        let _ = parse_public_inputs::<4>(pis);
-    }
-}

@@ -1,95 +1,59 @@
-# ZKPassport fixtures for the Aztec local network
+# ZKPassport mock proofs for the Aztec local network
 
-Dev tooling that lets `CrispAztec.register` / `register_with_age` / `register_with_nationality` / `register_with_age_and_nationality` run on a local Aztec network with **real
-ZKPassport proofs**, no passport and no phone needed.
+Dev tooling (used by the `../src` e2e harness) that lets `CrispAztec.register*` run on a local Aztec network with **real ZKPassport
+proofs**, no passport needed. Every subproof is proved with `bb` 6.0.0 and aggregated by the published `outer_count_4` / `_5` / `_6`
+circuits of ZKPassport circuits release **0.23.0** (built for bb 6.0.0; its outer proofs end with the `verification_method` public
+input). Only the passport (issuing country `ZKR`, ICAO's mock code) and the certificate authority that signs it are synthetic; the
+contract accepts mock documents only for rounds opened with `allowMockDocuments`.
 
-What is real: every subproof (certificate, ID data, integrity, age, nationality, bind) is proved with `bb` 6.0.0 and aggregated
-by the published `outer_count_4` / `outer_count_5` / `outer_count_6` circuits of ZKPassport circuits release **0.23.0** (the release
-built for bb 6.0.0 whose outer proofs end with the `verification_method` public input), exactly as the ZKPassport app produces a `compressed`-mode proof. What is synthetic: the
-passport (issuing country `ZKR`, ICAO's mock code, so the nullifier type is `NON_SALTED_MOCK`) and the certificate
-authority that signs it. The contract accepts mock documents only for rounds opened with `allowMockDocuments`
-(`dev_mode`); nothing in the contract is bypassed.
-
-## Use
-
-Prerequisites: Aztec 6.0.0 on the `PATH` (it ships `bb` 6.0.0), network access to `circuits2.zkpassport.id` and
-GitHub (first run only), a local network (`aztec start --local-network`).
-
-```bash
-export PATH=$HOME/.aztec/versions/6.0.0/bin:$HOME/.aztec/bin:$PATH
-cd extensions/aztec/e2e
-pnpm tsx zkpassport/src/demo.ts   # ~3 min: seeds the registry, opens 2 rounds, registers, runs the negative controls
-```
-
-`demo.ts` deploys the vendored `ZKPassportRegistry` at its canonical address and seeds it, deploys `CrispAztec`
-(its `l1_program` is anvil account 7, which stands in for `CRISPAztecProgram` and sends real Inbox messages), opens
-a round without age (`outer_count_4`), one with `min_age` 18 (`outer_count_5`), one with a nationality-in rule (`outer_count_5`) and one with
-`min_age` 18 and a nationality-not-in rule (`outer_count_6`) using the real scope hash, lands
-each variant (`register`, `register_with_age`, `register_with_nationality`, `register_with_age_and_nationality`), prints the
-`MemberRegistered` logs, then checks that five flawed proofs are refused (a corrupted proof, a proof bound to another account,
-a proof for another round's scope, a document that already registered, a proof for another nationality list). `SKIP_CONTROLS=1` skips the controls.
+Prerequisites: Aztec 6.0.0 on the `PATH` (it ships `bb` 6.0.0), network access to `circuits2.zkpassport.id` and GitHub (first run only),
+a local network (`aztec start --local-network`).
 
 ```ts
-import {
-  LOCAL_NETWORK_REGISTRY_ADDRESS,
-  chainTime,
-  circuitsVersionField,
-  connectRegistryContext,
-  domainHash,
-  generateMockRegistrationProof,
-  mockRegistryRoots,
-  seedLocalRegistry,
-} from './zkpassport/src'
+import { connectRegistryContext, seedLocalRegistry, generateMockRegistrationProof, chainTime, domainHash, circuitsVersionField,
+         LOCAL_NETWORK_REGISTRY_ADDRESS } from './zkpassport/src'
 
 const context = await connectRegistryContext(nodeUrl)
-await seedLocalRegistry(context) // idempotent: deploys, seeds the mock roots + both outer vks, warps the clock once
-await context.stop()
-
-// CrispAztec is deployed with
-//   zkpassportRegistry: LOCAL_NETWORK_REGISTRY_ADDRESS, zkpassportCircuitVersion: circuitsVersionField(),
-//   zkpassportDomainHash: domainHash('<your domain>')
+await seedLocalRegistry(context) // idempotent: deploys, seeds the mock roots + the outer vks, warps the clock once
+// deploy CrispAztec with zkpassportRegistry: LOCAL_NETWORK_REGISTRY_ADDRESS, zkpassportCircuitVersion: circuitsVersionField(),
+// zkpassportDomainHash: domainHash('<your domain>')
 
 const proof = await generateMockRegistrationProof({
   aztecAddress: session.address.toString(), // the proof is bound to the sender
   domain: domainHash('<your domain>'),
-  scope: scopeOf(chainId, l1Program, e3Id), // `crisp-aztec:<chainId>:<program>:<e3Id>`; hashed to the round's scope_hash
-  minAge: 18, // 0 → outer_count_4 (register), > 0 → outer_count_5 (register_with_age)
-  nationality: { mode: 1, countries: ['ZKR'] }, // optional rule: one more subproof (the mock document's nationality is ZKR)
-  now: await chainTime(session.node), // the proof's date: the contract checks it against the L2 block
+  scope: scopeOf(chainId, l1Program, e3Id), // hashed to the round's scope_hash
+  minAge: 18, // 0 → outer_count_4, > 0 → outer_count_5
+  nationality: { mode: 1, countries: ['ZKR'] }, // optional rule (the mock document's nationality is ZKR)
+  now: await chainTime(session.node), // the contract checks it against the L2 block
   documentNumber: 'ZKR000001', // ≤ 9 chars of A-Z0-9<; one registration per document and round
 })
-await client.register({ e3Id, slot, proof }) // `proof` is { proof, vkeyHash }, like a ZKPassport compressed result
+await client.register({ e3Id, slot, proof })
 ```
 
-`generateMockRegistrationProof` takes ~25 s (no age) or ~32 s (age). `mockRegistryRoots()` returns what a registry must
-hold (certificate root, circuit root, `outer_count_4/5/6` vk hashes) without proving anything.
+A proof takes ~25 s (no age) or ~32 s (age).
 
-## Ordering and time
+## Gotchas
 
-- The registry is a `DelayedPublicMutable` with a 24 h delay: a root or vk written now is invisible to private reads
-  for 86 400 s. `seedLocalRegistry` therefore **warps the network (L1 and L2) forward ~24 h once** through the node
-  debug API (`warpL2TimeAtLeastTo`). Run it before anything time-sensitive (an Interfold E3 request, input windows),
-  and never between a request and its deadline. It is a no-op once seeded.
-- Proofs take `now` = the latest L2 block timestamp. The contract requires `now <= anchor_ts + 3600` and
-  `now + validity > anchor_ts`; after the warp the chain is ahead of the wall clock, so do not use `Date.now()`.
-- Register after the round's message has been included in a block. A local network builds a block only when a tx is
-  pending, so `demo.ts` asks for an empty one with `warpL2TimeAtLeastBy(1)` after each Inbox message.
-- Sessions must prove client-side: `connectAztec` does by default. The embedded wallet's simulation does not run the
-  `verify_honk_proof` recursion, so a session created with `{ prove: false }` accepts corrupted ZKPassport proofs.
+- The registry is a `DelayedPublicMutable` with a 24 h delay: a root or vk written now is invisible to private reads for 86 400 s.
+  `seedLocalRegistry` therefore **warps the network (L1 and L2) forward ~24 h once**. Run it before anything time-sensitive (an
+  Interfold E3 request, input windows), never between a request and its deadline. It is a no-op once seeded.
+- Proofs take `now` = the latest L2 block timestamp (the contract requires `now <= anchor_ts + 3600`); after the warp the chain is
+  ahead of the wall clock, so do not use `Date.now()`.
+- Register after the round's message has been included in a block: a local network builds a block only when a tx is pending, so ask
+  for an empty one with `warpL2TimeAtLeastBy(1)` after each Inbox message.
+- Sessions must prove client-side (`connectAztec` does by default): the embedded wallet's simulation does not run the
+  `verify_honk_proof` recursion, so `{ prove: false }` accepts corrupted ZKPassport proofs.
 
-## Files and caches
+## Files
 
 - `src/proof.ts`: `generateMockRegistrationProof`, `mockRegistryRoots`, `scopeHash`, `packCircuitVersion`.
-- `src/prove-mock.cts`: the prover. It runs inside a checkout of `zkpassport/circuits` at commit `4d90f1f` ("Release 0.23.0",
-  built for bb 6.0.0; the release has no git tag) with that checkout's own dependencies, because `@zkpassport/utils` must not be
-  loaded twice. `scripts/setup-circuits.mjs` creates the checkout on first use; delete `.cache/circuits` of an older release first.
+- `src/prove-mock.cts`: the prover. It runs inside a checkout of `zkpassport/circuits` at commit `4d90f1f` ("Release 0.23.0", no git
+  tag) with that checkout's own dependencies, because `@zkpassport/utils` must not be loaded twice. `scripts/setup-circuits.mjs`
+  creates the checkout on first use; delete `.cache/circuits` of an older release first.
 - `src/registry.ts`: deploy and seed the registry, `warpTo`, `chainTime`, `domainHash`, `circuitsVersionField`.
-- `.cache/` (gitignored): the circuits checkout, the circuit manifest and compiled circuits, the synthetic authority
-  (`pki.json`, so the certificate root stays the same and the registry is seeded once) and its DSC proof.
+- `.cache/` (gitignored): the circuits checkout, compiled circuits and the synthetic authority (`pki.json`, so the certificate root
+  stays the same and the registry is seeded once).
 
-## Real ZKPassport app (not exercised here)
-
-On a network where the real registry is seeded, a proof from the ZKPassport app works unchanged: circuits release
-0.23.0, `mode: 'compressed'`, `bind: { user_address }` set to the voter's Aztec address, `scope` = the round scope
-string, `domain` such that its hash equals the contract's `zkpassport_domain`, and `devMode: true` only for mock
-documents (rounds with `allowMockDocuments`).
+A proof from the real ZKPassport app works unchanged on a network with the real registry: release 0.23.0, `mode: 'compressed'`,
+`bind: { user_address }` the voter's Aztec address, `scope` the round scope string, a `domain` hashing to the contract's
+`zkpassport_domain`, and `devMode: true` only for mock documents.

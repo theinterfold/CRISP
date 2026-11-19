@@ -1,9 +1,8 @@
 # CRISP on Aztec
 
-Voters register with ZKPassport and cast CRISP ballots on Aztec v6; Interfold, the committee and the
-compute stay on Ethereum. The poll creator makes one L1 transaction (`Interfold.request`); voter
-transactions are paid by Aztec's SponsoredFPC; every relay step is permissionless (`keeper/`).
-See `../README.md` for the cross-chain flow.
+Voters register with ZKPassport and cast CRISP ballots on Aztec v6; Interfold, the committee and the compute stay on Ethereum.
+The poll creator makes one L1 transaction (`Interfold.request`); voter transactions are paid by Aztec's SponsoredFPC; every relay
+step is permissionless (`keeper/`). See `../README.md` for the cross-chain flow.
 
 | Path | Contents |
 | --- | --- |
@@ -16,64 +15,42 @@ See `../README.md` for the cross-chain flow.
 
 ## Registration and nationality
 
-Voters register on Aztec. The creator sets the round's rules in the custom parameters of `Interfold.request`:
+The creator sets the round's rules in the custom parameters of `Interfold.request`:
 
 ```
 abi.encode(uint256 numOptions, uint256 credits, uint256 minAge, bool allowMockDocuments,
            uint8 nationalityMode, string[] countries, uint256 nationalityCommitment)
 ```
 
-`@crisp-e3/aztec` encodes and decodes it (`encodeCustomParams` / `decodeCustomParams`, with `RoundRules`).
-`minAge` is 0 (no rule) to 99. `nationalityMode` is 0 none, 1 the voter's nationality is in `countries`,
-2 it is not (ICAO alpha-3 codes such as `DEU`, at most 200). `nationalityCommitment` is 0 without a
-nationality rule and a non-zero field element with one. Voters never need an Ethereum wallet: only the creator
-connects one.
+`@crisp-e3/aztec` encodes and decodes it (`encodeCustomParams` / `decodeCustomParams`). `minAge` is 0 (no rule) to 99.
+`nationalityMode` is 0 none, 1 the voter's nationality is in `countries`, 2 it is not (ICAO alpha-3 codes such as `DEU`, at most
+200). `nationalityCommitment` is 0 without a nationality rule and non-zero with one. Only the creator needs an Ethereum wallet.
 
-The voter submits the ZKPassport proof from an Aztec account (fees by SponsoredFPC) to
-`CrispAztec.register*`, which verifies it in private and inserts the slot into the census. The contract entry
-point follows the rules: `register` (no rule), `register_with_age`, `register_with_nationality`,
-`register_with_age_and_nationality` (the SDK's `client.register` picks it).
-Each takes the ZKPassport outer proof of 4 (bind only), 5 or 6 subproofs (age, nationality, bind). For a
-nationality rule the contract rebuilds the expected parameter commitment from the round's stored
-`nationalityCommitment` (ZKPassport's country-list commitment, with exclusion lists sorted:
-`nationalityCommitment(mode, countries)` in the SDK) and the vendored ZKPassport `Query` gained
-`nationality_committed(exclusion, commitment)` for that (see `contracts/README.md`, "Vendored ZKPassport").
-The census trusts only the proof Aztec verifies itself.
+The voter submits the ZKPassport proof from an Aztec account (fees by SponsoredFPC) to `CrispAztec.register*`, which verifies it
+in private and inserts the slot into the census; the SDK's `client.register` picks the entry point that fits the round's rules.
+See `contracts/README.md` for the entry points and the nationality commitment.
 
 ## Design constraints
 
-- **Round ids.** Interfold e3Ids (`uint160(interfold) << 96 | seq`) exceed the BN254 field, so Aztec
-  and the L1↔L2 messages key rounds by `roundId = e3Id & (2^96 - 1)`. The Aztec contract rebuilds
-  the full e3Id (`interfold ‖ roundId`) for the EIP-712 ballot and availability digests and `inputId`,
-  which therefore equal the L1 CRISP ones.
-- **Trees.** The input tree is byte-identical to `CRISPProgram`'s (sha256 leaf, zk-kit LazyIMT,
-  circom Poseidon, dynamic depth), so the OpenVM guest and program server are unchanged. circom
-  Poseidon costs ~271k L2 gas per hash in the AVM, which caps both trees at 65,536 leaves; the worst
-  insert or close uses ~4.7M of the 6M public gas budget.
-- **Ballot proof.** The voter proves only the three base circuits (`user_data_encryption_ct0`, `_ct1`, crisp) with the
-  `noir-recursive-no-zk` target (410 fields each); the private `cast` verifies all three with
-  `verify_honk_proof_non_zk` against the stored VK hashes and makes the checks the `user_data_encryption` and fold
-  circuits make on L1 (`contracts/README.md`, *The ballot proofs*). That drops the two 2^21-gate aggregation proofs
-  from the voter's work. The proofs are private arguments of `cast` and never leave the voter's device.
-- **Identity.** ZKPassport `compressed` outer proofs (bb 6.0.0) are verified in the private `register*`
-  functions, bound to the caller, scoped per round; one registration per document per round (see
-  *Registration and nationality* above). A person holding two documents can still register twice.
-- **Availability.** Ciphertexts stay off-chain: the CRISP server stages them and signs an
-  `InputAvailability` attestation that `cast` verifies, as on L1. The server stages a ciphertext only
-  against a **staging pass**, an anonymous proof that the sender holds the key of some registered slot
-  (below), so staging is not open to anyone who wants to fill its storage.
-- **Finality.** The ROOT message is consumable on L1 only after the Aztec epoch proof; deployments
-  set `remoteFinalityWindow` so requests with a too-short compute window are refused.
+- **Round ids.** Aztec and the L1↔L2 messages key rounds by `roundId = e3Id & (2^96 - 1)` (an Interfold e3Id exceeds the BN254
+  field); the contract rebuilds the full e3Id for the EIP-712 digests and `inputId`, which equal the L1 CRISP ones.
+- **Trees.** The input tree is byte-identical to `CRISPProgram`'s, so the OpenVM guest and program server are unchanged. circom
+  Poseidon costs ~271k L2 gas per hash, which caps both trees at 65,536 leaves.
+- **Ballot proof.** The voter proves only the three base circuits and `cast` verifies them (`contracts/README.md`). They are
+  private arguments of `cast`, must be proved client-side and **must never leave the voter's device**.
+- **Identity.** ZKPassport `compressed` outer proofs (bb 6.0.0, circuits release 0.23.0) are verified in the private `register*`
+  functions, bound to the caller and scoped per round: one registration per document per round, so a person with two documents
+  can register twice.
+- **Availability.** Ciphertexts stay off-chain: the server stages them against a **staging pass** and signs an `InputAvailability`
+  attestation that `cast` verifies, as on L1.
+- **Finality.** The ROOT message is consumable on L1 only after the Aztec epoch proof; deployments set `remoteFinalityWindow`.
 
 ## Server
 
-The CRISP server runs Aztec rounds with `PROGRAM_KIND=aztec`. One instance serves one program: in
-this mode `E3_PROGRAM_ADDRESS` is the `CRISPAztecProgram` and the server does not serve L1 CRISP
-rounds. The chain-agnostic seam is `extensions/core/remote-input` (crate `crisp-remote-input`); the
-Aztec side is `extensions/aztec/ingest` (crate `crisp-aztec-ingest`); the integration is in
+The CRISP server runs Aztec rounds with `PROGRAM_KIND=aztec`. One instance serves one program: `E3_PROGRAM_ADDRESS` is the
+`CRISPAztecProgram` and the server does not serve L1 CRISP rounds. The chain-agnostic seam is `extensions/core/remote-input`
+(crate `crisp-remote-input`); the Aztec side is `extensions/aztec/ingest` (crate `crisp-aztec-ingest`); the integration is in
 `server/src/server/{indexer/remote_input.rs,data_availability/remote_input.rs}`.
-
-### Configuration
 
 | Variable                        | Meaning                                                                                                   |
 | ------------------------------- | --------------------------------------------------------------------------------------------------------- |
@@ -87,162 +64,59 @@ Aztec side is `extensions/aztec/ingest` (crate `crisp-aztec-ingest`); the integr
 | `STAGING_MAX_REQUESTS_PER_SLOT` | Staging passes one slot key may use per round: its ciphertext stagings, votes and masks together. Default 16. |
 | `BB_BINARY_PATH`                | The Barretenberg CLI that verifies passes, `bb` 6.0.0 exactly (checked at startup). Default `bb` on the `PATH`; the Docker image ships it. |
 | `BB_CRS_PATH`                   | `bb`'s reference-string directory. Unset: `~/.bb-crs`, which `bb` fills from the internet on first use. The Docker image ships it. |
-| `PRIVATE_KEY`                   | Signs the attestations. The Aztec contract must be deployed with its public key (see `config` below).    |
+| `PRIVATE_KEY`                   | Signs the attestations. The Aztec contract must be deployed with its public key (`GET /voting/remote-input/config`). |
 
-The server relays no inputs in this mode. Outside local chains, `RELAY_MIN_BALANCE_ETH=0` satisfies the
-relay validation.
+The server relays no inputs in this mode (`POST /voting/broadcast` and `/rounds/request` return 400); outside local chains
+`RELAY_MIN_BALANCE_ETH=0` satisfies the relay validation.
 
 ### Round life cycle
 
-1. **Request.** The poll creator requests the round on L1. The server decodes the program's custom
-   parameters, `abi.encode(numOptions, credits, minAge, allowMockDocuments, nationalityMode,
-   countries, nationalityCommitment)`, records the round, and starts it when the committee key is
-   indexed. It has no census and posts no Merkle root;
-   `/rounds/request` refuses in this mode.
-2. **Voting.** The voter encrypts a ballot, sends the ciphertext and a staging pass to
-   `POST /voting/remote-input`, and submits the returned attestation with the Noir proofs to Aztec.
-   Aztec verifies the proofs and accepts the input.
-3. **Ingest.** Every 5 seconds the server reads the `INPUT_COMMITTED` public logs of the contract
-   (`node_getPublicLogsByTags`, tag `1`, resumed from a per-round cursor) and stores each input in
-   the same round record the L1 `InputCommitted` handler fills, pairing it with the bytes it staged
-   under the ciphertext hash. Only blocks of a proven epoch are read: each query takes the proven tip
-   from `node_getChainTips` and sets `toBlock = proven + 1` (exclusive), because the node drops the
-   unproven blocks of an epoch that is never proven and reuses their numbers, which would leave the
-   cursor past the replacement logs. The root reaches L1 after the same epoch proof, so this adds no
-   wait. An input whose bytes the server never staged stops ingestion of that round with a warning:
-   the round cannot be computed without it.
-4. **Compute.** When the L1 program emits `InputRootSubmitted(e3Id, inputRoot, numInputs)` and the
-   server holds exactly `numInputs` inputs, it rebuilds the input tree from them, as the Secure
-   Process does (`sha256` leaves, zk-kit lazy IMT, circom Poseidon), and computes only if the root
-   equals `inputRoot`. A different root logs an error and the round is not computed; the check runs
-   again every minute. There is no input deadline and no `pendingInputCount` gate. Fewer inputs than
-   `numInputs` wait; more is an error. The compute, `stage_output` and `publishCiphertextOutput`
-   steps are the ones of an L1 CRISP round.
-5. **Release.** The staged bytes of a round are deleted, and the round is no longer polled, once its
-   ciphertext output is published, or when Interfold reports its stage as `Failed` or
-   `CiphertextReady`/`Complete`, or when its compute deadline has passed without an output. The stage
-   is read once a minute per round.
+The server starts a round when the committee key is indexed (no census, no Merkle root). Every 5 seconds it reads the
+`INPUT_COMMITTED` logs and pairs each with the bytes it staged; only blocks of a proven epoch are read (`toBlock = proven + 1`),
+because the node drops the unproven blocks of an epoch that is never proven and reuses their numbers. An input whose bytes the
+server never staged stops ingestion of that round. On `InputRootSubmitted(e3Id, inputRoot, numInputs)`, once it holds exactly
+`numInputs` inputs, it rebuilds the tree, computes only if the root equals `inputRoot` and continues as an L1 CRISP round.
 
 ### Endpoints
 
-`POST /voting/remote-input` (404 unless `PROGRAM_KIND=aztec`)
+`POST /voting/remote-input` (404 unless `PROGRAM_KIND=aztec`). `round_id` is the full Interfold E3 id (decimal), not the
+contract's 96-bit round id.
 
-The `round_id` of the request is the full Interfold E3 id (decimal), not the contract's 96-bit round
-id.
+The body is `{ round_id, slot, ciphertext, ciphertext_commitment, parent_index_plus_one, staging_pass: { proof, public_inputs } }`
+(hex strings). It answers 400 when the staging pass is refused, the round is unknown, belongs to another program or has a closed input window, or
+the ciphertext is empty, too large, or does not re-commit to `ciphertext_commitment`; 429 beyond the rate limit; 503 on an
+infrastructure failure. It does **not** verify the ballot proof: Aztec does. The answer is `{ input_id, encrypted_vote_hash,
+expires_at, signature (64 bytes r||s, low-s), signer }`: an EIP-712 signature over `InputAvailability(uint256 e3Id, bytes32 inputId,
+uint64 expiresAt)` in the domain `("CRISP", "1", chainId, program)`, with the L1 program's `inputId`.
 
-```json
-{
-  "round_id": "101158381344220681886982062250077768856931888677917611139287511601085014867975",
-  "slot": "0x…",
-  "ciphertext": "0x…",
-  "ciphertext_commitment": "0x…32 bytes",
-  "parent_index_plus_one": 0,
-  "staging_pass": { "proof": "0x…", "public_inputs": ["0x…32 bytes", "… 6 in all"] }
-}
-```
-
-The server computes `keccak256(ciphertext)` itself. It refuses the request (400) when the staging
-pass is refused (below), when the round is unknown, belongs to another program, or its L1 input window
-has closed, when the ciphertext is empty or too large, or when the ciphertext does not re-commit to
-`ciphertext_commitment`. It does **not** verify the ballot proof: Aztec does. A caller beyond the rate limit gets 429, an infrastructure
-failure 503. The answer is
-
-```json
-{
-  "input_id": "0x…",
-  "encrypted_vote_hash": "0x…",
-  "expires_at": 1760000000,
-  "signature": "0x…64 bytes r||s, low-s",
-  "signer": "0x…"
-}
-```
-
-`signature` is an EIP-712 signature over `InputAvailability(uint256 e3Id, bytes32 inputId, uint64
-expiresAt)` in the domain `("CRISP", "1", chainId, program)`, where `inputId` is the L1 program's
-`keccak256(abi.encode("CRISP_INPUT_V1", program, e3Id, hash, commitment, slot, parentIndexPlusOne))`.
-The bytes are durable before the signature is returned.
-
-`GET /voting/remote-input/config` returns `kind`, `chain_id`, `program`, `aztec_node_url`,
-`aztec_contract`, `signer` (address), `signer_public_key` (`x || y`, the key the Aztec contract is
-deployed with) and `staging_max_requests` (the limit a pass is proved for).
+`GET /voting/remote-input/config` returns the program, chain and contract, the `signer` and `signer_public_key` (`x || y`, the key
+the Aztec contract is deployed with) and `staging_max_requests`.
 
 ### Staging pass
 
-The server attests availability before the `cast` (the contract requires the attestation), so without
-a gate anyone could fill its storage with bytes that are never cast. Asking for the slot's signature
-would let the server tell a vote (signed by the slot) from a mask (any registered slot may be masked
-by anybody), which the ballot design keeps indistinguishable. A pass
-(`extensions/core/circuits/staging_pass`, built by `extensions/aztec/sdk`'s `buildStagingPass`)
-proves only that **the sender holds the key of some slot registered in the round's census**, and
-reveals neither the slot nor the key:
+The server attests availability before the `cast`, so without a gate anyone could fill its storage with bytes that are never cast,
+and asking for the slot's signature would let it tell a vote from a mask. A pass (`extensions/core/circuits/staging_pass`, built by
+the SDK's `buildStagingPass`) proves that **the sender holds the key of some slot registered in the round's census**, revealing
+neither slot nor key. Its public inputs are `census_root`, `round_id`, `request_digest` (signed by the slot key, so a pass cannot
+be replayed for other bytes), `max_requests` and a one-time `tag` of the slot public key and a counter `k < max_requests`. Every
+staging, vote or mask, spends one tag; a mask is staged with the masker's own slot's pass.
 
-- Public: `census_root`, `round_id` (the low 96 bits of the E3 id), `request_digest`, `max_requests`
-  and a one-time `tag = Poseidon(x, y, round_id, k)` of the slot public key `(x, y)`.
-- `request_digest = keccak256(abi.encode("CRISP_STAGING_V1", chainId, program, e3Id,
-  ciphertextCommitment, slot, parentIndexPlusOne))` is signed by the slot key inside the proof, so a
-  pass cannot be replayed for other bytes, another slot or another round.
-- `k < max_requests`, so a slot key has `max_requests` tags per round (`STAGING_MAX_REQUESTS_PER_SLOT`,
-  default 16). Every staging spends one, vote or mask. A mask is staged with the pass of the **masker's
-  own** slot while the request names the masked slot; the server cannot tell. A voter who is not
-  registered cannot stage.
+The server checks the public inputs, `max_requests`, a known `census_root` and a fresh `tag`, then the proof (`bb verify`). A tag
+stays spent when the request is refused for what the caller sent. Census roots come from the `MEMBER_REGISTERED` logs: a pass naming
+a root registered within the last seconds may be refused (`names a census root this round has not had`) and should be retried.
+Tags are unlinkable to slots only while the slot public key stays unpublished; the pass limits a key, not a person.
 
-The server checks, cheapest first: well-formed public inputs, the request digest recomputed from the
-request and this round, `max_requests` equal to its own, `census_root` one the round has had, `tag` not
-used in this round, then the proof (`bb verify`, 2 at a time, 30 s each), and finally stores the tag
-atomically. Each refusal is a 400 naming the check. A tag stays spent when the request is refused for
-what the caller sent (a closed window, bytes that do not match the commitment); a failure of the server
-or of a chain it reads gives it back. Tags and census roots are dropped when the round is released.
-
-The census roots come from the `MEMBER_REGISTERED` logs (tag `2`). A known root is answered at once. An
-unknown one makes the server page the **proven** blocks from a saved cursor (never past the proven tip, as
-the node replaces the blocks of an epoch that is never proven) and then read the unproven tail to the
-newest block without saving a position, so a voter can stage right after registering. That read is single-flight per round and
-runs at most once per 5 s: a pass naming a root registered within the last seconds may be refused
-(`names a census root this round has not had`) and should be retried. This is anti-spam, not soundness:
-`cast` checks the census itself. Before a proof is verified the server also refuses a proof of the wrong
-size, a closed input window (round program and deadline cached per round) and a full staging store; at most
-2 `bb verify` run at once and a request that waits more than 2 s for a slot gets 503. A pass is a ZK proof over the default `bb` target (`evm`: keccak transcript, zero knowledge); the
-verification is a `bb` 6.0.0 subprocess because no workspace crate verifies UltraHonk, and a verifier
-of our own would be a second implementation to keep in step with `bb`.
-
-**Unlinkability assumption.** The tag hashes the slot *public key*, not the address, which the
-registration and the census publish. The public key is never published: a ballot's signature is a
-private input of its proof and the registration binds only the address. While that holds, tags cannot
-be linked to slots, nor a vote's tag to a mask's. A slot owner who reveals a signature made with the key
-(so anyone can recover it) can be linked to its tags, and so can anyone the server's logs of
-`(tag, request)` pairs are shared with: the server learns which stagings used the same key, not whose.
-The pass proves membership, not uniqueness of the person: it limits a key, and a registered voter with
-several slots (documents) has several keys.
-
-`POST /voting/broadcast` returns 400 in this mode: inputs are not relayed to L1.
-
-### Aztec log layout
-
-`INPUT_COMMITTED` is a raw public log whose fields are `[1, round_id, index, slot, ciphertext_commitment,
-vote_hash_hi (u128), vote_hash_lo (u128), parent_index_plus_one]`. The first field is the tag the
-node indexes logs by, so it must stay the literal `1`. A log of another width or tag is refused
-(`extensions/aztec/ingest/src/log.rs`).
-
-`round_id` is the low 96 bits of the Interfold E3 id. A real E3 id is `interfold address (160 bits)
-|| sequence (96 bits)`, above the BN254 modulus, so it does not fit an Aztec field. The ingest is
-built with the Interfold address (`INTERFOLD_ADDRESS`) and maps each log to
-`e3Id = interfold << 96 | round_id` before anything else sees it (`e3_id_of` / `round_id_of`); a log
-whose `round_id` needs more than 96 bits is refused. The server, the round records, the
-attestation's input id and its EIP-712 digest all use the full E3 id.
+The `INPUT_COMMITTED` log layout is in `contracts/README.md`; its first field is the tag and must stay the literal `1`. The ingest
+is built with `INTERFOLD_ADDRESS` and maps each log's 96-bit `round_id` to the full `e3Id`.
 
 ### Risks to know
 
-- **Staged bytes are not ballot-backed.** The server cannot check the ballot proof, so a registered
-  slot can stage up to `STAGING_MAX_REQUESTS_PER_SLOT` well-formed ciphertexts that are never cast; they
-  stay until their round ends. The staging pass bounds this per slot key and shuts out everyone who is
-  not registered; the allowance (`DATA_AVAILABILITY_MAX_PENDING_BYTES`) and the per-caller rate limit
-  still bound the total. A census of N members can fill `N x max_requests` stagings.
-- **One signer.** The attestation key is the server's `PRIVATE_KEY`. Rotating it requires a new
-  Aztec deployment, and two servers cannot both serve one Aztec round: an input attested by one is
-  unknown to the other, and that round would never reach `numInputs`.
-- **Chain clocks.** `expires_at` is compared with the Aztec block time. A chain that has produced no
-  block for a while lags the wall clock, so the server uses the later of the two before adding the
-  TTL.
+- **Staged bytes are not ballot-backed**: a registered slot can stage up to `STAGING_MAX_REQUESTS_PER_SLOT` ciphertexts that are
+  never cast; they stay until the round ends. `DATA_AVAILABILITY_MAX_PENDING_BYTES` and the per-caller rate limit bound the total.
+- **One signer.** The attestation key is the server's `PRIVATE_KEY`. Rotating it requires a new Aztec deployment, and two servers
+  cannot both serve one Aztec round.
+- **Chain clocks.** `expires_at` is compared with the Aztec block time, which lags the wall clock on an idle chain; the server uses
+  the later of the two before adding the TTL.
 
 ### Tests
 

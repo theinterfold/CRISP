@@ -1,11 +1,8 @@
 # CRISP Aztec keeper
 
-A service that takes the steps of an Aztec round nobody else has a reason to take. All of them are
-permissionless; the keeper only needs an L1 account with gas and an Aztec node. Fees on Aztec are
-paid by the SponsoredFPC.
-
-For every round the L1 program announced (`RoundConfigSent`), it does what is due, read from chain
-state:
+A service that takes the steps of an Aztec round nobody else has a reason to take. All are permissionless; the keeper only needs an
+L1 account with gas and an Aztec node (Aztec fees are paid by the SponsoredFPC). For every round the L1 program announced
+(`RoundConfigSent`), it does what is due, read from chain state:
 
 | Step         | When                                                         | Effect                                            |
 | ------------ | ------------------------------------------------------------ | ------------------------------------------------- |
@@ -15,9 +12,8 @@ state:
 | `closeRound` | the input window has ended on Aztec, the round is not closed | `close_round`, which sends the root to the Outbox |
 | `submitRoot` | the round is closed, L1 has no root                          | L1 `submitInputRoot` with the Outbox witness      |
 
-State is never kept on disk: every pass re-reads L1 and the Aztec logs, so a restart, or a second
-keeper, repeats nothing. A step that fails (a message not yet in a block, a witness not yet on L1) is
-retried on the next pass.
+State is never kept on disk: every pass re-reads L1 and the Aztec logs, so a restart or a second keeper repeats nothing. A failed
+step is retried on the next pass.
 
 ## Run
 
