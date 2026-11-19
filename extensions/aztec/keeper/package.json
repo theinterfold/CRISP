@@ -1,0 +1,30 @@
+{
+  "name": "@crisp-e3/aztec-keeper",
+  "version": "0.28.1",
+  "private": true,
+  "type": "module",
+  "description": "Permissionless keeper for CRISP rounds on Aztec: opens rounds, relays keys, closes rounds and delivers the input root to L1",
+  "license": "LGPL-3.0-only",
+  "files": [
+    "dist"
+  ],
+  "bin": {
+    "crisp-aztec-keeper": "./dist/main.js"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "start": "node dist/main.js",
+    "test": "vitest --run --passWithNoTests"
+  },
+  "dependencies": {
+    "@crisp-e3/aztec": "workspace:*",
+    "viem": "2.38.6"
+  },
+  "devDependencies": {
+    "@types/node": "22.7.5",
+    "tsup": "^8.5.0",
+    "typescript": "5.8.3",
+    "vitest": "^1.6.1"
+  }
+}

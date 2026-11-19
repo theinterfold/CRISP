@@ -137,7 +137,57 @@ export type ProofData = {
    * that zero means "no parent", which is what index 0 would otherwise be ambiguous with.
    */
   parentIndexPlusOne: number
+  /** Present only when the fold proof was produced for `verifierTarget: 'noir-recursive'`. */
+  recursive?: RecursiveFoldArtifacts
 }
+
+/**
+ * What a Noir circuit needs to verify a fold proof in-circuit (`verify_honk_proof`): the ZK
+ * `noir-recursive` proof as 458 fields, the 115-field verification key, and its hash. The public
+ * inputs stay in {@link ProofData.publicInputs}.
+ */
+export type RecursiveFoldArtifacts = {
+  proofFields: string[]
+  vkFields: string[]
+  vkHash: string
+}
+
+/**
+ * One of the three base proofs of a ballot, in the `noir-recursive-no-zk` flavour: what Aztec's
+ * `verify_honk_proof_non_zk` takes in a private function. The 410 proof fields exclude the public inputs.
+ */
+export type BaseProof = {
+  proof: Uint8Array
+  proofFields: string[]
+  vkFields: string[]
+  vkHash: string
+  publicInputs: string[]
+}
+
+/**
+ * The base proofs, which carry the ballot's encryption and rules without the two aggregation layers:
+ * `ct0` and `ct1` (`user_data_encryption_ct0` / `_ct1`, public inputs `pk0, ct0, k1, u` and `pk1, ct1, u`) and
+ * `crisp` (ten public inputs, the last two being its return values).
+ */
+export type BaseProofs = { ct0: BaseProof; ct1: BaseProof; crisp: BaseProof }
+
+/** {@link BaseProofs} with what {@link ProofData} carries beside the proof. */
+export type BallotBaseProofs = BaseProofs & {
+  encryptedVote: Uint8Array
+  parentIndexPlusOne: number
+}
+
+/** Verification key and hash of each base circuit, for a verifier that pins them. */
+export type BaseVerificationKeys = Record<keyof BaseProofs, { vkFields: string[]; vkHash: string }>
+
+/**
+ * The proof system target of the final fold proof.
+ *
+ * - `evm` (default): keccak transcript, verified by the generated Solidity verifier.
+ * - `noir-recursive`: poseidon2 transcript with zero knowledge, verified inside another Noir
+ *   circuit; the on-chain verifier cannot check it.
+ */
+export type FoldVerifierTarget = 'evm' | 'noir-recursive'
 
 /**
  * One proof in the ballot pipeline, in the order {@link finishBallotProof} produces them.
@@ -169,6 +219,8 @@ export type ProofProgress = {
 export type ProofOptions = {
   /** Called as each stage starts. Proving takes tens of seconds, so a client can show where it is. */
   onProgress?: (progress: ProofProgress) => void
+  /** Target of the final fold proof. Defaults to `evm`. */
+  verifierTarget?: FoldVerifierTarget
 }
 
 /**

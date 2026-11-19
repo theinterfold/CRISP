@@ -1,0 +1,16 @@
+[package]
+name = "crisp-remote-input"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Chain-agnostic seam for CRISP rounds whose inputs live on an L2"
+repository.workspace = true
+
+[dependencies]
+alloy = { workspace = true }
+async-trait = { version = "=0.1.88" }
+eyre = { workspace = true }
+hex = { workspace = true }
+
+[dev-dependencies]
+tokio.workspace = true

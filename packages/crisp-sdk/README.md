@@ -155,6 +155,21 @@ const proof = await finishBallotProof(prepared, digest, signature, {
 | `encryption`     | `user_data_encryption`     | Both halves verify and share the same encryption randomness                                                                          |
 | `fold`           | `fold` / `fold_onchain`    | Encryption and ballot proofs cover the same ciphertext; outputs the key commitment the contract checks against the committee key     |
 
+#### Base Proofs Without Aggregation (Aztec)
+
+A verifier that checks the proofs itself, such as the Aztec `CrispAztec.cast`, does not need the `encryption` and `fold` proofs.
+`finishBallotBaseProofs`, `finishMaskBaseProofs` and `CrispSDK.finishBallotBase` prove only the first three stages and return
+the three proofs with their public inputs and verification keys (`noir-recursive-no-zk`, 410 fields); `onProgress` reports them
+with `total` 3. `getBaseVerificationKeys()` gives the keys and the hashes a contract pins, `verifyBaseProofs` checks them locally.
+
+```typescript
+const base = await sdk.finishBallotBase(prepared, digest, signature)
+// base.ct0, base.ct1, base.crisp: { proofFields, vkFields, vkHash, publicInputs }
+```
+
+These proofs are not zero-knowledge: pass them only as the private arguments of a client-side proven transaction, never to a
+server or a public chain.
+
 #### Verify Proof
 
 ```typescript

@@ -10,17 +10,21 @@ use super::{
 };
 use crate::server::{
     app_data::AppData,
-    data_availability::{input_rejection_message, AvailabilityService, ExternalOutputError},
+    data_availability::{
+        input_rejection_message, AvailabilityService, ExternalOutputError, RemoteInputRequest,
+    },
     models::{
-        canonical_e3_id, e3_id_to_u256, InputSelectionRequest, VoteRequest, VoteResponse,
-        VoteResponseStatus, VoteStatusRequest, VoteStatusResponse,
+        canonical_e3_id, e3_id_to_u256, InputSelectionRequest, RemoteInputAttestation,
+        RemoteInputConfig, RemoteInputSubmission, VoteRequest, VoteResponse, VoteResponseStatus,
+        VoteStatusRequest, VoteStatusResponse,
     },
     rate_limit::{ChainRateLimiter, RateLimiter},
     repo::parse_slot_address,
     CONFIG,
 };
 use actix_web::{web, HttpRequest, HttpResponse, Responder};
-use alloy::primitives::B256;
+use alloy::hex::encode_prefixed;
+use alloy::primitives::{keccak256, B256};
 use log::{error, info, warn};
 use serde::Deserialize;
 use std::str::FromStr;
@@ -53,7 +57,13 @@ pub fn setup_routes(config: &mut web::ServiceConfig) {
                 web::get().to(get_availability_status),
             )
             .route("/status", web::post().to(get_vote_status))
-            .route("/selection", web::post().to(get_input_selection)),
+            .route("/selection", web::post().to(get_input_selection))
+            .service(
+                web::resource("/remote-input")
+                    .app_data(crate::server::payloads::encrypted_json())
+                    .route(web::post().to(stage_remote_input)),
+            )
+            .route("/remote-input/config", web::get().to(remote_input_config)),
     );
 }
 
@@ -267,6 +277,11 @@ async fn broadcast_encrypted_vote(
     limiter: web::Data<RateLimiter>,
     availability: web::Data<AvailabilityService>,
 ) -> impl Responder {
+    if CONFIG.is_aztec() {
+        return HttpResponse::BadRequest().json(failed(
+            "Inputs of this program are accepted on Aztec; stage them at /voting/remote-input",
+        ));
+    }
     // Same identity rule as the read routes, and it matters more here: this window is what stops
     // one caller spending the relay's gas. A forgeable key is no key at all — see `identify`.
     let caller = identify(&request, CONFIG.trust_proxy_headers);
@@ -338,6 +353,95 @@ async fn broadcast_encrypted_vote(
         Ok(staged) => job_response(staged.view),
         Err(error) => availability_error(&e3_key, &error),
     }
+}
+
+/// Stage a ciphertext of a remote-program round and attest that this server holds it.
+///
+/// The remote contract verifies the ballot proof, so the server does not: it checks the staging
+/// pass (some registered slot sent this request, once), the bytes against the commitment the voter
+/// proves and the round against its program and window, keeps the bytes, and signs. Each caller is
+/// limited like a broadcast, because a staged ciphertext takes storage until its round ends.
+async fn stage_remote_input(
+    request: HttpRequest,
+    data: web::Json<RemoteInputSubmission>,
+    limiter: web::Data<RateLimiter>,
+    availability: web::Data<AvailabilityService>,
+) -> impl Responder {
+    if !CONFIG.is_aztec() {
+        return HttpResponse::NotFound().finish();
+    }
+    let caller = identify(&request, CONFIG.trust_proxy_headers);
+    if limiter.check_caller(&caller).is_err() {
+        warn!("Rate limit (caller) refused a remote input from {caller}");
+        return HttpResponse::TooManyRequests()
+            .json(failed("Too many votes from this address, slow down"));
+    }
+
+    let submission = data.into_inner();
+    let e3_id = match e3_id_to_u256(&submission.round_id) {
+        Ok(e3_id) => e3_id,
+        Err(e) => return HttpResponse::BadRequest().json(e.to_string()),
+    };
+    let e3_key = e3_id.to_string();
+    let Ok(ciphertext) = hex::decode(
+        submission
+            .ciphertext
+            .strip_prefix("0x")
+            .unwrap_or(&submission.ciphertext),
+    ) else {
+        return HttpResponse::BadRequest().json(failed("Invalid hex ciphertext"));
+    };
+    let Ok(commitment) = B256::from_str(&submission.ciphertext_commitment) else {
+        return HttpResponse::BadRequest().json(failed("Invalid ciphertext commitment"));
+    };
+    let Ok(slot) = parse_slot_address(&submission.slot) else {
+        return HttpResponse::BadRequest().json(failed("Invalid slot address"));
+    };
+    let ciphertext_hash = keccak256(&ciphertext);
+    info!("[e3_id={e3_key}] Staging a remote input");
+    match availability
+        .stage_remote_input(RemoteInputRequest {
+            e3_id: e3_key.clone(),
+            slot: slot.into(),
+            ciphertext,
+            commitment,
+            parent_index_plus_one: submission.parent_index_plus_one,
+            staging_pass: submission.staging_pass,
+        })
+        .await
+    {
+        Ok(attestation) => HttpResponse::Ok().json(RemoteInputAttestation {
+            input_id: encode_prefixed(attestation.input_id),
+            encrypted_vote_hash: encode_prefixed(ciphertext_hash),
+            expires_at: attestation.expires_at,
+            signature: encode_prefixed(attestation.signature),
+            signer: attestation.signer.to_string(),
+        }),
+        Err(error) => availability_error(&e3_key, &error),
+    }
+}
+
+/// Where to submit a staged input: the remote chain, its contract, and the address that signs
+/// the attestation. 404 when this server serves the L1 program.
+async fn remote_input_config(availability: web::Data<AvailabilityService>) -> impl Responder {
+    let (Some((signer, public_key)), Some(node), Ok(contract), Some(staging_max_requests)) = (
+        availability.remote_signer(),
+        CONFIG.aztec_node_url.as_deref(),
+        CONFIG.aztec_contract(),
+        availability.staging_max_requests(),
+    ) else {
+        return HttpResponse::NotFound().finish();
+    };
+    HttpResponse::Ok().json(RemoteInputConfig {
+        kind: "aztec".to_string(),
+        chain_id: CONFIG.chain_id,
+        program: CONFIG.e3_program_address.clone(),
+        aztec_node_url: node.to_string(),
+        aztec_contract: encode_prefixed(contract),
+        signer: signer.to_string(),
+        signer_public_key: encode_prefixed(public_key),
+        staging_max_requests,
+    })
 }
 
 async fn get_availability_status(

@@ -6,7 +6,19 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll, vi } from 'vitest'
 import { Vote } from '../src/types'
 import { MAX_MSG_NON_ZERO_COEFFS, MAX_VOTE_OPTIONS, SIGNATURE_MESSAGE_HASH, SIGNATURE_MESSAGE } from '../src/constants'
-import { decodeTally, verifyProof, encodeVote, generateBFVKeys, encryptVote, decryptVote, validateVote, destroyBBApi } from '../src/vote'
+import {
+  decodeTally,
+  verifyProof,
+  encodeVote,
+  generateBFVKeys,
+  encryptVote,
+  decryptVote,
+  validateVote,
+  destroyBBApi,
+  getFoldRecursiveVerificationKey,
+  getBaseVerificationKeys,
+  verifyBaseProofs,
+} from '../src/vote'
 import { getZkInputsGenerator } from '../src/encoding'
 import { publicKeyToAddress, sign, signMessage } from 'viem/accounts'
 import { Hex, concat, keccak256, numberToHex, recoverPublicKey } from 'viem'
@@ -208,6 +220,80 @@ describe('Vote', () => {
       const isValid = await verifyProof(proof)
 
       expect(isValid).toBe(true)
+    })
+
+    it('Should generate a fold proof for the noir-recursive target', { timeout: 300000 }, async () => {
+      vi.spyOn(global, 'fetch').mockResolvedValueOnce(mockPreviousCiphertextNotFoundResponse())
+
+      const prepared = await sdk.prepareBallot({
+        censusMode: 'merkle',
+        vote,
+        publicKey,
+        merkleLeaves: leaves,
+        balance,
+        slotAddress: address,
+        isMaskVote: false,
+        numOptions: vote.length,
+        e3Id,
+      })
+      const digest = keccak256(concat([prepared.ctCommitment, numberToHex(e3Id, { size: 32 })]))
+      const ballotSignature = await sign({ hash: digest, privateKey: ECDSA_PRIVATE_KEY, to: 'hex' })
+
+      const proof = await sdk.finishBallot(prepared, digest, ballotSignature, { verifierTarget: 'noir-recursive' })
+
+      // The shapes `verify_honk_proof` takes in-circuit (ZK flavour): 458 proof fields, a 115-field
+      // key, and the nine fold public inputs.
+      expect(proof.recursive?.proofFields).toHaveLength(458)
+      expect(proof.recursive?.vkFields).toHaveLength(115)
+      expect(proof.publicInputs).toHaveLength(9)
+      expect(BigInt(proof.publicInputs[7])).toBe(BigInt(prepared.ctCommitment))
+
+      expect(await verifyProof(proof, 'merkle', 'noir-recursive')).toBe(true)
+      // The key that a verifier pins comes from the circuit alone, not from any proof.
+      expect(proof.recursive?.vkHash).toBe((await getFoldRecursiveVerificationKey()).vkHash)
+    })
+
+    it('Should generate the three base proofs without aggregating', { timeout: 300000 }, async () => {
+      vi.spyOn(global, 'fetch').mockResolvedValueOnce(mockPreviousCiphertextNotFoundResponse())
+
+      const prepared = await sdk.prepareBallot({
+        censusMode: 'merkle',
+        vote,
+        publicKey,
+        merkleLeaves: leaves,
+        balance,
+        slotAddress: address,
+        isMaskVote: false,
+        numOptions: vote.length,
+        e3Id,
+      })
+      const digest = keccak256(concat([prepared.ctCommitment, numberToHex(e3Id, { size: 32 })]))
+      const ballotSignature = await sign({ hash: digest, privateKey: ECDSA_PRIVATE_KEY, to: 'hex' })
+
+      const stages: string[] = []
+      const base = await sdk.finishBallotBase(prepared, digest, ballotSignature, { onProgress: ({ stage }) => stages.push(stage) })
+
+      expect(stages).toEqual(['encryption_ct0', 'encryption_ct1', 'ballot'])
+      // The shapes `verify_honk_proof_non_zk` takes in-circuit: 410 proof fields and a 115-field key each.
+      for (const part of [base.ct0, base.ct1, base.crisp]) {
+        expect(part.proofFields).toHaveLength(410)
+        expect(part.vkFields).toHaveLength(115)
+      }
+      expect(base.ct0.publicInputs).toHaveLength(4) // pk0, ct0, k1, u commitments
+      expect(base.ct1.publicInputs).toHaveLength(3) // pk1, ct1, u commitments
+      expect(base.crisp.publicInputs).toHaveLength(10)
+      // The links the Aztec contract checks in place of the aggregation circuits.
+      expect(base.ct0.publicInputs[3]).toBe(base.ct1.publicInputs[2]) // u
+      expect(base.ct0.publicInputs[2]).toBe(base.crisp.publicInputs[9]) // k1
+      expect(BigInt(base.crisp.publicInputs[7])).toBe(BigInt(prepared.ctCommitment))
+      expect(base.encryptedVote).toEqual(prepared.encryptedVote)
+
+      expect(await verifyBaseProofs(base)).toBe(true)
+      // The keys a verifier pins come from the circuits alone, not from any proof.
+      const keys = await getBaseVerificationKeys()
+      expect(base.ct0.vkHash).toBe(keys.ct0.vkHash)
+      expect(base.ct1.vkHash).toBe(keys.ct1.vkHash)
+      expect(base.crisp.vkHash).toBe(keys.crisp.vkHash)
     })
   })
 

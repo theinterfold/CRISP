@@ -50,6 +50,9 @@ use std::time::Duration;
 use std::{collections::HashMap, fmt::Display, future::Future, sync::Arc, sync::LazyLock};
 use tokio::{sync::Notify, time::sleep};
 
+mod remote_input;
+use crisp_remote_input::InputRootSubmitted;
+
 const REQUESTED: &str = "Requested";
 const ACTIVE: &str = "Active";
 const EXPIRED: &str = "Expired";
@@ -440,6 +443,9 @@ async fn handle_e3_requested<S: DataStore>(
         return Ok(());
     }
     info!("[e3_id={e3_id}] E3Requested: {event:?}");
+    if CONFIG.is_aztec() {
+        return remote_input::handle_e3_requested(event, ctx).await;
+    }
 
     let store = ctx.store();
     let mut repo = CrispE3Repository::new(store.clone(), &e3_id);
@@ -678,9 +684,13 @@ async fn activate_round_if_ready<S: DataStore>(
         return Ok(true);
     }
 
-    for at in deadline_attempt_times(expiration, unix_now()) {
-        let e3_id = e3_id.to_string();
-        ctx.do_later(at, move |_, ctx| deadline_pass(e3_id.clone(), ctx.store()));
+    // A remote round computes when its input root reaches L1, not at a deadline.
+    let deadline_passes = !CONFIG.is_aztec();
+    if deadline_passes {
+        for at in deadline_attempt_times(expiration, unix_now()) {
+            let e3_id = e3_id.to_string();
+            ctx.do_later(at, move |_, ctx| deadline_pass(e3_id.clone(), ctx.store()));
+        }
     }
 
     CurrentRoundRepository::new(store)
@@ -688,7 +698,14 @@ async fn activate_round_if_ready<S: DataStore>(
             id: e3_id.to_string(),
         })
         .await?;
-    info!("[e3_id={e3_id}] Activated CRISP round and registered deadline callbacks");
+    info!(
+        "[e3_id={e3_id}] Activated CRISP round{}",
+        if deadline_passes {
+            " and registered deadline callbacks"
+        } else {
+            ""
+        }
+    );
     Ok(true)
 }
 
@@ -751,6 +768,10 @@ async fn restore_round_deadline_callback<S: DataStore>(
         return Ok(());
     }
 
+    // The ingest task picks up an unfinished remote round by its status; there is no deadline.
+    if CONFIG.is_aztec() {
+        return Ok(());
+    }
     let expiration = repo.get_input_deadline().await?;
     for at in deadline_attempt_times(expiration, now) {
         let e3_id = e3_id.to_string();
@@ -832,6 +853,20 @@ async fn handle_e3_input_deadline_expiration<S: DataStore>(
         }
     };
 
+    compute_snapshot(&mut repo, &e3_id, e3, voter_count, snapshot).await
+}
+
+/// Finish or compute a round whose indexed inputs are exactly the inputs its program committed.
+///
+/// Shared by the L1 deadline pass and the remote-input trigger: which inputs a round holds is
+/// decided by the caller, and everything after that is the same.
+async fn compute_snapshot<S: DataStore>(
+    repo: &mut CrispE3Repository<S>,
+    e3_id: &str,
+    e3: e3_sdk::indexer::models::E3,
+    voter_count: u64,
+    snapshot: InputSnapshot,
+) -> eyre::Result<()> {
     if snapshot.ciphertexts.is_empty() {
         if voter_count > 0 {
             bail!(
@@ -854,7 +889,7 @@ async fn handle_e3_input_deadline_expiration<S: DataStore>(
             info!("[e3_id={e3_id}] another pass is already computing this round; nothing to do");
             return Ok(());
         }
-        if let Err(error) = run_compute(&e3_id, e3, snapshot).await {
+        if let Err(error) = run_compute(e3_id, e3, snapshot).await {
             if let Err(release_error) = repo.release_compute_claim().await {
                 error!(
                     "[e3_id={e3_id}] Failed to release compute claim after submission error: {release_error:#}"
@@ -1477,17 +1512,25 @@ async fn register_handlers<S: DataStore>(
             Ok(())
         })
         .await;
-    let committed_availability = Arc::clone(&availability);
-    indexer
-        .add_event_handler(move |event: InputCommitted, ctx| {
-            handle_input_committed(event, ctx, Arc::clone(&committed_availability))
-        })
-        .await;
-    indexer
-        .add_event_handler(move |event: InputPublished, ctx| {
-            handle_input_published(event, ctx, Arc::clone(&availability))
-        })
-        .await;
+    if CONFIG.is_aztec() {
+        indexer
+            .add_event_handler(|event: InputRootSubmitted, ctx| {
+                remote_input::handle_input_root_submitted(event, ctx)
+            })
+            .await;
+    } else {
+        let committed_availability = Arc::clone(&availability);
+        indexer
+            .add_event_handler(move |event: InputCommitted, ctx| {
+                handle_input_committed(event, ctx, Arc::clone(&committed_availability))
+            })
+            .await;
+        indexer
+            .add_event_handler(move |event: InputPublished, ctx| {
+                handle_input_published(event, ctx, Arc::clone(&availability))
+            })
+            .await;
+    }
     indexer
         .add_raw_log_handler(move |log, ctx| index_log(log, ctx, Arc::clone(&wanted)))
         .await;
@@ -1501,6 +1544,14 @@ pub fn spawn_recovery_tasks<S: DataStore>(
     store: SharedStore<S>,
     availability: Arc<AvailabilityService>,
 ) {
+    // A remote program has no L1 input deadline, finalization jobs, or holder discovery: its round
+    // is computed once the input root reaches L1 and the inputs have been ingested.
+    if CONFIG.is_aztec() {
+        tokio::spawn(supervise("remote-input ingest", move || {
+            remote_input::run_ingest(store.clone(), Arc::clone(&availability))
+        }));
+        return;
+    }
     tokio::spawn(supervise("available-input recovery", {
         let store = store.clone();
         move || recover_available_inputs(store.clone(), Arc::clone(&availability))

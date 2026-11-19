@@ -4,6 +4,11 @@ packages:
   - packages/crisp-sdk
   - packages/crisp-contracts
   - packages/crisp-zk-inputs
+  - extensions/core
+  - extensions/aztec/l1
+  - extensions/aztec/sdk
+  - extensions/aztec/keeper
+  - extensions/aztec/e2e
 linkWorkspacePackages: true
 # Keep in sync with "pnpm.overrides" in package.json; pnpm versions differ in which one they read.
 overrides:

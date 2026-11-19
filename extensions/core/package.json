@@ -1,0 +1,17 @@
+{
+  "name": "@crisp-e3/extension-core",
+  "version": "0.28.1",
+  "private": true,
+  "description": "Chain-agnostic L1 contracts for CRISP rounds whose ballots are collected on an L2",
+  "license": "LGPL-3.0-only",
+  "files": [
+    "contracts"
+  ],
+  "exports": {
+    "./contracts/*": "./contracts/*"
+  },
+  "peerDependencies": {
+    "@interfold/contracts": "0.20.0-dev.3",
+    "@openzeppelin/contracts": "^5.0.2"
+  }
+}

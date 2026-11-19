@@ -10,6 +10,11 @@
 !server/**
 !program/**
 !crates/**
+# The Rust crates of the L2 extensions that the server links.
+!extensions/core/remote-input/**
+!extensions/aztec/ingest/**
+# The verification key of the staging pass, which the image ships with `bb`.
+!extensions/core/circuits/staging_pass/compiled/staging_pass.vk
 # The server embeds this file with include_str!.
 !packages/crisp-contracts/deployed_contracts.json
 

@@ -94,6 +94,8 @@ jobs:
               - 'rust-toolchain.toml'
               - 'runner/**'
               - 'crates/**'
+              - 'extensions/core/remote-input/**'
+              - 'extensions/aztec/ingest/**'
               - 'program/**'
               - 'server/**'
               # The server and the program tests embed these files with include_str!.
@@ -103,6 +105,8 @@ jobs:
               - '!**/*.mdx'
             crisp_circuits:
               - 'circuits/**'
+              # The staging pass circuit builds on crisp_lib.
+              - 'extensions/core/circuits/**'
               - '!**/*.md'
               - '!**/*.mdx'
             # `pnpm build:sdk` reads these paths: the SDK, the zk-inputs WASM crate and
@@ -218,6 +222,10 @@ jobs:
 
       - name: Run circuit tests
         working-directory: ./circuits/lib
+        run: nargo test
+
+      - name: Run staging pass circuit tests
+        working-directory: ./extensions/core/circuits/staging_pass
         run: nargo test
 
   crisp_unit_rust:
