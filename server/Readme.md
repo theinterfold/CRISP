@@ -103,6 +103,9 @@ The server exposes several RESTful API endpoints:
     `GNOSIS_PUBLIC_RPC_URL` as `rpc_url`.
   - `POST /faucet` `{address}` (only with `FAUCET_ENABLED=true`) mints the voting token from `FAUCET_PRIVATE_KEY`, limited per
     caller, per address and by the token's cooldown.
+  - `GNOSIS_PRIORITY_FEE_WEI` sets the tip of the relay's `publishInput` and the faucet's mint, with a max fee of twice the
+    latest base fee plus it. Unset, alloy's estimate applies; its 1 gwei tip floor makes a relayed ballot (~3.2M gas) cost
+    ~0.003 xDAI, where a 1000 wei tip costs ~3e-9 xDAI.
   - The indexer reads inputs from the voting contract's `InputCommitted` logs, and the voting token's delegates from chain logs.
 
 ## Sharing aggregate ciphertexts between servers (mock data availability)
