@@ -7,14 +7,14 @@
 //! Reads the inputs of CRISP rounds from the `CrispAztec` contract through an Aztec node.
 //!
 //! The node exposes public logs only by tag (`node_getPublicLogsByTags`), and indexes a log by its
-//! first field. `CrispAztec` emits `INPUT_COMMITTED` with the field `1` first, so one tag query
+//! first field. `CrispAztec` (and `CrispAztecVotes`, whose logs are identical) emits `INPUT_COMMITTED` with the field `1` first, so one tag query
 //! lists every input of the contract in the order the L2 accepted them.
 
 mod log;
 
 pub use log::{
-    e3_id_of, round_id_of, InputCommitted, MemberRegistered, INPUT_COMMITTED_TAG,
-    MEMBER_REGISTERED_TAG,
+    e3_id_of, round_id_of, InputCommitted, MemberRegistered, StagingKeyBound, INPUT_COMMITTED_TAG,
+    MEMBER_REGISTERED_TAG, STAGING_KEY_BOUND_TAG,
 };
 
 use alloy::primitives::{Address, B256, U256};
@@ -128,6 +128,18 @@ pub struct AztecInputSource {
     interfold: Address,
     /// The first L2 block that can hold a log of the contract. Rounds start from it.
     start_block: Option<u64>,
+    /// Which log lists the roots a staging pass may name.
+    roots: RootLog,
+}
+
+/// The log whose roots a staging pass names.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RootLog {
+    /// `CrispAztec`: the census tree, one root per `MEMBER_REGISTERED`.
+    Census,
+    /// `CrispAztecVotes`: the staging tree, one root per `STAGING_KEY_BOUND`. A pass proves
+    /// membership of a bound staging key, and the census (the slots' weights) is not in it.
+    Staging,
 }
 
 impl AztecInputSource {
@@ -142,7 +154,15 @@ impl AztecInputSource {
             contract: contract.to_string(),
             interfold,
             start_block,
+            roots: RootLog::Census,
         }
+    }
+
+    /// Read the roots a staging pass names from the `STAGING_KEY_BOUND` logs of `CrispAztecVotes`
+    /// instead of the census.
+    pub fn with_staging_roots(mut self) -> Self {
+        self.roots = RootLog::Staging;
+        self
     }
 }
 
@@ -275,13 +295,26 @@ impl RemoteInputSource for AztecInputSource {
         } else {
             None
         };
-        let logs = self.logs(MEMBER_REGISTERED_TAG, after, to_block).await?;
+        let tag = match self.roots {
+            RootLog::Census => MEMBER_REGISTERED_TAG,
+            RootLog::Staging => STAGING_KEY_BOUND_TAG,
+        };
+        let logs = self.logs(tag, after, to_block).await?;
 
         let mut roots = Vec::new();
         for (_, fields) in &logs {
-            let member = MemberRegistered::decode(fields)?;
-            if e3_id_of(self.interfold, member.round_id) == e3_id {
-                roots.push(member.census_root);
+            let (round_id, root) = match self.roots {
+                RootLog::Census => {
+                    let member = MemberRegistered::decode(fields)?;
+                    (member.round_id, member.census_root)
+                }
+                RootLog::Staging => {
+                    let bound = StagingKeyBound::decode(fields)?;
+                    (bound.round_id, bound.staging_root)
+                }
+            };
+            if e3_id_of(self.interfold, round_id) == e3_id {
+                roots.push(root);
             }
         }
         Ok(CensusRootPage {

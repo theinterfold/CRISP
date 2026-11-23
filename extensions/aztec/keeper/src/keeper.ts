@@ -9,11 +9,14 @@ import {
   type RoundClosed,
   type WithOrigin,
   CrispAztec,
+  CrispAztecVotes,
   connectAztec,
+  getEnrolledMessages,
   getL1Round,
   getRootWitness,
   getRoundConfig,
   getSentMessages,
+  getVotesRound,
   interfoldAbi,
   keyContent,
   programAbi,
@@ -21,6 +24,7 @@ import {
   roundContent,
   roundIdOf,
   submitInputRoot,
+  votesRoundContent,
 } from '@crisp-e3/aztec'
 import { createPublicClient, createWalletClient, getAddress, hexToBigInt, http, type Hex, type PublicClient, type WalletClient } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
@@ -32,7 +36,8 @@ export type Log = (message: string) => void
 
 /**
  * Drives every CRISP round on Aztec through the steps nobody else has a reason to take: opening it on Aztec,
- * relaying the committee key, closing the round, and delivering the input root to L1. Every step is permissionless
+ * relaying the committee key, (for token-weighted rounds) consuming the ENROLL messages, closing the round, and
+ * delivering the input root to L1. Every step is permissionless
  * and checked against on-chain state first, so the keeper can be restarted or run twice without harm.
  */
 export class Keeper {
@@ -44,7 +49,7 @@ export class Keeper {
   private constructor(
     private readonly config: KeeperConfig,
     private readonly session: AztecSession,
-    private readonly crisp: CrispAztec,
+    private readonly crisp: CrispAztec | CrispAztecVotes,
     private readonly l1: PublicClient,
     private readonly l1Wallet: WalletClient,
     private readonly log: Log,
@@ -54,7 +59,8 @@ export class Keeper {
 
   static async start(config: KeeperConfig, log: Log): Promise<Keeper> {
     const session = await connectAztec(config.aztecNodeUrl)
-    const crisp = await CrispAztec.connect(session, config.contract)
+    const crisp =
+      config.kind === 'votes' ? await CrispAztecVotes.connect(session, config.contract) : await CrispAztec.connect(session, config.contract)
     const l1 = createPublicClient({ transport: http(config.l1RpcUrl) })
     const l1Wallet = createWalletClient({ account: privateKeyToAccount(config.l1PrivateKey), transport: http(config.l1RpcUrl) })
     const interfold = await l1.readContract({ address: config.program, abi: programAbi, functionName: 'interfold' })
@@ -105,10 +111,11 @@ export class Keeper {
     const open = [...this.inputEnds.keys()].filter((e3Id) => !this.finished.has(e3Id))
     if (open.length === 0) return
 
-    const [opened, keyed, closed, latest] = await Promise.all([
+    const [opened, keyed, closed, registered, latest] = await Promise.all([
       this.crisp.logs('RoundOpened'),
       this.crisp.logs('KeyPublished'),
       this.crisp.logs('RoundClosed'),
+      this.crisp instanceof CrispAztecVotes ? this.crisp.logs('MemberRegistered') : Promise.resolve([]),
       this.session.node.getBlock('latest'),
     ])
     const l2Now = latest ? BigInt(latest.header.globalVariables.timestamp) : 0n
@@ -119,6 +126,7 @@ export class Keeper {
         l2KeyPublished: keyed.some((l) => l.e3Id === e3Id),
         l2Closed: closed.some((l) => l.e3Id === e3Id),
         l2Now,
+        pendingEnrollments: (await this.pendingEnrollments(e3Id, registered)).length,
       })
       if (isFinished(round)) {
         this.finished.add(e3Id)
@@ -147,7 +155,7 @@ export class Keeper {
     this.log(`Round ${e3Id}: found; its input window ends at ${e3.inputWindow[1]}`)
   }
 
-  private async read(e3Id: bigint, l2: Pick<RoundState, 'l2Opened' | 'l2KeyPublished' | 'l2Closed' | 'l2Now'>): Promise<RoundState> {
+  private async read(e3Id: bigint, l2: Pick<RoundState, 'l2Opened' | 'l2KeyPublished' | 'l2Closed' | 'l2Now' | 'pendingEnrollments'>): Promise<RoundState> {
     const interfold = await this.l1.readContract({ address: this.config.program, abi: programAbi, functionName: 'interfold' })
     const [stage, l1Round] = await Promise.all([
       this.l1.readContract({ address: interfold, abi: interfoldAbi, functionName: 'getE3Stage', args: [e3Id] }),
@@ -164,11 +172,31 @@ export class Keeper {
     }
   }
 
+  /**
+   * The ENROLL messages of a token-weighted round that Aztec has not consumed: one per `Enrolled` event whose slot is
+   * not in the census yet. Nothing for a ZKPassport round.
+   */
+  private async pendingEnrollments(e3Id: bigint, registered: readonly { e3Id: bigint; slot: string }[]) {
+    if (this.config.kind !== 'votes') return []
+    const enrolled = new Set(registered.filter((log) => log.e3Id === e3Id).map((log) => log.slot.toLowerCase()))
+    const messages = await getEnrolledMessages(this.l1, this.config.program, e3Id, { fromBlock: this.config.startBlock })
+
+    return messages.filter(({ slot }) => !enrolled.has(slot.toLowerCase()))
+  }
+
   private async perform(action: Action, round: RoundState, closeLog: WithOrigin<RoundClosed> | undefined) {
     const { e3Id } = round
     const program = this.config.program
     switch (action) {
       case 'openRound': {
+        if (this.crisp instanceof CrispAztecVotes) {
+          const config = await getVotesRound(this.l1, program, e3Id)
+          const message = (await getSentMessages(this.l1, program, e3Id)).find((m) => hexToBigInt(m.content) === votesRoundContent(config))
+          if (!message) throw new Error('the program has not sent the ROUND message')
+          const { txHash } = await this.crisp.openRound(config, message)
+          this.log(`Round ${e3Id}: opened on Aztec in ${txHash}`)
+          return
+        }
         const config = await getRoundConfig(this.l1, program, e3Id)
         const message = (await getSentMessages(this.l1, program, e3Id)).find((m) => hexToBigInt(m.content) === roundContent(config))
         if (!message) throw new Error('the program has not sent the ROUND message')
@@ -190,6 +218,20 @@ export class Keeper {
         if (!message) throw new Error('the program has not sent the KEY message')
         const { txHash } = await this.crisp.publishKey(e3Id, key, message)
         this.log(`Round ${e3Id}: committee key published on Aztec in ${txHash}`)
+        return
+      }
+      case 'enroll': {
+        if (!(this.crisp instanceof CrispAztecVotes)) throw new Error('only token-weighted rounds enroll slots')
+        const registered = await this.crisp.logs('MemberRegistered', { e3Id })
+        for (const { slot, weight, message } of await this.pendingEnrollments(e3Id, registered)) {
+          // Each message is a separate transaction, so one that fails (consumed by another keeper meanwhile) does not stop the rest.
+          try {
+            const { txHash } = await this.crisp.enroll({ e3Id, slot, weight, message })
+            this.log(`Round ${e3Id}: slot ${slot} enrolled on Aztec in ${txHash}`)
+          } catch (error) {
+            this.log(`Round ${e3Id}: enrolling ${slot} failed: ${describe(error)}`)
+          }
+        }
         return
       }
       case 'closeRound': {

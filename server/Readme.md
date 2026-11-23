@@ -94,6 +94,12 @@ The server exposes several RESTful API endpoints:
 - `POST /voting/remote-input`, `GET /voting/remote-input/config`: only with `PROGRAM_KIND=aztec`; they stage a ciphertext against
   a staging pass and sign an availability attestation. The server needs `STAGING_PASS_VK_PATH` and `BB_BINARY_PATH` (`bb` 6.0.0;
   the Docker image ships both). In that mode `/voting/broadcast` and `/rounds/request` refuse. See `../extensions/aztec/README.md`.
+- `POST /voting/remote-input/enroll` `{round_id, slots}`: only with `PROGRAM_KIND=aztec-votes` (404 otherwise; the other
+  `/voting/remote-input` routes also serve it, with `STAGING_PASS_VK_PATH` at `staging_pass_votes.vk`). It keeps the slots that
+  `isEnrolled`/`weightOf` on the L1 votes program say still need it, sends one `enroll(e3Id, slots)` from `PRIVATE_KEY` and answers
+  `{tx_hash, enrolled, skipped: [{slot, reason}]}` with `reason` one of `enrolled`, `no_weight`, `in_flight`. At most 32 slots; 429
+  past 6 requests a minute per caller or 60 per round; 503 when L1 cannot be read or the send fails (the voter then calls `enroll`
+  from their wallet).
 - With `PROGRAM_KIND=gnosis` (ballots on `CrispGnosisVoting`, see `../extensions/gnosis/README.md`):
   - `POST /voting/broadcast` `{round_id, encoded_proof, send_from_wallet?}` checks the ballot with an `eth_call` of
     `validateInputProof`, signs the availability attestation and relays `publishInput`. It returns `success` with `tx_hash`, or

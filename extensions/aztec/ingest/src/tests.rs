@@ -400,3 +400,39 @@ async fn a_member_log_of_another_shape_stops_the_census_read() {
         .await
         .is_err());
 }
+
+/// `CrispAztecVotes` staging roots come from `STAGING_KEY_BOUND` logs (tag 6), not the census, and
+/// the unproven tail is read as for the census.
+#[tokio::test]
+async fn staging_roots_are_read_under_the_staging_key_bound_tag() {
+    let bound = |round: u64, root: u64, block: u64| {
+        let fields = [
+            U256::from(STAGING_KEY_BOUND_TAG),
+            U256::from(round),
+            U256::from(0),
+            U256::from_be_slice(address!("0x00000000000000000000000000000000000000aa").as_slice()),
+            U256::from(0x3000),
+            U256::from(root),
+        ];
+        json!({
+            "logData": fields.map(field),
+            "blockNumber": block,
+            "txIndexWithinBlock": 0,
+            "logIndexWithinTx": 0,
+            "blockTimestamp": "1794872445",
+        })
+    };
+    let (node, requests) = node(vec![answer(vec![bound(7, 0x91, 12), bound(8, 0x92, 12)])]).await;
+
+    let page = source(node, None)
+        .with_staging_roots()
+        .census_roots(e3(7), None, false)
+        .await
+        .unwrap();
+
+    assert_eq!(page.roots, [U256::from(0x91)]);
+    assert_eq!(
+        requests.lock().unwrap()[0]["params"][0]["tags"],
+        json!([format!("{:#066x}", 6)])
+    );
+}

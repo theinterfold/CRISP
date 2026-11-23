@@ -29,6 +29,10 @@ pub enum ProgramKind {
     #[default]
     Crisp,
     Aztec,
+    /// A `CRISPAztecVotesProgram`: the Aztec ingest of `aztec`, with token-weighted slots that
+    /// `POST /voting/remote-input/enroll` bridges from L1.
+    #[serde(rename = "aztec-votes")]
+    AztecVotes,
     /// A `CRISPGnosisProgram`, whose inputs live on a Gnosis-chain voting contract.
     Gnosis,
 }
@@ -146,8 +150,9 @@ pub struct Config {
     #[serde(default)]
     pub relay_min_balance_eth: Option<String>,
 
-    /// What `E3_PROGRAM_ADDRESS` is: `crisp` (the L1 `CRISPProgram`, the default) or `aztec` (a
-    /// `CRISPAztecProgram`, whose inputs live on Aztec). One instance serves one program.
+    /// What `E3_PROGRAM_ADDRESS` is: `crisp` (the L1 `CRISPProgram`, the default), `aztec` (a
+    /// `CRISPAztecProgram`, whose inputs live on Aztec), `aztec-votes` (a `CRISPAztecVotesProgram`)
+    /// or `gnosis`. One instance serves one program.
     #[serde(default)]
     pub program_kind: ProgramKind,
     /// The Aztec node whose public logs list the inputs. Required for `PROGRAM_KIND=aztec`.
@@ -250,9 +255,18 @@ impl Config {
         is_local_chain_id(self.chain_id)
     }
 
-    /// Whether this instance serves rounds whose inputs live on Aztec.
+    /// Whether this instance serves rounds whose inputs live on Aztec (`aztec` or `aztec-votes`).
     pub fn is_aztec(&self) -> bool {
-        self.program_kind == ProgramKind::Aztec
+        matches!(
+            self.program_kind,
+            ProgramKind::Aztec | ProgramKind::AztecVotes
+        )
+    }
+
+    /// Whether this instance serves the token-weighted Aztec program, whose slots are enrolled
+    /// from L1.
+    pub fn is_aztec_votes(&self) -> bool {
+        self.program_kind == ProgramKind::AztecVotes
     }
 
     /// Whether this instance serves rounds whose inputs live on a Gnosis-chain voting contract.
@@ -262,7 +276,7 @@ impl Config {
 
     /// Whether the inputs of this instance's rounds live on another chain than the L1 program.
     pub fn is_remote(&self) -> bool {
-        matches!(self.program_kind, ProgramKind::Aztec | ProgramKind::Gnosis)
+        self.is_aztec() || self.is_gnosis()
     }
 
     /// The `CrispGnosisVoting` address of a Gnosis instance. `from_env` refuses a missing or

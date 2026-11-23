@@ -54,7 +54,7 @@ The CRISP server runs Aztec rounds with `PROGRAM_KIND=aztec`. One instance serve
 
 | Variable                        | Meaning                                                                                                   |
 | ------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `PROGRAM_KIND`                  | `crisp` (default) or `aztec`.                                                                             |
+| `PROGRAM_KIND`                  | `crisp` (default), `aztec`, or `aztec-votes` (see below).                                                 |
 | `E3_PROGRAM_ADDRESS`            | The `CRISPAztecProgram` (L1). It is the `verifyingContract` of the availability attestation.              |
 | `AZTEC_NODE_URL`                | Aztec node JSON-RPC. Required.                                                                            |
 | `AZTEC_CONTRACT_ADDRESS`        | The `CrispAztec` contract, 32 bytes hex. Required.                                                        |
@@ -68,6 +68,14 @@ The CRISP server runs Aztec rounds with `PROGRAM_KIND=aztec`. One instance serve
 
 The server relays no inputs in this mode (`POST /voting/broadcast` and `/rounds/request` return 400); outside local chains
 `RELAY_MIN_BALANCE_ETH=0` satisfies the relay validation.
+
+### `PROGRAM_KIND=aztec-votes`
+
+The votes program has the same Aztec ingest (its input logs are identical), but its staging pass is `staging_pass_votes`: it proves
+membership of a bound staging key, so `STAGING_PASS_VK_PATH` is `extensions/core/circuits/staging_pass_votes/compiled/staging_pass_votes.vk`,
+and the roots a pass may name are read from the `STAGING_KEY_BOUND` logs (tag 6) of any block, not from the census. Inputs are still
+read from proven blocks only. The server also serves `POST /voting/remote-input/enroll` (`server/Readme.md`), which relays the permissionless
+L1 `enroll` so voters need no gas. `GET /voting/remote-input/config` answers `kind: "aztec-votes"`.
 
 ### Round life cycle
 

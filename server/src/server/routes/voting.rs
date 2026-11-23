@@ -68,7 +68,8 @@ pub fn setup_routes(config: &mut web::ServiceConfig) {
                     .app_data(crate::server::payloads::encrypted_json())
                     .route(web::post().to(stage_remote_input)),
             )
-            .route("/remote-input/config", web::get().to(remote_input_config)),
+            .route("/remote-input/config", web::get().to(remote_input_config))
+            .route("/remote-input/enroll", web::post().to(super::enroll::enroll)),
     );
 }
 
@@ -441,7 +442,12 @@ async fn remote_input_config(availability: web::Data<AvailabilityService>) -> im
         return HttpResponse::NotFound().finish();
     };
     HttpResponse::Ok().json(RemoteInputConfig {
-        kind: "aztec".to_string(),
+        kind: if CONFIG.is_aztec_votes() {
+            "aztec-votes"
+        } else {
+            "aztec"
+        }
+        .to_string(),
         chain_id: CONFIG.chain_id,
         program: CONFIG.e3_program_address.clone(),
         aztec_node_url: node.to_string(),

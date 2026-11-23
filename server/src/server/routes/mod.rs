@@ -5,6 +5,8 @@
 // or FITNESS FOR A PARTICULAR PURPOSE.
 
 mod chain;
+pub use enroll::EnrollService;
+mod enroll;
 mod faucet;
 mod gnosis_voting;
 mod members;
