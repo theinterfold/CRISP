@@ -87,5 +87,8 @@ uses the Aztec testnet bridge (Inbox `0x7cdC32Dd7d008870A95f1837Ffd7229ef676EF8A
 `0xA5A0f7a7BDAf280964a1922A68C83462E5F6E15b`, rollup version `679261766`); the constructor refuses them unless both report that
 version.
 
+On Sepolia, `SEPOLIA_GAS_PRICE` (wei) sets a fixed gas price for every transaction of the deploy. Without it ethers adds a 1 gwei
+tip, which can cost far more than Sepolia's base fee justifies.
+
 Governance-owned Interfold deployments need their owner to call `registerE3Program(program)` and then the program owner
 `bindInterfold(interfold)`; the script prints that. Do not commit the `localhost` entry of `deployed_contracts.json`.
