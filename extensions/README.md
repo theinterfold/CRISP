@@ -32,6 +32,7 @@ sequenceDiagram
 | `core/contracts` | `CRISPRemoteProgram`: chain-agnostic L1 E3 program; `CRISPRemoteMessages`: ROUND/KEY/ROOT layouts. |
 | `core/remote-input` | Rust crate `crisp-remote-input`: the server seam (`RemoteInputSource`, `InputRootSubmitted`, gating, availability attester, staging pass statement). |
 | `core/circuits/staging_pass` | Noir circuit of the staging pass: an anonymous, rate-limited proof that the sender holds the key of some slot of the round's census, required to stage a ciphertext (see `core/README.md`). |
+| `core/circuits/staging_pass_votes` | Noir circuit of the staging pass of the votes kind: the same ticket keyed by a per-round staging secret bound for each enrolled governance slot, since a wallet's public key is public (see `core/README.md`). |
 | `aztec/` | Reference extension for Aztec v6 (see `aztec/README.md`). |
 | `gnosis/` | Token-weighted votes on Gnosis Chain over the AMB, executed by a Safe (see `gnosis/README.md`). |
 

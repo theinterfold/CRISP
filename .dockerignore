@@ -14,8 +14,9 @@
 !extensions/core/remote-input/**
 !extensions/aztec/ingest/**
 !extensions/gnosis/ingest/**
-# The verification key of the staging pass, which the image ships with `bb`.
+# The verification keys of the staging passes, which the image ships with `bb`.
 !extensions/core/circuits/staging_pass/compiled/staging_pass.vk
+!extensions/core/circuits/staging_pass_votes/compiled/staging_pass_votes.vk
 # The server embeds this file with include_str!.
 !packages/crisp-contracts/deployed_contracts.json
 

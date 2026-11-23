@@ -229,6 +229,10 @@ jobs:
         working-directory: ./extensions/core/circuits/staging_pass
         run: nargo test
 
+      - name: Run votes staging pass circuit tests
+        working-directory: ./extensions/core/circuits/staging_pass_votes
+        run: nargo test
+
   crisp_unit_rust:
     needs: [detect_changes]
     if: needs.detect_changes.outputs.crisp_unit_rust == 'true'

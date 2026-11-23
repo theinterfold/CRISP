@@ -60,7 +60,8 @@ pub fn staging_request_digest(
 /// The public inputs of a pass.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct StagingPassStatement {
-    /// A root of the round's census tree the slot key is a member of.
+    /// A root of the tree the pass proves membership of: the census for `staging_pass`, the
+    /// staging-key tree for `staging_pass_votes`.
     pub census_root: U256,
     /// The contract's round id, the low 96 bits of the E3 id.
     pub round_id: U256,

@@ -63,3 +63,16 @@ address, so tags are unlinkable to slots as long as the key stays unpublished. T
 loads it) and `compiled/staging_pass.vk` (the server loads it; the Docker image ships it) for bb 6.0.0's default `evm` target. Both
 are checked in: **rerun the script whenever `circuits/lib` or the circuit changes, or the server rejects every pass.** `nargo test`
 in the circuit directory runs its tests.
+
+### Votes staging pass (`circuits/staging_pass_votes`)
+
+The `aztec-votes` kind enrolls governance slots, which are wallet addresses whose public keys are public, so the tag of the pass
+above would let the server link a request to its sender. `circuits/staging_pass_votes` keys the tag by a per-round **staging
+secret** instead (derived from the owner's signature in the Aztec `bind_staging_key`, which inserts the commitment
+`Poseidon2(secret, round_id)` into the round's staging tree). Private: `secret`, the staging-tree path
+(`merkle_proof_length`, `indices[20]`, `siblings[20]`) and `k`. Public, in order: `staging_root`, `round_id`, `request_digest_hi`,
+`request_digest_lo`, `max_requests`, `tag`. It proves the commitment is in `staging_root` (`crisp_lib`'s LeanIMT path), `k <
+max_requests` and `tag = Poseidon3(secret, round_id, k)`; the digest halves (128-bit limbs) are only bound as public inputs, the
+proof signs nothing. `build.sh` writes `compiled/staging_pass_votes.json` and `compiled/staging_pass_votes.vk` the same way (same
+`nargo`, bb 6.0.0 `evm` target); rerun it whenever `circuits/lib` or the circuit changes. The server loads the key through
+`STAGING_PASS_VK_PATH` when `PROGRAM_KIND=aztec-votes`.
