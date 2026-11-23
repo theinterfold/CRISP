@@ -21,6 +21,7 @@ contract CRISPAztecProgram is CRISPAztecTransport {
   uint256 public constant MAX_MIN_AGE = 99;
   /// @notice The most countries a nationality rule lists: ZKPassport commits a list into 600 bytes (200 alpha-3 codes).
   uint256 public constant MAX_COUNTRIES = 200;
+
   /// @notice The decoded `customParams`.
   struct CustomParams {
     uint256 numOptions;
@@ -51,6 +52,7 @@ contract CRISPAztecProgram is CRISPAztecTransport {
     string[] countries,
     uint256 nationalityCommitment
   );
+
   /// @param _inbox Aztec Inbox of the target rollup.
   /// @param _outbox Aztec Outbox of the target rollup.
   /// @param _rollupVersion Rollup version; refused unless both bridge contracts report it.

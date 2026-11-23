@@ -15,13 +15,11 @@ pub const INPUT_COMMITTED_TAG: u64 = 1;
 /// census_leaf, census_root]`.
 pub const MEMBER_REGISTERED_TAG: u64 = 2;
 
-const MEMBER_REGISTERED_FIELDS: usize = 6;
+const ROOT_LOG_FIELDS: usize = 6;
 
 /// The first field of a `STAGING_KEY_BOUND` public log of `CrispAztecVotes`, `[TAG, round_id,
-/// index, slot, commitment, staging_root]`: the root of the round's staging tree after one binding.
+/// index, slot, commitment, staging_root]`.
 pub const STAGING_KEY_BOUND_TAG: u64 = 6;
-
-const STAGING_KEY_BOUND_FIELDS: usize = 6;
 
 /// `[TAG, round_id, index, slot, ct_commitment, vote_hash_hi, vote_hash_lo, parent_index_plus_one]`.
 const INPUT_COMMITTED_FIELDS: usize = 8;
@@ -100,7 +98,8 @@ impl InputCommitted {
     }
 }
 
-/// A decoded `MEMBER_REGISTERED` log: the census root after one registration.
+/// A decoded `MEMBER_REGISTERED` log: the census root after one registration. A `STAGING_KEY_BOUND`
+/// log has the same layout, and `census_root` is then its staging root.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MemberRegistered {
     /// The contract's id of the round (`round_id_of`).
@@ -109,17 +108,18 @@ pub struct MemberRegistered {
 }
 
 impl MemberRegistered {
-    /// Decode the `logData` of a public log under `MEMBER_REGISTERED_TAG`. Like `InputCommitted`,
-    /// a log of another shape is a wrong deployment, never one to skip.
-    pub fn decode(fields: &[U256]) -> Result<Self> {
+    /// Decode the `logData` of a public log under `tag` (`MEMBER_REGISTERED_TAG` or
+    /// `STAGING_KEY_BOUND_TAG`). Like `InputCommitted`, a log of another shape is a wrong
+    /// deployment, never one to skip.
+    pub fn decode(fields: &[U256], tag: u64) -> Result<Self> {
         ensure!(
-            fields.len() == MEMBER_REGISTERED_FIELDS,
-            "a MEMBER_REGISTERED log has {} fields, expected {MEMBER_REGISTERED_FIELDS}",
+            fields.len() == ROOT_LOG_FIELDS,
+            "a root log has {} fields, expected {ROOT_LOG_FIELDS}",
             fields.len()
         );
         ensure!(
-            fields[0] == U256::from(MEMBER_REGISTERED_TAG),
-            "not a MEMBER_REGISTERED log: tag {}",
+            fields[0] == U256::from(tag),
+            "not a log of tag {tag}: tag {}",
             fields[0]
         );
         ensure!(
@@ -130,40 +130,6 @@ impl MemberRegistered {
         Ok(Self {
             round_id: fields[1],
             census_root: fields[5],
-        })
-    }
-}
-
-/// A decoded `STAGING_KEY_BOUND` log: the staging root after one binding.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct StagingKeyBound {
-    /// The contract's id of the round (`round_id_of`).
-    pub round_id: U256,
-    pub staging_root: U256,
-}
-
-impl StagingKeyBound {
-    /// Decode the `logData` of a public log under `STAGING_KEY_BOUND_TAG`. A log of another shape
-    /// is a wrong deployment, never one to skip.
-    pub fn decode(fields: &[U256]) -> Result<Self> {
-        ensure!(
-            fields.len() == STAGING_KEY_BOUND_FIELDS,
-            "a STAGING_KEY_BOUND log has {} fields, expected {STAGING_KEY_BOUND_FIELDS}",
-            fields.len()
-        );
-        ensure!(
-            fields[0] == U256::from(STAGING_KEY_BOUND_TAG),
-            "not a STAGING_KEY_BOUND log: tag {}",
-            fields[0]
-        );
-        ensure!(
-            fields[1].bit_len() <= ROUND_ID_BITS,
-            "round id does not fit in {ROUND_ID_BITS} bits"
-        );
-
-        Ok(Self {
-            round_id: fields[1],
-            staging_root: fields[5],
         })
     }
 }
@@ -265,7 +231,7 @@ mod tests {
     fn a_member_log_decodes_to_its_round_and_root() {
         let fields = [2u64, 7, 3, 0xaa, 0x55, 0x66].map(U256::from).to_vec();
         assert_eq!(
-            MemberRegistered::decode(&fields).unwrap(),
+            MemberRegistered::decode(&fields, MEMBER_REGISTERED_TAG).unwrap(),
             MemberRegistered {
                 round_id: U256::from(7),
                 census_root: U256::from(0x66),
@@ -274,11 +240,11 @@ mod tests {
 
         let mut wrong_tag = fields.clone();
         wrong_tag[0] = U256::from(1);
-        assert!(MemberRegistered::decode(&wrong_tag).is_err());
-        assert!(MemberRegistered::decode(&fields[..5]).is_err());
+        assert!(MemberRegistered::decode(&wrong_tag, MEMBER_REGISTERED_TAG).is_err());
+        assert!(MemberRegistered::decode(&fields[..5], MEMBER_REGISTERED_TAG).is_err());
         let mut wide = fields;
         wide[1] = U256::from(1) << 96;
-        assert!(MemberRegistered::decode(&wide).is_err());
+        assert!(MemberRegistered::decode(&wide, MEMBER_REGISTERED_TAG).is_err());
     }
 
     #[test]

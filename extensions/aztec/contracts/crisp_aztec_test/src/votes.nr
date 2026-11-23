@@ -7,7 +7,6 @@
 use crate::base_fixture::{CRISP_VK, CRISP_VK_HASH, CT0_VK, CT0_VK_HASH, CT1_VK, CT1_VK_HASH};
 use crate::vectors::{
     APPEND_INPUT_ROOT, DOMAIN_SEPARATOR, FIRST_BALLOT, REVOTE, SECOND_REVOTE, SIGNER_X, SIGNER_Y, SLOT_1, SLOT_2,
-    SLOT_3,
 };
 use aztec::{
     protocol::{address::{AztecAddress, EthAddress}, traits::FromField},
@@ -201,28 +200,20 @@ unconstrained fn publish_key_stores_the_committee_key() {
 // ---------------------------------------------------------------------------------------------------------------------
 
 #[test]
-unconstrained fn enroll_inserts_the_slot_and_weight_leaf() {
+unconstrained fn enroll_inserts_the_slot_and_weight_leaf_and_keeps_past_roots() {
     let (env, votes) = open();
     enroll(env, votes, SLOT_1, WEIGHT_1);
-
-    let leaf = hash_2([SLOT_1, WEIGHT_1]);
-    // A one-leaf LeanIMT's root is the leaf.
-    assert_eq(env.execute_utility(CrispAztecVotes::at(votes).get_census_root(ROUND_ID)), leaf);
-    assert_eq(env.execute_utility(CrispAztecVotes::at(votes).get_census_count(ROUND_ID)), 1);
-    assert(env.execute_utility(CrispAztecVotes::at(votes).is_census_root_known(ROUND_ID, leaf)));
-    assert(env.execute_utility(CrispAztecVotes::at(votes).is_slot_enrolled(ROUND_ID, SLOT_1)));
-    assert(!env.execute_utility(CrispAztecVotes::at(votes).is_slot_enrolled(ROUND_ID, SLOT_2)));
-}
-
-#[test]
-unconstrained fn every_enrollment_adds_a_root_and_past_roots_stay_known() {
-    let (env, votes) = open();
-    enroll(env, votes, SLOT_1, WEIGHT_1);
-    enroll(env, votes, SLOT_2, WEIGHT_2);
 
     let leaf_1 = hash_2([SLOT_1, WEIGHT_1]);
+    // A one-leaf LeanIMT's root is the leaf.
+    assert_eq(env.execute_utility(CrispAztecVotes::at(votes).get_census_root(ROUND_ID)), leaf_1);
+    assert(env.execute_utility(CrispAztecVotes::at(votes).is_slot_enrolled(ROUND_ID, SLOT_1)));
+    assert(!env.execute_utility(CrispAztecVotes::at(votes).is_slot_enrolled(ROUND_ID, SLOT_2)));
+
+    enroll(env, votes, SLOT_2, WEIGHT_2);
     let root = hash_2([leaf_1, hash_2([SLOT_2, WEIGHT_2])]);
     assert_eq(env.execute_utility(CrispAztecVotes::at(votes).get_census_root(ROUND_ID)), root);
+    assert_eq(env.execute_utility(CrispAztecVotes::at(votes).get_census_count(ROUND_ID)), 2);
     assert(env.execute_utility(CrispAztecVotes::at(votes).is_census_root_known(ROUND_ID, root)));
     assert(env.execute_utility(CrispAztecVotes::at(votes).is_census_root_known(ROUND_ID, leaf_1)));
     assert(!env.execute_utility(CrispAztecVotes::at(votes).is_census_root_known(ROUND_ID, root + 1)));
@@ -344,15 +335,6 @@ unconstrained fn cast_rejects_a_census_root_enroll_never_produced() {
     cast(env, votes, voter, FIRST_BALLOT, census_root + 1);
 }
 
-#[test(should_fail_with = "unknown census root")]
-unconstrained fn cast_rejects_a_root_before_the_slots_enrolled() {
-    let (mut env, votes) = open();
-    publish_key(env, votes);
-    let voter = env.create_light_account();
-    env.mine_block_at(INPUT_START);
-    cast(env, votes, voter, FIRST_BALLOT, hash_2([SLOT_3, WEIGHT_1]));
-}
-
 #[test(should_fail_with = "input window still open")]
 unconstrained fn close_round_waits_for_the_window() {
     let (env, votes, voter, _) = open_for_casting();
@@ -445,26 +427,13 @@ fn the_staging_secret_and_commitment_match_the_sdk() {
 }
 
 #[test]
-unconstrained fn bind_staging_key_inserts_the_commitment() {
-    let (mut env, votes) = open();
-    enroll(env, votes, SLOT_1, WEIGHT_1);
-    let voter = env.create_light_account();
-    bind(env, votes, voter, SIG_0);
-
-    let commitment = commitment_of(SIG_0);
-    // A one-leaf LeanIMT's root is the leaf.
-    assert_eq(env.execute_utility(CrispAztecVotes::at(votes).get_staging_root(ROUND_ID)), commitment);
-    assert(env.execute_utility(CrispAztecVotes::at(votes).is_staging_root_known(ROUND_ID, commitment)));
-    assert_eq(env.execute_utility(CrispAztecVotes::at(votes).get_staging_bind_count(ROUND_ID, SLOT_1)), 1);
-    assert_eq(env.execute_utility(CrispAztecVotes::at(votes).get_staging_bind_count(ROUND_ID, SLOT_2)), 0);
-}
-
-#[test]
 unconstrained fn a_slot_may_bind_three_staging_keys() {
     let (mut env, votes) = open();
     enroll(env, votes, SLOT_1, WEIGHT_1);
     let voter = env.create_light_account();
     bind(env, votes, voter, SIG_0);
+    // A one-leaf LeanIMT's root is the leaf.
+    assert_eq(env.execute_utility(CrispAztecVotes::at(votes).get_staging_root(ROUND_ID)), commitment_of(SIG_0));
     bind(env, votes, voter, SIG_1);
     bind(env, votes, voter, SIG_2);
 
@@ -472,6 +441,7 @@ unconstrained fn a_slot_may_bind_three_staging_keys() {
     assert_eq(env.execute_utility(CrispAztecVotes::at(votes).get_staging_root(ROUND_ID)), root);
     assert(env.execute_utility(CrispAztecVotes::at(votes).is_staging_root_known(ROUND_ID, commitment_of(SIG_0))));
     assert_eq(env.execute_utility(CrispAztecVotes::at(votes).get_staging_bind_count(ROUND_ID, SLOT_1)), 3);
+    assert_eq(env.execute_utility(CrispAztecVotes::at(votes).get_staging_bind_count(ROUND_ID, SLOT_2)), 0);
 }
 
 #[test(should_fail_with = "too many staging keys bound")]

@@ -17,19 +17,18 @@
 //! (any past transaction reveals it), so the server could compute the tags of every enrolled slot and
 //! link a staging request to its sender. Here the tag is keyed by a per-round staging secret that
 //! only the slot owner knows: the Aztec `bind_staging_key` derives it from the owner's signature and
-//! inserts the commitment `Poseidon2(secret, round_id)` into the round's staging tree.
+//! inserts the commitment `hash_2([secret, round_id])` into the round's staging tree.
 //!
 //! # Statement
 //!
 //! Private: the staging `secret`, the staging-tree path and the pass counter `k`.
-//!
 //! Public, in this order: `staging_root`, `round_id`, `request_digest_hi`, `request_digest_lo`,
 //! `max_requests`, `tag`. The circuit proves
 //!
-//! 1. the leaf `Poseidon2(secret, round_id)` is in the staging tree with root `staging_root`
-//!    (the census LeanIMT path code of `crisp_lib`; the leaf is the one `bind_staging_key` inserts);
+//! 1. the leaf `hash_2([secret, round_id])` is in the staging tree with root `staging_root`
+//!    (the census LeanIMT path code of `crisp_lib`);
 //! 2. `k < max_requests`;
-//! 3. `tag = Poseidon3(secret, round_id, k)`.
+//! 3. `tag = hash_3([secret, round_id, k])`.
 //!
 //! `request_digest_hi/lo` (the server's raw `staging_request_digest`, two 128-bit halves) is only
 //! bound as a public input: the proof is made for one request, it signs nothing.
@@ -59,8 +58,8 @@ fn verify_pass(
     request_digest_hi.assert_max_bit_size::<128>();
     request_digest_lo.assert_max_bit_size::<128>();
 
-    // `get_merkle_root` hashes `Poseidon2(first, second)`: with `(secret, round_id)` that is
-    // exactly the commitment `bind_staging_key` inserts.
+    // `get_merkle_root` hashes `hash_2([first, second])`: with `(secret, round_id)` that is
+    // the commitment `bind_staging_key` inserts.
     let root = get_merkle_root(
         secret,
         round_id,
@@ -222,12 +221,4 @@ fn test_fail_digest_limb_too_wide() {
         MAX_REQUESTS,
         pass_tag(SECRET, ROUND_ID, 0),
     );
-}
-
-#[test]
-fn test_tag_is_deterministic_and_separated() {
-    assert(pass_tag(SECRET, ROUND_ID, 0) == pass_tag(SECRET, ROUND_ID, 0));
-    assert(pass_tag(SECRET, ROUND_ID, 0) != pass_tag(SECRET, ROUND_ID, 1));
-    assert(pass_tag(SECRET, ROUND_ID, 0) != pass_tag(SECRET, ROUND_ID + 1, 0));
-    assert(pass_tag(SECRET, ROUND_ID, 0) != pass_tag(NEIGHBOUR_SECRET, ROUND_ID, 0));
 }

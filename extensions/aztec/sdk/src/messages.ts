@@ -87,12 +87,9 @@ export type VotesRoundConfig = {
 export const encodeVotesRoundMessage = (c: VotesRoundConfig): Hex =>
   encodeAbiParameters(words(6), [MESSAGE_KIND.ROUND, c.roundId, c.numOptions, c.inputStart, c.inputEnd, c.inputLimit])
 
-/** `abi.encode(4, roundId, uint256(uint160(slot)), weight)`: the weight `slot` carries in a round. */
-export const encodeEnrollMessage = (roundId: bigint, slot: Address, weight: bigint): Hex =>
-  encodeAbiParameters(words(4), [MESSAGE_KIND.ENROLL, roundId, BigInt(slot), weight])
-
 /** The field element the bridge carries for each message: `sha256ToField` of its encoding. */
 export const roundContent = (config: RoundConfig): bigint => sha256ToField(encodeRoundMessage(config))
+export const votesRoundContent = (config: VotesRoundConfig): bigint => sha256ToField(encodeVotesRoundMessage(config))
 export const keyContent = (roundId: bigint, committeePublicKey: Hex): bigint => sha256ToField(encodeKeyMessage(roundId, committeePublicKey))
 export const rootContent = (roundId: bigint, inputRoot: bigint, numInputs: bigint): bigint =>
   sha256ToField(encodeRootMessage(roundId, inputRoot, numInputs))
@@ -104,7 +101,3 @@ export const scopeOf = (l1ChainId: bigint | number, program: Address, e3Id: bigi
 /** `uint256(sha256(bytes(scope))) >> 8`: the scope hash the round config carries (`CRISPRemoteProgram.scopeHashOf`). */
 export const scopeHashOf = (l1ChainId: bigint | number, program: Address, e3Id: bigint): bigint =>
   sha256ToField(stringToBytes(scopeOf(l1ChainId, program, e3Id)))
-
-export const votesRoundContent = (config: VotesRoundConfig): bigint => sha256ToField(encodeVotesRoundMessage(config))
-/** `sha256ToField` of the ENROLL message: the `content` of the `Enrolled` event. */
-export const enrollContent = (roundId: bigint, slot: Address, weight: bigint): bigint => sha256ToField(encodeEnrollMessage(roundId, slot, weight))

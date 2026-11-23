@@ -4,8 +4,8 @@
 // without even the implied warranty of MERCHANTABILITY
 // or FITNESS FOR A PARTICULAR PURPOSE.
 
-import { BackendType, Barretenberg, UltraHonkBackend } from '@aztec-foundation/bb.js'
 import { poseidon2Hash } from '@aztec-labs/foundation/crypto/poseidon'
+import { MERKLE_TREE_MAX_DEPTH } from '@crisp-e3/sdk'
 import { Noir, type CompiledCircuit } from '@noir-lang/noir_js'
 import { poseidon2, poseidon3 } from 'poseidon-lite'
 import { bytesToHex, hashTypedData, hexToBytes, recoverPublicKey, toHex, type Address, type Hex } from 'viem'
@@ -15,26 +15,20 @@ import stagingPassVotesCircuit from '../../../core/circuits/staging_pass_votes/c
 import { crispDomain, type TypedDataSigner } from './ballot'
 import type { Census } from './census'
 import { roundIdOf } from './messages'
-import type { StagingPass, StagingRequest } from './staging-pass'
-import { stagingRequestDigest } from './staging-pass'
+import { halves, stagingProver, stagingRequestDigest, type StagingPass, type StagingRequest } from './staging-pass'
 
 const circuit = stagingPassVotesCircuit as unknown as CompiledCircuit
 
-const MERKLE_TREE_MAX_DEPTH = 20
-
-const STAGING_KEY_TYPES = { StagingKey: [{ name: 'e3Id', type: 'uint256' }] } as const
+const prover = stagingProver(circuit.bytecode)
 
 /** The EIP-712 `StagingKey(uint256 e3Id)` in the CRISP domain: signed once per slot and round to derive the staging secret. */
-export const stagingKeyTypedData = (e3Id: bigint, l1ChainId: bigint | number, program: Address) =>
+const stagingKeyTypedData = (e3Id: bigint, l1ChainId: bigint | number, program: Address) =>
   ({
     domain: crispDomain(l1ChainId, program),
-    types: STAGING_KEY_TYPES,
+    types: { StagingKey: [{ name: 'e3Id', type: 'uint256' }] },
     primaryType: 'StagingKey',
     message: { e3Id },
   }) as const
-
-export const stagingKeyDigest = (e3Id: bigint, l1ChainId: bigint | number, program: Address): Hex =>
-  hashTypedData(stagingKeyTypedData(e3Id, l1ChainId, program))
 
 /** A big-endian 32-byte value as two 128-bit limbs `(high, low)`. */
 const limbs = (bytes: Uint8Array): [bigint, bigint] => [BigInt(bytesToHex(bytes.slice(0, 16))), BigInt(bytesToHex(bytes.slice(16, 32)))]
@@ -46,7 +40,6 @@ const limbs = (bytes: Uint8Array): [bigint, bigint] => [BigInt(bytesToHex(bytes.
  */
 export const stagingSecret = async (signature: Hex): Promise<bigint> => {
   const bytes = hexToBytes(signature)
-  if (bytes.length !== 64 && bytes.length !== 65) throw new Error('The staging-key signature must be 64 or 65 bytes (r ‖ s [‖ v])')
   const [rHi, rLo] = limbs(bytes.slice(0, 32))
   const [sHi, sLo] = limbs(bytes.slice(32, 64))
 
@@ -59,28 +52,20 @@ export const stagingCommitment = (secret: bigint, roundId: bigint): bigint => po
 /** `hash_3([secret, round_id, k])` (circom Poseidon): the rate-limit tag of the `k`-th pass of a secret. */
 export const votesStagingTag = (secret: bigint, roundId: bigint, counter: number): bigint => poseidon3([secret, roundId, BigInt(counter)])
 
-/** What `bind_staging_key` takes, derived from a signed `StagingKey`. */
-export type StagingKeyBinding = {
-  secret: bigint
-  commitment: bigint
-  publicKeyX: Uint8Array
-  publicKeyY: Uint8Array
-  /** 64-byte `r ‖ s`. */
-  signature: Uint8Array
-}
-
-/** Sign `StagingKey` with `signer`, recover the slot's public key from the signature and check it is `slot`'s. */
+/**
+ * Sign `StagingKey` with `signer`, recover the slot's public key from the signature, check it is `slot`'s, and derive what
+ * `bind_staging_key` takes: the public key halves, the 64-byte `r ‖ s`, and the secret and its commitment.
+ */
 export const stagingKeyBinding = async (args: {
   signer: TypedDataSigner
   e3Id: bigint
   l1ChainId: bigint | number
   program: Address
   slot: Address
-}): Promise<StagingKeyBinding> => {
-  const signature = await args.signer(stagingKeyTypedData(args.e3Id, args.l1ChainId, args.program))
-  const bytes = hexToBytes(signature)
-  if (bytes.length !== 65) throw new Error('The staging-key signature must be 65 bytes (r ‖ s ‖ v)')
-  const publicKey = hexToBytes(await recoverPublicKey({ hash: stagingKeyDigest(args.e3Id, args.l1ChainId, args.program), signature }))
+}) => {
+  const typedData = stagingKeyTypedData(args.e3Id, args.l1ChainId, args.program)
+  const signature = await args.signer(typedData)
+  const publicKey = hexToBytes(await recoverPublicKey({ hash: hashTypedData(typedData), signature }))
   if (publicKeyToAddress(bytesToHex(publicKey)).toLowerCase() !== args.slot.toLowerCase()) {
     throw new Error(`The staging-key signature was not made by slot ${args.slot}`)
   }
@@ -91,36 +76,12 @@ export const stagingKeyBinding = async (args: {
     commitment: stagingCommitment(secret, roundIdOf(args.e3Id)),
     publicKeyX: publicKey.slice(1, 33),
     publicKeyY: publicKey.slice(33, 65),
-    signature: bytes.slice(0, 64),
+    signature: hexToBytes(signature).slice(0, 64),
   }
 }
 
-const halves = (digest: Hex): [bigint, bigint] => [BigInt(`0x${digest.slice(2, 34)}`), BigInt(`0x${digest.slice(34)}`)]
-
-// The circuit has well under 2^17 gates.
-const SRS_SIZE = 2 ** 17
-
-let backend: Promise<{ api: Barretenberg; honk: UltraHonkBackend }> | undefined
-
-const getBackend = () => {
-  backend ??= (async () => {
-    const api =
-      typeof window === 'undefined'
-        ? await Barretenberg.new({ srsSize: SRS_SIZE, backend: BackendType.Wasm })
-        : await Barretenberg.new({ srsSize: SRS_SIZE })
-
-    return { api, honk: new UltraHonkBackend(circuit.bytecode, api) }
-  })()
-
-  return backend
-}
-
-/** Free the votes staging prover's Barretenberg instance (WASM threads keep a Node process alive). */
-export const destroyVotesStagingPassProver = async (): Promise<void> => {
-  const pending = backend
-  backend = undefined
-  if (pending) await (await pending).api.destroy()
-}
+/** Free the votes staging prover's Barretenberg instance. */
+export const destroyVotesStagingPassProver = prover.destroy
 
 export type BuildVotesStagingPassInputs = {
   /** The slot's staging secret (`bindStagingKey`): the voter's OWN, for a vote and a mask alike. */
@@ -141,22 +102,18 @@ export type BuildVotesStagingPassInputs = {
  */
 export const buildVotesStagingPass = async (inputs: BuildVotesStagingPassInputs): Promise<StagingPass> => {
   const { request, maxRequests, counter, stagingTree, secret } = inputs
-  if (!Number.isInteger(counter) || counter < 0 || counter >= maxRequests) {
-    throw new Error(`The staging counter ${counter} is outside [0, ${maxRequests})`)
-  }
   const roundId = roundIdOf(request.e3Id)
   const index = stagingTree.leaves.indexOf(stagingCommitment(secret, roundId))
   if (index === -1) throw new Error('The slot has not bound a staging key in this round (or the staging tree is stale)')
   const proof = stagingTree.tree.generateProof(index)
-  if (proof.root !== stagingTree.root) throw new Error('The staging leaves do not rebuild the staging root')
 
   const depth = proof.siblings.length
   const siblings = [...proof.siblings, ...Array(MERKLE_TREE_MAX_DEPTH - depth).fill(0n)]
-  const indices = Array.from({ length: MERKLE_TREE_MAX_DEPTH }, (_, i) => i < depth && ((BigInt(proof.index) >> BigInt(i)) & 1n) === 1n)
+  const indices = Array.from({ length: MERKLE_TREE_MAX_DEPTH }, (_, i) => ((BigInt(proof.index) >> BigInt(i)) & 1n) === 1n)
   const [digestHi, digestLo] = halves(stagingRequestDigest(request))
 
   const field = (value: bigint) => toHex(value)
-  const { honk } = await getBackend()
+  const { honk } = await prover.get()
   const { witness } = await new Noir(circuit).execute({
     secret: field(secret),
     merkle_proof_length: depth,

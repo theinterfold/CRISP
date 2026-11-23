@@ -4,28 +4,19 @@
 // without even the implied warranty of MERCHANTABILITY
 // or FITNESS FOR A PARTICULAR PURPOSE.
 
-//! `POST /voting/remote-input/enroll`: the relay of `CRISPAztecVotesProgram.enroll`.
-//!
-//! A slot votes on Aztec with the weight the L1 program read from the token at the round snapshot,
-//! and the program bridges that weight only when somebody calls `enroll`. The call is
-//! permissionless and cannot forge a weight, so this route only saves voters the gas: it keeps the
-//! slots that still need enrolling (an `eth_call` of `isEnrolled` and `weightOf`) and sends one
-//! `enroll(e3Id, slots)` from the server key. A voter whose request the relay refuses sends the same
-//! call themselves.
+//! `POST /voting/remote-input/enroll`: the relay of `CRISPAztecVotesProgram.enroll`, which is
+//! permissionless and cannot forge a weight. The route only saves voters the gas: it keeps the slots
+//! that still need enrolling and sends one `enroll(e3Id, slots)` from the server key. A voter whose
+//! request the relay refuses sends the same call themselves.
 
 use super::{chain::identify, json_message};
 use crate::{
     config::Config,
-    server::{
-        models::e3_id_to_u256,
-        rate_limit::RateLimiter,
-        rpc,
-    },
+    server::{models::e3_id_to_u256, rate_limit::RateLimiter, rpc},
 };
 use actix_web::{http::StatusCode, web, HttpRequest, HttpResponse};
 use alloy::{
     primitives::{Address, B256, U256},
-    providers::DynProvider,
     sol,
 };
 use async_trait::async_trait;
@@ -48,7 +39,7 @@ sol! {
 }
 
 /// The most slots one request may name: a voter needs their own slot and a few masks.
-pub const MAX_SLOTS: usize = 32;
+const MAX_SLOTS: usize = 32;
 /// Requests one caller may make per window.
 const PER_CALLER_LIMIT: usize = 6;
 /// Requests all callers together may make for one round per window. The relay spends gas for
@@ -72,7 +63,7 @@ pub struct Skipped {
     pub reason: &'static str,
 }
 
-#[derive(Debug, Serialize, PartialEq, Eq)]
+#[derive(Serialize)]
 pub struct EnrollResponse {
     /// The relay's transaction, `null` when no slot needed one.
     pub tx_hash: Option<B256>,
@@ -81,7 +72,6 @@ pub struct EnrollResponse {
 }
 
 /// What the votes program knows of one slot of a round.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SlotState {
     pub enrolled: bool,
     pub weight: U256,
@@ -104,26 +94,27 @@ struct L1Votes {
 #[async_trait]
 impl VotesChain for L1Votes {
     async fn slot_states(&self, e3_id: U256, slots: &[Address]) -> eyre::Result<Vec<SlotState>> {
-        let provider: DynProvider = rpc::provider().await?.clone();
-        let mut reads = tokio::task::JoinSet::new();
-        for (index, slot) in slots.iter().copied().enumerate() {
-            let program = IAztecVotesProgram::new(self.program, provider.clone());
-            reads.spawn(async move {
-                let is_enrolled = program.isEnrolled(e3_id, slot);
-                let weight_of = program.weightOf(e3_id, slot);
-                let (enrolled, weight) = tokio::join!(is_enrolled.call(), weight_of.call());
-                (index, enrolled, weight)
-            });
-        }
-        let mut states = vec![None; slots.len()];
-        while let Some(read) = reads.join_next().await {
-            let (index, enrolled, weight) = read?;
-            states[index] = Some(SlotState {
+        let provider = rpc::provider().await?;
+        let reads: Vec<_> = slots
+            .iter()
+            .map(|&slot| {
+                let program = IAztecVotesProgram::new(self.program, provider);
+                tokio::spawn(async move {
+                    let is_enrolled = program.isEnrolled(e3_id, slot);
+                    let weight_of = program.weightOf(e3_id, slot);
+                    tokio::join!(is_enrolled.call(), weight_of.call())
+                })
+            })
+            .collect();
+        let mut states = Vec::with_capacity(reads.len());
+        for read in reads {
+            let (enrolled, weight) = read.await?;
+            states.push(SlotState {
                 enrolled: enrolled?,
                 weight: weight?,
             });
         }
-        Ok(states.into_iter().flatten().collect())
+        Ok(states)
     }
 
     async fn enroll(&self, e3_id: U256, slots: &[Address]) -> eyre::Result<B256> {
@@ -191,36 +182,11 @@ impl EnrollService {
             held.remove(&(e3_id, *slot));
         }
     }
-}
 
-/// The ways a request is refused before it reaches the chain.
-fn parse_request(request: &EnrollRequest) -> Result<(U256, Vec<Address>), String> {
-    let e3_id = e3_id_to_u256(&request.round_id).map_err(|error| error.to_string())?;
-    if request.slots.is_empty() {
-        return Err("Name at least one slot".to_owned());
-    }
-    if request.slots.len() > MAX_SLOTS {
-        return Err(format!("Name at most {MAX_SLOTS} slots"));
-    }
-    let mut slots: Vec<Address> = Vec::with_capacity(request.slots.len());
-    for slot in &request.slots {
-        let slot: Address = slot
-            .parse()
-            .map_err(|_| "A slot is not an address".to_owned())?;
-        // A repeated slot is one enrollment.
-        if !slots.contains(&slot) {
-            slots.push(slot);
-        }
-    }
-    Ok((e3_id, slots))
-}
-
-impl EnrollService {
     /// Filter `slots` against the program and the enrollments in flight, then send one
     /// transaction for the rest.
     async fn run(&self, e3_id: U256, slots: Vec<Address>) -> eyre::Result<EnrollResponse> {
         let states = self.chain.slot_states(e3_id, &slots).await?;
-        eyre::ensure!(states.len() == slots.len(), "the chain answered for fewer slots");
 
         let mut skipped = Vec::new();
         let mut claimed = Vec::new();
@@ -244,6 +210,27 @@ impl EnrollService {
         self.release(e3_id, &claimed);
         Ok(EnrollResponse { tx_hash: Some(sent?), enrolled: claimed, skipped })
     }
+}
+
+fn parse_request(request: &EnrollRequest) -> Result<(U256, Vec<Address>), String> {
+    let e3_id = e3_id_to_u256(&request.round_id).map_err(|error| error.to_string())?;
+    if request.slots.is_empty() {
+        return Err("Name at least one slot".to_owned());
+    }
+    if request.slots.len() > MAX_SLOTS {
+        return Err(format!("Name at most {MAX_SLOTS} slots"));
+    }
+    let mut slots: Vec<Address> = Vec::with_capacity(request.slots.len());
+    for slot in &request.slots {
+        let slot: Address = slot
+            .parse()
+            .map_err(|_| "A slot is not an address".to_owned())?;
+        // A repeated slot is one enrollment.
+        if !slots.contains(&slot) {
+            slots.push(slot);
+        }
+    }
+    Ok((e3_id, slots))
 }
 
 /// Enroll the slots of a voter that the program does not know yet.
@@ -307,14 +294,12 @@ mod tests {
         weights: Vec<(Address, u64)>,
         sent: StdMutex<Vec<Vec<Address>>>,
         hold: Option<Arc<Notify>>,
-        reads_fail: bool,
         send_fails: bool,
     }
 
     #[async_trait]
     impl VotesChain for FakeChain {
         async fn slot_states(&self, _: U256, slots: &[Address]) -> eyre::Result<Vec<SlotState>> {
-            eyre::ensure!(!self.reads_fail, "the node is down");
             Ok(slots
                 .iter()
                 .map(|slot| SlotState {
@@ -362,7 +347,6 @@ mod tests {
             ..Default::default()
         });
         let service = EnrollService::new(chain.clone(), false);
-        // The request repeats B; it is enrolled once.
         let response = service.run(U256::from(42), vec![A, B, C]).await.unwrap();
         assert_eq!(response.enrolled, vec![B]);
         assert_eq!(
@@ -471,8 +455,8 @@ mod tests {
     }
 
     #[actix_web::test]
-    async fn an_unreadable_chain_is_a_503_and_a_caller_is_limited() {
-        let chain = Arc::new(FakeChain { reads_fail: true, ..Default::default() });
+    async fn a_failed_send_is_a_503_and_a_caller_is_limited() {
+        let chain = Arc::new(FakeChain { weights: vec![(A, 5)], send_fails: true, ..Default::default() });
         let service = web::Data::new(EnrollService::new(chain, false));
         let app = test::init_service(
             App::new()

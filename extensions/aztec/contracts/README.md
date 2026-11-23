@@ -6,8 +6,6 @@ cast on Aztec. It is paired with `CRISPAztecProgram` on L1 (`../l1`). The worksp
 `crisp_aztec_lib`.
 
 ```
-
-```
 L1 program ──ROUND──▶ open_round        voters:  register ──▶ census tree (LeanIMT, Poseidon)
 L1 program ──KEY────▶ publish_key                 cast ──────▶ input tree  (LazyIMT, Poseidon)
 close_round ──ROOT──▶ L1 program         (input root and count, through the Outbox)
@@ -36,14 +34,11 @@ Brillig function call isn't properly covered…` lines come from aztec-nr and th
 
 ## Layout
 
-`crisp_aztec_lib/src/` (shared, `type = "lib"`): `tree.nr` + `nodes.nr` (IMTs over a `NodeStore`), `hashing.nr` (EIP-712 digests,
-`inputId`, leaf, KEY and ROOT contents, byte helpers), `ballot.nr` (the base-proof checks), `constants.nr` (limits, type hashes, message
-words, log tags), `types.nr` (`InputEntry`).
-`crisp_aztec/src/`: `main.nr` (the contract), `identity.nr` (ZKPassport service config), `messages.nr` (its 12-word ROUND content),
-`types.nr`, `tests.nr` (unit tests of the shared code and the ROUND content).
-`crisp_aztec_votes/src/`: `main.nr` (the contract), `messages.nr` (6-word ROUND and ENROLL contents), `staging.nr` (staging-key digest, address, secret, commitment), `types.nr`.
-`crisp_aztec_test/` holds the TXE tests (`src/lib.nr` for `CrispAztec`, `src/votes.nr` for `CrispAztecVotes`) and fixtures;
-`vendor/zkpassport/` the vendored ZKPassport verifier, core and registry.
+`crisp_aztec_lib/src/` (shared, `type = "lib"`): the trees, `hashing.nr`, `ballot.nr` (the base-proof checks), `constants.nr`, `types.nr`.
+`crisp_aztec/src/` and `crisp_aztec_votes/src/`: the contract, its ROUND (and ENROLL) message contents, its types; `crisp_aztec` also
+`identity.nr` (ZKPassport service config), `crisp_aztec_votes` also `staging.nr` (staging-key digest, address, secret, commitment).
+`crisp_aztec/src/tests.nr` holds the unit tests of the shared code. `crisp_aztec_test/` holds the TXE tests (`src/lib.nr` for `CrispAztec`,
+`src/votes.nr` for `CrispAztecVotes`) and fixtures; `vendor/zkpassport/` the vendored ZKPassport verifier, core and registry.
 
 ### Vendored ZKPassport
 
@@ -142,27 +137,23 @@ tests use zero proofs with the real verification keys of `crisp_aztec_test/src/b
 
 ## CrispAztecVotes: token-weighted voting
 
-For governance rounds weighted by a token (`CRISPAztecVotesProgram` on L1, `../l1`) there is no identity registration. The L1 program
-reads `getPastVotes` at the round snapshot and bridges each slot's weight with an ENROLL message; anyone consumes it with `enroll`,
-so nobody can forge a weight. Everything else (`cast`, `_append_input`, `publish_key`, `close_round`, the trees, the logs) is the
-shared code of `CrispAztec`, with the same arguments and checks.
+For token-weighted governance rounds (`CRISPAztecVotesProgram` on L1, `../l1`) there is no identity registration: the L1 program
+reads `getPastVotes` at the round snapshot and bridges each slot's weight in an ENROLL message, so nobody can forge a weight. The
+constructor has no ZKPassport settings, `open_round` consumes the 6-word ROUND
+`sha256_to_field(abi.encode(1, roundId, numOptions, inputStart, inputEnd, inputLimit))`, and `publish_key`, `cast`, `_append_input`,
+`close_round`, the trees and the logs are as in `CrispAztec`. The weight is the census leaf's second input, so a ballot's `credits` is
+the slot's weight.
 
 | Function | Kind | What it does |
 | -------- | ---- | ------------ |
-| `constructor` | public | L1 program, Interfold, both EIP-712 domain separators, the availability signer key, the three base vk hashes (no ZKPassport). |
-| `open_round(round_id, num_options, input_start, input_end, input_limit, leaf_index)` | public | Consumes the 6-word ROUND `sha256_to_field(abi.encode(1, roundId, numOptions, inputStart, inputEnd, inputLimit))`. |
-| `publish_key`, `cast`, `_append_input`, `close_round` | | As in `CrispAztec`. |
-| `enroll(round_id, slot, weight, leaf_index)` | public, permissionless | Consumes ENROLL `abi.encode(4, roundId, uint256(slot), weight)`; the round must be open, `now < input_end`, the slot not enrolled, `weight != 0`. Inserts the leaf `hash_2([slot, weight])` (the leaf `register*` inserts, with the weight as credits) into the census LeanIMT (cap 65,536), keeps the new root and logs `MEMBER_REGISTERED [round_id, index, slot, leaf, root]`. |
-| `bind_staging_key(round_id, slot, public_key_x, public_key_y, signature)` | private | The slot's wallet signs EIP-712 `StagingKey(uint256 e3Id)` in the ballot domain (`("CRISP","1",chainId,program)`). Checks the secp256k1 signature in-circuit and `address(pubkey) == slot`, derives `secret = Poseidon2::hash([r_hi, r_lo, s_hi, s_lo], 4)` (the signature's `r`, `s` as 128-bit big-endian limbs) and the commitment `hash_2([secret, round_id])` (circom Poseidon, as the census), and enqueues `_bind`. The signature stays on the device. |
-| `_bind(round_id, slot, commitment)` | public, `#[only_self]` | Slot enrolled, at most `MAX_STAGING_BINDS = 3` binds per slot and round, commitment not already in the tree; LeanIMT insert into the round's staging tree (cap 65,536), keeps the root, logs `STAGING_KEY_BOUND`. |
-| views | utility | `get_config`, `get_round`, `get_committee_key`, `is_closed`, `get_input_count`, `get_census_count`, `get_census_root`, `is_census_root_known`, `is_slot_enrolled`, `get_input`, `get_staging_bind_count`, `get_staging_root`, `is_staging_root_known`. |
+| `enroll(round_id, slot, weight, leaf_index)` | public, permissionless | Consumes ENROLL `abi.encode(4, roundId, uint256(slot), weight)`; the round must be open, `now < input_end`, the slot not enrolled, `weight != 0`. Inserts the leaf `hash_2([slot, weight])` into the census LeanIMT, keeps the new root and logs `MEMBER_REGISTERED`. |
+| `bind_staging_key(round_id, slot, public_key_x, public_key_y, signature)` | private | The slot's wallet signs EIP-712 `StagingKey(uint256 e3Id)` in the ballot domain. Checks the secp256k1 signature in-circuit and `address(pubkey) == slot`, derives `secret = Poseidon2::hash([r_hi, r_lo, s_hi, s_lo], 4)` (the signature's `r`, `s` as 128-bit big-endian limbs) and the commitment `hash_2([secret, round_id])`, and enqueues `_bind`. The signature stays on the device. |
+| `_bind(round_id, slot, commitment)` | public, `#[only_self]` | Slot enrolled, at most `MAX_STAGING_BINDS = 3` binds per slot and round, commitment not already in the tree; LeanIMT insert into the round's staging tree, keeps the root, logs `STAGING_KEY_BOUND`. |
+| views | utility | The `CrispAztec` views with `is_slot_enrolled` for `is_slot_registered`, plus `get_staging_bind_count`, `get_staging_root`, `is_staging_root_known`. |
 
 The staging tree lets a voter prove membership (`staging_pass_votes`) without naming a slot: a governance slot's public key is public,
-so a tag derived from it would link a staging request to its sender. The secret never leaves the voter; only `hash_2([secret, round_id])` does.
+so a tag derived from it would link a staging request to its sender. Only `hash_2([secret, round_id])` leaves the voter.
 Storage is merged into `Counts` and `SlotState` structs because the contract's storage type would otherwise exceed Noir's type-complexity limit.
-
-The weight is the leaf's second input, so a ballot's `credits` is the slot's weight (`buildCast` in the SDK). Enrollment ends with the input
-window, and a slot's weight is fixed by its message.
 
 ## Gas and gates
 

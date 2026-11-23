@@ -6,7 +6,7 @@
 
 import { parseAbi, type Address, type Hex, type PublicClient, type WalletClient } from 'viem'
 
-import { type RoundConfig, type VotesRoundConfig, roundContent, roundIdOf, votesRoundContent } from './messages'
+import { type RoundConfig, type VotesRoundConfig, roundContent, roundIdOf } from './messages'
 import { decodeCustomParams, type RoundRules } from './rules'
 
 /** The part of `CRISPAztecProgram` and `CRISPRemoteProgram` this package calls or reads. */
@@ -160,63 +160,26 @@ export const submitInputRoot = async (
 
 /** The part of `CRISPAztecVotesProgram` this package calls or reads, besides {@link programAbi}. */
 export const votesProgramAbi = parseAbi([
-  'function tokenOf(uint256 e3Id) view returns (address)',
-  'function snapshotOf(uint256 e3Id) view returns (uint48)',
-  'function minVotingPowerOf(uint256 e3Id) view returns (uint256)',
-  'function votingPowerDivisorOf(uint256 e3Id) view returns (uint256)',
   'function weightOf(uint256 e3Id, address slot) view returns (uint256)',
   'function isEnrolled(uint256 e3Id, address slot) view returns (bool)',
-  'function enroll(uint256 e3Id, address[] slots) returns (uint256 enrolled)',
   'event Enrolled(uint256 indexed e3Id, address indexed slot, uint256 weight, bytes32 content, uint256 index)',
 ])
 
-/** The L1 record of a votes round: the ROUND message plus the weight rules the program recorded. */
-export type VotesRound = VotesRoundConfig & {
-  e3Id: bigint
-  token: Address
-  /** The block (or timestamp) `getPastVotes` is read at. */
-  snapshot: bigint
-  /** A slot with fewer raw votes than this cannot enroll. */
-  minVotingPower: bigint
-  /** A slot's weight is `getPastVotes / divisor`. */
-  divisor: bigint
-}
-
-/**
- * Rebuild the ROUND configuration the votes program sent for `e3Id` from L1 state, with its weight rules, and check it against the
- * first message the program sent. A keeper opens the round on L2 from this.
- */
-export const getVotesRound = async (client: PublicClient, program: Address, e3Id: bigint): Promise<VotesRound> => {
-  const read = <T extends (typeof votesProgramAbi)[number]['name']>(functionName: T) =>
-    client.readContract({ address: program, abi: votesProgramAbi, functionName, args: [e3Id] } as never) as Promise<never>
-  const [interfold, round, token, snapshot, minVotingPower, divisor] = await Promise.all([
-    client.readContract({ address: program, abi: programAbi, functionName: 'interfold' }),
+/** Rebuild the ROUND configuration the votes program sent for `e3Id` from L1 state. A keeper opens the round on L2 from this. */
+export const getVotesRound = async (client: PublicClient, program: Address, e3Id: bigint): Promise<VotesRoundConfig> => {
+  const interfold = await client.readContract({ address: program, abi: programAbi, functionName: 'interfold' })
+  const [round, e3] = await Promise.all([
     getL1Round(client, program, e3Id),
-    read('tokenOf') as Promise<Address>,
-    read('snapshotOf') as Promise<number>,
-    read('minVotingPowerOf') as Promise<bigint>,
-    read('votingPowerDivisorOf') as Promise<bigint>,
+    client.readContract({ address: interfold, abi: interfoldAbi, functionName: 'getE3', args: [e3Id] }),
   ])
-  const e3 = await client.readContract({ address: interfold, abi: interfoldAbi, functionName: 'getE3', args: [e3Id] })
-  const config: VotesRound = {
-    e3Id,
+
+  return {
     roundId: roundIdOf(e3Id),
     numOptions: round.numOptions,
     inputStart: e3.inputWindow[0],
     inputEnd: e3.inputWindow[1],
     inputLimit: round.inputLimit,
-    token,
-    snapshot: BigInt(snapshot),
-    minVotingPower,
-    divisor,
   }
-
-  const [first] = await getSentMessages(client, program, e3Id)
-  if (first && BigInt(first.content) !== votesRoundContent(config)) {
-    throw new Error(`Round ${e3Id}: the configuration rebuilt from L1 does not hash to the content the program sent`)
-  }
-
-  return config
 }
 
 /** The weight `slot` carries in the round (`getPastVotes / divisor`, 0 below the floor). */
@@ -252,23 +215,4 @@ export const getEnrolledMessages = async (
 
       return { slot: args.slot as Address, weight: args.weight as bigint, message }
     })
-}
-
-/** Bridge the weights of `slots` to Aztec. Permissionless: a voter may call it directly when the server's relay is unavailable. */
-export const enrollSlots = async (
-  wallet: WalletClient,
-  client: PublicClient,
-  program: Address,
-  e3Id: bigint,
-  slots: readonly Address[],
-): Promise<Hex> => {
-  const { request } = await client.simulateContract({
-    address: program,
-    abi: votesProgramAbi,
-    functionName: 'enroll',
-    args: [e3Id, slots],
-    account: wallet.account,
-  })
-
-  return wallet.writeContract(request)
 }

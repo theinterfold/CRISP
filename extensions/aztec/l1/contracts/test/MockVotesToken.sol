@@ -16,7 +16,6 @@ contract MockVotesToken is ERC20Votes {
   function mint(address to, uint256 amount) external {
     _mint(to, amount);
   }
-
 }
 
 /// @notice ERC20Votes on a timestamp ERC-6372 clock.

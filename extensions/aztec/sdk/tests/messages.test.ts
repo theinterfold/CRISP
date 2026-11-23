@@ -7,11 +7,9 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
-import { pad, toHex, type Address, type Hex } from 'viem'
+import { pad, toHex } from 'viem'
 import {
-  encodeEnrollMessage,
   encodeVotesRoundMessage,
-  enrollContent,
   encodeKeyMessage,
   encodeRootMessage,
   encodeRoundMessage,
@@ -94,25 +92,10 @@ describe('L1 message vectors', () => {
 })
 
 describe('votes messages', () => {
-  const word = (value: bigint | number): string => pad(toHex(value), { size: 32 }).slice(2)
-
   it('encodes the 6-word ROUND message like CRISPAztecVotesMessages.round', () => {
+    const word = (value: number): string => pad(toHex(value), { size: 32 }).slice(2)
     expect(encodeVotesRoundMessage({ roundId: 7n, numOptions: 3n, inputStart: 1000n, inputEnd: 2000n, inputLimit: 500n })).toBe(
       `0x${[1, 7, 3, 1000, 2000, 500].map(word).join('')}`,
     )
-  })
-
-  it('encodes the 4-word ENROLL message with the slot as a uint256 and hashes it to a field', () => {
-    const slot: Address = '0x00000000000000000000000000000000000000ab'
-    const weight = 12345678901234567890n
-    const message: Hex = encodeEnrollMessage(7n, slot, weight)
-    expect(message).toBe(`0x${[4, 7, 0xab, weight].map(word).join('')}`)
-    expect(enrollContent(7n, slot, weight)).toBe(sha256ToField(message))
-    expect(enrollContent(7n, slot, weight + 1n)).not.toBe(enrollContent(7n, slot, weight))
-  })
-
-  it('keeps a high-order slot byte in its word', () => {
-    const slot: Address = '0xff00000000000000000000000000000000000001'
-    expect(encodeEnrollMessage(1n, slot, 1n).slice(2 + 64 * 2, 2 + 64 * 3)).toBe(`000000000000000000000000${slot.slice(2)}`)
   })
 })

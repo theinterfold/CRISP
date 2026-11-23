@@ -4,7 +4,7 @@
 // without even the implied warranty of MERCHANTABILITY
 // or FITNESS FOR A PARTICULAR PURPOSE.
 
-import type { AztecAddress } from '@aztec-labs/aztec.js/addresses'
+import { EthAddress, type AztecAddress } from '@aztec-labs/aztec.js/addresses'
 import type { ContractFunctionInteraction } from '@aztec-labs/aztec.js/contracts'
 import { waitForL1ToL2MessageReady } from '@aztec-labs/aztec.js/messaging'
 import { Fr } from '@aztec-labs/foundation/curves/bn254'
@@ -24,7 +24,46 @@ export type SentTx = { txHash: string; blockNumber?: number }
 /** Seconds to wait for an L1→L2 message to be included in an L2 block before giving up. */
 const MESSAGE_TIMEOUT_SECONDS = 600
 
-export const bytes32 = (hex: Hex): number[] => Array.from(hexToBytes(hex, { size: 32 }))
+const bytes32 = (hex: Hex): number[] => Array.from(hexToBytes(hex, { size: 32 }))
+
+/** The values both contracts are deployed with first; see `deployCrispAztec` and `deployCrispAztecVotes`. */
+export type SharedDeployParams = {
+  l1Program: Address
+  /** The Interfold the program serves: its address is the top 20 bytes of every e3Id of the round ids this contract tracks. */
+  interfold: Address
+  /** Domain separator of the L1 program's EIP-712 domain; both statements share it (see `domainSeparator`). */
+  domainSeparator: Hex
+  /** The availability signer's secp256k1 public key: 64 bytes `x ‖ y`, or the 65-byte uncompressed form with its `04` prefix. */
+  availabilitySignerPublicKey: Hex
+  /**
+   * Hashes of the verification keys of the three base circuits of the BFV preset the deployment serves
+   * (`getBaseVerificationKeys` of `@crisp-e3/sdk`, with the preset registered): a ballot is proven with exactly these.
+   */
+  ct0VkHash: bigint
+  ct1VkHash: bigint
+  crispVkHash: bigint
+}
+
+/** The leading constructor arguments of both contracts. */
+export const sharedDeployArguments = (params: SharedDeployParams) => {
+  const given = hexToBytes(params.availabilitySignerPublicKey)
+  const key = given.length === 65 && given[0] === 4 ? given.slice(1) : given
+  if (key.length !== 64)
+    throw new Error('The availability signer key must be an uncompressed secp256k1 public key (64 bytes, or 65 with the 04 prefix)')
+  const separator = bytes32(params.domainSeparator)
+
+  return [
+    EthAddress.fromString(params.l1Program),
+    EthAddress.fromString(params.interfold),
+    separator,
+    separator,
+    Array.from(key.slice(0, 32)),
+    Array.from(key.slice(32, 64)),
+    new Fr(params.ct0VkHash),
+    new Fr(params.ct1VkHash),
+    new Fr(params.crispVkHash),
+  ] as const
+}
 
 /** The arguments of `cast`, which both CRISP contracts take identically. */
 export const castCallArguments = (roundId: bigint, args: CastArguments) =>

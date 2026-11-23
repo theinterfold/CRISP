@@ -175,10 +175,10 @@ pub contract CrispAztecVotes {
     // Staging keys
     // ---------------------------------------------------------------------------------------------------------
 
-    /// Binds a staging key of `slot` (at most `MAX_STAGING_BINDS` per round, so a lost key can be replaced), after its enrollment. The slot's wallet signs the EIP-712
-    /// `StagingKey(uint256 e3Id)` of the ballot domain; the signature, checked here against the public key of `slot`, never
-    /// leaves the device. The secret is derived from it (`staging_secret`) and only its commitment is public, so a
-    /// staging pass later proves membership without naming the slot.
+    /// Binds a staging key of `slot` (at most `MAX_STAGING_BINDS` per round, so a lost key can be replaced). The slot's
+    /// wallet signs the EIP-712 `StagingKey(uint256 e3Id)` of the ballot domain; the signature never leaves the device.
+    /// The secret is derived from it and only its commitment is public, so a staging pass later proves membership
+    /// without naming the slot.
     #[external("private")]
     fn bind_staging_key(
         round_id: Field,

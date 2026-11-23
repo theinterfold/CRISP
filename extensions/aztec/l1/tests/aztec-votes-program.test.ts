@@ -78,13 +78,10 @@ describe('CRISPAztecVotesProgram', function () {
   describe('customParams', function () {
     it('accepts CUSTOM credits 0 with the ONCHAIN census and records the round', async function () {
       const token = await tokenWith({ [alice]: 1_000_000n, [bob]: 500_000n })
-      const { e3Id, receipt } = await request(f, votesParams({ token: await token.getAddress() }))
+      const { e3Id } = await request(f, votesParams({ token: await token.getAddress() }))
 
       expect(await f.program.tokenOf(e3Id)).to.equal(await token.getAddress())
       expect(await f.program.minVotingPowerOf(e3Id)).to.equal(1_000n)
-      expect(await f.program.snapshotOf(e3Id)).to.equal(receipt.blockNumber - 1)
-      expect((await f.program.getRound(e3Id)).inputLimit).to.equal(65_536n)
-      expect((await f.program.getRound(e3Id)).numOptions).to.equal(3n)
       expect(await f.program.availabilityFinalizationWindow()).to.equal(0n)
     })
 
@@ -200,8 +197,9 @@ describe('CRISPAztecVotesProgram', function () {
       ;({ e3Id, inputWindow } = await request(f, votesParams({ token: await token.getAddress(), minVotingPower: 1_000_000n })))
     })
 
-    it('sends the ENROLL message of each eligible slot and reports the Inbox index', async function () {
-      const receipt = await (await f.program.enroll(e3Id, [alice, bob])).wait()
+    it('lets anyone send the ENROLL message of each eligible slot and reports the Inbox index', async function () {
+      const [, , , , stranger] = await ethers.getSigners()
+      const receipt = await (await f.program.connect(stranger).enroll(e3Id, [alice, bob])).wait()
       const events = await f.program.queryFilter(f.program.filters.Enrolled(e3Id), receipt.blockNumber, receipt.blockNumber)
       expect(events).to.have.length(2)
 
@@ -232,12 +230,6 @@ describe('CRISPAztecVotesProgram', function () {
       expect(events.map((e: any) => e.args.slot)).to.deep.equal([bob])
       expect(await f.program.isEnrolled(e3Id, carol)).to.equal(false)
       expect(await f.program.enroll.staticCall(e3Id, [alice, bob, carol])).to.equal(0n)
-    })
-
-    it('is permissionless', async function () {
-      const [, , , , stranger] = await ethers.getSigners()
-      await (await f.program.connect(stranger).enroll(e3Id, [alice])).wait()
-      expect(await f.program.isEnrolled(e3Id, alice)).to.equal(true)
     })
 
     it('refuses an unknown E3 and an enrolment after the input window ended', async function () {

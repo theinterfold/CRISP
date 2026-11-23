@@ -7,13 +7,13 @@
 import { AztecAddress, EthAddress } from '@aztec-labs/aztec.js/addresses'
 import { Fr } from '@aztec-labs/foundation/curves/bn254'
 import { registerZKPassportRegistry } from '@zkpassport/aztec'
-import { getAddress, hexToBytes, type Address, type Hex } from 'viem'
+import { getAddress, type Address, type Hex } from 'viem'
 
 import { CrispAztecContract } from './bindings/CrispAztec'
 import type { CastArguments } from './cast'
 import type { L1ToL2Message } from './l1'
 import type { RoundConfig } from './messages'
-import { bytes32, castCallArguments, RoundClient, type SentTx } from './roundClient'
+import { castCallArguments, RoundClient, sharedDeployArguments, type SentTx, type SharedDeployParams } from './roundClient'
 import type { AztecSession } from './session'
 import { registrationSubproofs } from './rules'
 import { type CompressedProofResult, registrationCapsule } from './zkpassport'
@@ -35,21 +35,7 @@ export type RoundParams = {
 }
 
 /** The values the contract is deployed with; see `deployCrispAztec`. */
-export type DeployParams = {
-  l1Program: Address
-  /** The Interfold the program serves: its address is the top 20 bytes of every e3Id of the round ids this contract tracks. */
-  interfold: Address
-  /** Domain separator of the L1 program's EIP-712 domain; both statements share it (see `domainSeparator`). */
-  domainSeparator: Hex
-  /** The availability signer's secp256k1 public key: 64 bytes `x ‖ y`, or the 65-byte uncompressed form with its `04` prefix. */
-  availabilitySignerPublicKey: Hex
-  /**
-   * Hashes of the verification keys of the three base circuits of the BFV preset the deployment serves
-   * (`getBaseVerificationKeys` of `@crisp-e3/sdk`, with the preset registered): a ballot is proven with exactly these.
-   */
-  ct0VkHash: bigint
-  ct1VkHash: bigint
-  crispVkHash: bigint
+export type DeployParams = SharedDeployParams & {
   zkpassportDomainHash: bigint
   /** The ZKPassport circuits release, packed (`0x17` in the top byte for 0.23.0, the only release the contract verifies). */
   zkpassportCircuitVersion: bigint
@@ -59,23 +45,9 @@ export type DeployParams = {
 
 /** Deploy `crisp_aztec`. Deploy the L1 program first (its address is a constructor argument), then call `setL2Program` with the result. */
 export const deployCrispAztec = async (session: AztecSession, params: DeployParams): Promise<CrispAztec> => {
-  const given = hexToBytes(params.availabilitySignerPublicKey)
-  const key = given.length === 65 && given[0] === 4 ? given.slice(1) : given
-  if (key.length !== 64)
-    throw new Error('The availability signer key must be an uncompressed secp256k1 public key (64 bytes, or 65 with the 04 prefix)')
-  const separator = bytes32(params.domainSeparator)
-
   const { contract } = await CrispAztecContract.deploy(
     session.wallet,
-    EthAddress.fromString(params.l1Program),
-    EthAddress.fromString(params.interfold),
-    separator,
-    separator,
-    Array.from(key.slice(0, 32)),
-    Array.from(key.slice(32, 64)),
-    new Fr(params.ct0VkHash),
-    new Fr(params.ct1VkHash),
-    new Fr(params.crispVkHash),
+    ...sharedDeployArguments(params),
     new Fr(params.zkpassportDomainHash),
     new Fr(params.zkpassportCircuitVersion),
     params.zkpassportValiditySeconds,

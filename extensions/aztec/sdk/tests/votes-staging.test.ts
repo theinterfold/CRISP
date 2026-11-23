@@ -5,11 +5,11 @@
 // or FITNESS FOR A PARTICULAR PURPOSE.
 
 import { generateMerkleTree } from '@crisp-e3/sdk'
-import { getAddress, hashTypedData, toHex, type Address, type Hex } from 'viem'
+import { getAddress, toHex, type Address, type Hex } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { describe, expect, it } from 'vitest'
 
-import { crispDomain, type TypedDataSigner } from '../src/ballot'
+import type { TypedDataSigner } from '../src/ballot'
 import { stagingTreeFromLogs } from '../src/census'
 import type { StagingKeyBound } from '../src/logs'
 import { e3IdOf } from '../src/messages'
@@ -17,8 +17,6 @@ import {
   buildVotesStagingPass,
   stagingCommitment,
   stagingKeyBinding,
-  stagingKeyDigest,
-  stagingKeyTypedData,
   stagingSecret,
   stagingSecretStore,
   votesStagingTag,
@@ -30,20 +28,6 @@ const E3_ID = e3IdOf(INTERFOLD, 7n)
 const KEY: Hex = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
 const account = privateKeyToAccount(KEY)
 const signer: TypedDataSigner = (typedData) => account.signTypedData(typedData as never)
-
-describe('StagingKey typed data', () => {
-  it('is the EIP-712 StagingKey(uint256 e3Id) of the CRISP domain', () => {
-    expect(stagingKeyTypedData(E3_ID, 11155111, PROGRAM)).toEqual({
-      domain: crispDomain(11155111, PROGRAM),
-      types: { StagingKey: [{ name: 'e3Id', type: 'uint256' }] },
-      primaryType: 'StagingKey',
-      message: { e3Id: E3_ID },
-    })
-    expect(stagingKeyDigest(E3_ID, 11155111, PROGRAM)).toBe(hashTypedData(stagingKeyTypedData(E3_ID, 11155111, PROGRAM)))
-    expect(stagingKeyDigest(E3_ID, 11155111, PROGRAM)).not.toBe(stagingKeyDigest(E3_ID + 1n, 11155111, PROGRAM))
-    expect(stagingKeyDigest(E3_ID, 1, PROGRAM)).not.toBe(stagingKeyDigest(E3_ID, 11155111, PROGRAM))
-  })
-})
 
 describe('staging secret', () => {
   // `staging_secret` / `staging_commitment` of `crisp_aztec_votes` for r = 0x11..11, s = 0x22..22, round 7.
@@ -70,12 +54,13 @@ describe('stagingKeyBinding', () => {
   const args = { e3Id: E3_ID, l1ChainId: 11155111, program: PROGRAM, slot: account.address as Address }
 
   it('recovers the slot key from the typed-data signature and derives the secret from it', async () => {
-    const binding = await stagingKeyBinding({ ...args, signer })
+    let full: Hex = '0x'
+    const capture: TypedDataSigner = async (typedData) => (full = await signer(typedData))
+    const binding = await stagingKeyBinding({ ...args, signer: capture })
     const publicKey = Buffer.from(account.publicKey.slice(4), 'hex')
     expect(Buffer.from(binding.publicKeyX)).toEqual(publicKey.subarray(0, 32))
     expect(Buffer.from(binding.publicKeyY)).toEqual(publicKey.subarray(32, 64))
     expect(binding.signature).toHaveLength(64)
-    const full = await signer(stagingKeyTypedData(E3_ID, 11155111, PROGRAM))
     expect(binding.secret).toBe(await stagingSecret(full))
     expect(binding.commitment).toBe(stagingCommitment(binding.secret, 7n))
     // A deterministic signer binds the same commitment every time: the reuse path needs no new transaction.

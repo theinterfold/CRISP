@@ -88,7 +88,7 @@ export const stagingRequestDigest = (request: StagingRequest): Hex =>
   )
 
 /** The two 128-bit halves of a 32-byte digest, as the circuit's public inputs. */
-const halves = (digest: Hex): [bigint, bigint] => [BigInt(`0x${digest.slice(2, 34)}`), BigInt(`0x${digest.slice(34)}`)]
+export const halves = (digest: Hex): [bigint, bigint] => [BigInt(`0x${digest.slice(2, 34)}`), BigInt(`0x${digest.slice(34)}`)]
 
 /** `Poseidon(x_hi, x_lo, y_hi, y_lo, roundId, k)`: the tag of the `k`-th pass of a slot key in a round. */
 export const stagingTag = (publicKeyX: Uint8Array, publicKeyY: Uint8Array, roundId: bigint, counter: number): bigint => {
@@ -98,31 +98,36 @@ export const stagingTag = (publicKeyX: Uint8Array, publicKeyY: Uint8Array, round
   return poseidon6([xHi, xLo, yHi, yLo, roundId, BigInt(counter)])
 }
 
-// The circuit has 2^17 dyadic gates.
+// Both staging circuits have fewer than 2^17 gates.
 const SRS_SIZE = 2 ** 17
 
-let backend: Promise<{ api: Barretenberg; honk: UltraHonkBackend }> | undefined
+/** A lazily created Barretenberg + UltraHonk prover of one staging circuit; `destroy` frees it (WASM threads keep a Node process alive). */
+export const stagingProver = (bytecode: string) => {
+  let backend: Promise<{ api: Barretenberg; honk: UltraHonkBackend }> | undefined
 
-const getBackend = () => {
-  backend ??= (async () => {
-    // Outside the browser bb.js prefers a native socket backend and hangs when it cannot start; pin Node to WASM.
-    const api =
-      typeof window === 'undefined'
-        ? await Barretenberg.new({ srsSize: SRS_SIZE, backend: BackendType.Wasm })
-        : await Barretenberg.new({ srsSize: SRS_SIZE })
+  return {
+    get: () =>
+      (backend ??= (async () => {
+        // Outside the browser bb.js prefers a native socket backend and hangs when it cannot start; pin Node to WASM.
+        const api =
+          typeof window === 'undefined'
+            ? await Barretenberg.new({ srsSize: SRS_SIZE, backend: BackendType.Wasm })
+            : await Barretenberg.new({ srsSize: SRS_SIZE })
 
-    return { api, honk: new UltraHonkBackend(circuit.bytecode, api) }
-  })()
-
-  return backend
+        return { api, honk: new UltraHonkBackend(bytecode, api) }
+      })()),
+    destroy: async (): Promise<void> => {
+      const pending = backend
+      backend = undefined
+      if (pending) await (await pending).api.destroy()
+    },
+  }
 }
 
-/** Free the prover's Barretenberg instance (WASM threads keep a Node process alive). A later pass creates a new one. */
-export const destroyStagingPassProver = async (): Promise<void> => {
-  const pending = backend
-  backend = undefined
-  if (pending) await (await pending).api.destroy()
-}
+const prover = stagingProver(circuit.bytecode)
+
+/** Free the prover's Barretenberg instance. A later pass creates a new one. */
+export const destroyStagingPassProver = prover.destroy
 
 export type BuildStagingPassInputs = {
   /** Signs the request digest with the key of a slot registered in the census: the voter's OWN slot, for a vote and a mask alike. */
@@ -168,7 +173,7 @@ export const buildStagingPass = async (inputs: BuildStagingPassInputs): Promise<
   const [digestHi, digestLo] = halves(digest)
 
   const field = (value: bigint) => toHex(value)
-  const { honk } = await getBackend()
+  const { honk } = await prover.get()
   const noir = new Noir(circuit)
   const { witness } = await noir.execute({
     public_key_x: Array.from(publicKeyX),

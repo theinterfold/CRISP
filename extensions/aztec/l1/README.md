@@ -38,7 +38,7 @@ crisp_aztec.close_round ──ROOT──▶ Outbox ─ submitInputRoot ─▶ ve
 - **`remoteFinalityWindow`** is the tail between the end of voting and a deliverable root (Aztec must close the round and an epoch
   proof containing it must reach the Outbox); `validate` reverts `ComputeWindowTooShort` when Interfold's compute window is
   shorter. Deploy default: 10800 s on Sepolia, 0 locally; override with `CRISP_REMOTE_FINALITY_WINDOW`.
-- The ABIs the SDK, keeper and server read are tracked at `abi/CRISPAztecProgram.json` and `abi/CRISPAztecVotesProgram.json`; regenerate it with `pnpm export:abi` after
+- The ABIs the SDK, keeper and server read are tracked at `abi/CRISPAztecProgram.json` and `abi/CRISPAztecVotesProgram.json`; regenerate them with `pnpm export:abi` after
   any contract change (a test fails on drift).
 
 ## Token-weighted votes: `CRISPAztecVotesProgram`
@@ -47,10 +47,8 @@ Both programs extend `CRISPAztecTransport` (Inbox/Outbox bridge, `setL2Program`,
 runs the Interfold governance's token-weighted rounds against `crisp_aztec_votes`:
 
 - `customParams` are `CRISPProgram`'s seven fields; only `creditMode` CUSTOM (1), `credits` 0 and `censusMode` ONCHAIN (2) are
-  accepted. Snapshot (`clock() - 1`), divisor (`supply / t + 1` unless larger is requested) and the floor rule
-  (`minVotingPower >= divisor`) are those of `CRISPProgram`; views `snapshotOf`, `tokenOf`, `minVotingPowerOf`,
-  `votingPowerDivisorOf`, `weightOf(e3Id, slot)` (`getPastVotes / divisor`, zero below the floor), `isEnrolled`, and
-  `availabilityFinalizationWindow() == 0`.
+  accepted. Snapshot, divisor and floor rule are those of `CRISPProgram`; `weightOf(e3Id, slot)` is `getPastVotes / divisor`, zero
+  below the floor.
 - Messages (`CRISPAztecVotesMessages`): ROUND `abi.encode(1, roundId, numOptions, inputStart, inputEnd, inputLimit)`;
   ENROLL `abi.encode(4, roundId, uint256(uint160(slot)), weight)`; KEY and ROOT as in `CRISPRemoteMessages`.
 - `enroll(e3Id, slots)` is permissionless: it reads each slot's weight from the token itself, skips enrolled and below-floor slots,

@@ -65,5 +65,5 @@ pub global LOG_MEMBER_REGISTERED: Field = 2;
 pub global LOG_ROUND_CLOSED: Field = 3;
 pub global LOG_ROUND_OPENED: Field = 4;
 pub global LOG_KEY_PUBLISHED: Field = 5;
-/// `CrispAztecVotes` only: a staging key was bound (`[round_id, index, commitment, root]`). 5 is `KEY_PUBLISHED`.
+/// `CrispAztecVotes` only: a staging key was bound (`[round_id, index, slot, commitment, root]`).
 pub global LOG_STAGING_KEY_BOUND: Field = 6;

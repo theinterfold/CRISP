@@ -5,60 +5,24 @@
 // or FITNESS FOR A PARTICULAR PURPOSE.
 
 import { AztecAddress, EthAddress } from '@aztec-labs/aztec.js/addresses'
-import { Fr } from '@aztec-labs/foundation/curves/bn254'
-import { getAddress, hexToBytes, type Address, type Hex, type PublicClient } from 'viem'
+import { getAddress, type Address, type Hex, type PublicClient } from 'viem'
 
 import type { TypedDataSigner } from './ballot'
-
 import { CrispAztecVotesContract } from './bindings/CrispAztecVotes'
 import type { CastArguments } from './cast'
 import { stagingTreeFromLogs, type Census } from './census'
 import { getEnrolledMessages, type L1ToL2Message } from './l1'
 import type { VotesRoundConfig } from './messages'
-import { bytes32, castCallArguments, RoundClient, type SentTx } from './roundClient'
+import { castCallArguments, RoundClient, sharedDeployArguments, type SentTx, type SharedDeployParams } from './roundClient'
 import type { AztecSession } from './session'
 import { stagingKeyBinding } from './votes-staging'
 
-/** Staging-key binds one slot may make per round (`MAX_STAGING_BINDS`). */
-export const MAX_STAGING_BINDS = 3
-
-/** The round parameters `CrispAztecVotes` stored from the ROUND message. */
-export type VotesRoundParams = { numOptions: bigint; inputStart: bigint; inputEnd: bigint; inputLimit: bigint }
-
-/** The values `crisp_aztec_votes` is deployed with; see `deployCrispAztecVotes`. */
-export type VotesDeployParams = {
-  /** The `CRISPAztecVotesProgram` on L1; deploy it first, then `setL2Program` with the result. */
-  l1Program: Address
-  interfold: Address
-  /** Domain separator of the L1 program's EIP-712 domain; ballot and attestation share it (see `domainSeparator`). */
-  domainSeparator: Hex
-  /** The availability signer's secp256k1 public key: 64 bytes `x ‖ y`, or the 65-byte uncompressed form with its `04` prefix. */
-  availabilitySignerPublicKey: Hex
-  /** Hashes of the verification keys of the three base circuits of the BFV preset the deployment serves. */
-  ct0VkHash: bigint
-  ct1VkHash: bigint
-  crispVkHash: bigint
-}
-
-export const deployCrispAztecVotes = async (session: AztecSession, params: VotesDeployParams): Promise<CrispAztecVotes> => {
-  const given = hexToBytes(params.availabilitySignerPublicKey)
-  const key = given.length === 65 && given[0] === 4 ? given.slice(1) : given
-  if (key.length !== 64)
-    throw new Error('The availability signer key must be an uncompressed secp256k1 public key (64 bytes, or 65 with the 04 prefix)')
-  const separator = bytes32(params.domainSeparator)
-
-  const { contract } = await CrispAztecVotesContract.deploy(
-    session.wallet,
-    EthAddress.fromString(params.l1Program),
-    EthAddress.fromString(params.interfold),
-    separator,
-    separator,
-    Array.from(key.slice(0, 32)),
-    Array.from(key.slice(32, 64)),
-    new Fr(params.ct0VkHash),
-    new Fr(params.ct1VkHash),
-    new Fr(params.crispVkHash),
-  ).send({ from: session.address, fee: session.fee })
+/** Deploy `crisp_aztec_votes`. Deploy the `CRISPAztecVotesProgram` on L1 first, then `setL2Program` with the result. */
+export const deployCrispAztecVotes = async (session: AztecSession, params: SharedDeployParams): Promise<CrispAztecVotes> => {
+  const { contract } = await CrispAztecVotesContract.deploy(session.wallet, ...sharedDeployArguments(params)).send({
+    from: session.address,
+    fee: session.fee,
+  })
 
   return new CrispAztecVotes(session, contract, getAddress(params.interfold))
 }
@@ -93,40 +57,6 @@ export class CrispAztecVotes extends RoundClient {
     return new CrispAztecVotes(session, contract, getAddress((result as { interfold: EthAddress }).interfold.toString()))
   }
 
-  // Reads
-
-  /** `undefined` until `open_round` has consumed the ROUND message. */
-  async getRound(e3Id: bigint): Promise<VotesRoundParams | undefined> {
-    if ((await this.logs('RoundOpened', { e3Id })).length === 0) return undefined
-    const round = await this.view<{ num_options: bigint; input_start: bigint; input_end: bigint; input_limit: bigint }>(
-      this.contract.methods.get_round(this.roundIdFor(e3Id)),
-    )
-
-    return {
-      numOptions: BigInt(round.num_options),
-      inputStart: BigInt(round.input_start),
-      inputEnd: BigInt(round.input_end),
-      inputLimit: BigInt(round.input_limit),
-    }
-  }
-
-  async getInputCount(e3Id: bigint): Promise<number> {
-    return Number(await this.view<bigint>(this.contract.methods.get_input_count(this.roundIdFor(e3Id))))
-  }
-
-  async getCensusCount(e3Id: bigint): Promise<number> {
-    return Number(await this.view<bigint>(this.contract.methods.get_census_count(this.roundIdFor(e3Id))))
-  }
-
-  async getCensusRoot(e3Id: bigint): Promise<bigint> {
-    return BigInt(await this.view<bigint>(this.contract.methods.get_census_root(this.roundIdFor(e3Id))))
-  }
-
-  /** Whether a ballot may be proven against `root` (every root the census had while the round was open). */
-  async isCensusRootKnown(e3Id: bigint, root: bigint): Promise<boolean> {
-    return this.view<boolean>(this.contract.methods.is_census_root_known(this.roundIdFor(e3Id), root))
-  }
-
   async isSlotEnrolled(e3Id: bigint, slot: Address): Promise<boolean> {
     return this.view<boolean>(this.contract.methods.is_slot_enrolled(this.roundIdFor(e3Id), BigInt(slot)))
   }
@@ -136,18 +66,11 @@ export class CrispAztecVotes extends RoundClient {
     return stagingTreeFromLogs(await this.logs('StagingKeyBound', { e3Id }))
   }
 
-  /** How many staging keys `slot` has bound in the round (at most {@link MAX_STAGING_BINDS}). */
-  async getStagingBindCount(e3Id: bigint, slot: Address): Promise<number> {
-    return Number(await this.view<bigint>(this.contract.methods.get_staging_bind_count(this.roundIdFor(e3Id), BigInt(slot))))
-  }
-
-  // Transactions
-
   /**
    * Bind `slot`'s staging secret, which a staging pass later proves without naming the slot (enroll the slot first). The wallet
    * signs `StagingKey`; the secret and its commitment derive from the signature. If that commitment is already bound for the
-   * slot (a deterministic signer signing again) the secret is returned without a transaction; else a new bind is sent while the
-   * slot is under {@link MAX_STAGING_BINDS}. Keep the secret (`stagingSecretStore`): a non-deterministic signer cannot re-derive it.
+   * slot (a deterministic signer signing again) the secret is returned without a transaction; else a new bind is sent (the contract
+   * allows 3 per slot and round). Keep the secret (`stagingSecretStore`): a non-deterministic signer cannot re-derive it.
    */
   async bindStagingKey(args: {
     e3Id: bigint
@@ -161,11 +84,6 @@ export class CrispAztecVotes extends RoundClient {
     const bound = await this.logs('StagingKeyBound', { e3Id: args.e3Id })
     if (bound.some((log) => log.commitment === binding.commitment && log.slot.toLowerCase() === args.slot.toLowerCase())) {
       return { secret: binding.secret, commitment: binding.commitment }
-    }
-    if ((await this.getStagingBindCount(args.e3Id, args.slot)) >= MAX_STAGING_BINDS) {
-      throw new Error(
-        `Slot ${args.slot} has bound ${MAX_STAGING_BINDS} staging keys in this round and this signature derives a new one: restore the stored secret instead`,
-      )
     }
     const tx = await this.send(
       this.contract.methods.bind_staging_key(
@@ -219,6 +137,9 @@ export class CrispAztecVotes extends RoundClient {
   }
 }
 
+const ENROLLMENT_TIMEOUT_MS = 15 * 60_000
+const ENROLLMENT_POLL_MS = 5_000
+
 export type WaitForEnrollmentOptions = {
   votes: CrispAztecVotes
   l1: PublicClient
@@ -228,9 +149,6 @@ export type WaitForEnrollmentOptions = {
   slots: readonly Address[]
   /** The L1 `enroll` transaction (the server's `tx_hash` or your own): waited for before the messages are read. */
   l1TxHash?: Hex
-  /** Give up after this long (default 15 minutes). */
-  timeoutMs?: number
-  pollMs?: number
 }
 
 /**
@@ -239,8 +157,7 @@ export type WaitForEnrollmentOptions = {
  */
 export const waitForEnrollment = async (options: WaitForEnrollmentOptions): Promise<Census> => {
   const { votes, l1, program, e3Id, slots } = options
-  const deadline = Date.now() + (options.timeoutMs ?? 15 * 60_000)
-  const pollMs = options.pollMs ?? 5_000
+  const deadline = Date.now() + ENROLLMENT_TIMEOUT_MS
   if (options.l1TxHash) await l1.waitForTransactionReceipt({ hash: options.l1TxHash })
 
   let lastError: unknown
@@ -261,6 +178,6 @@ export const waitForEnrollment = async (options: WaitForEnrollmentOptions): Prom
     if (Date.now() > deadline) {
       throw new Error(`Slots ${missing.join(', ')} are not enrolled on Aztec in time${lastError ? `: ${String((lastError as Error).message)}` : ''}`)
     }
-    await new Promise((resolve) => setTimeout(resolve, pollMs))
+    await new Promise((resolve) => setTimeout(resolve, ENROLLMENT_POLL_MS))
   }
 }
