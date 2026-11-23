@@ -30,6 +30,12 @@ pub global BALLOT_TYPEHASH: [u8; 32] = [
     0xa3, 0xf2, 0xfb, 0x5d, 0x78, 0x43, 0x67, 0xc5, 0x63, 0xc7, 0xdc, 0x98, 0x89, 0x55, 0x7a, 0x3e,
 ];
 
+/// `keccak256("StagingKey(uint256 e3Id)")`
+pub global STAGING_KEY_TYPEHASH: [u8; 32] = [
+    0xee, 0x0b, 0xe1, 0x39, 0x92, 0xb8, 0x17, 0xff, 0x38, 0xfc, 0x04, 0x91, 0xa6, 0x3d, 0x9e, 0xb4,
+    0x7b, 0x8c, 0x6c, 0xe5, 0x6e, 0xdf, 0x35, 0x78, 0x43, 0x3b, 0x9f, 0xd9, 0x2d, 0xc1, 0x1f, 0xcf,
+];
+
 /// `keccak256("InputAvailability(uint256 e3Id,bytes32 inputId,uint64 expiresAt)")`
 pub global INPUT_AVAILABILITY_TYPEHASH: [u8; 32] = [
     0x0e, 0xf6, 0x94, 0xfb, 0x5d, 0x94, 0xf5, 0x99, 0xd7, 0xd0, 0xdf, 0x06, 0xcd, 0x71, 0x07, 0x08,
@@ -45,6 +51,8 @@ pub global INPUT_ID_TAG: [u8; 14] = [
 pub global MESSAGE_ROUND: Field = 1;
 pub global MESSAGE_KEY: Field = 2;
 pub global MESSAGE_ROOT: Field = 3;
+/// Type word of the ENROLL message of the votes program (`abi.encode(4, roundId, slot, weight)`).
+pub global MESSAGE_ENROLL: Field = 4;
 
 /// `RoundConfig.nationality_mode`: no nationality rule, nationality in the list, nationality not in the list.
 pub global NATIONALITY_NONE: u8 = 0;
@@ -57,3 +65,5 @@ pub global LOG_MEMBER_REGISTERED: Field = 2;
 pub global LOG_ROUND_CLOSED: Field = 3;
 pub global LOG_ROUND_OPENED: Field = 4;
 pub global LOG_KEY_PUBLISHED: Field = 5;
+/// `CrispAztecVotes` only: a staging key was bound (`[round_id, index, commitment, root]`). 5 is `KEY_PUBLISHED`.
+pub global LOG_STAGING_KEY_BOUND: Field = 6;

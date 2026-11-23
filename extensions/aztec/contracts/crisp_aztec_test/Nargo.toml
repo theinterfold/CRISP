@@ -6,6 +6,8 @@ authors = ["Gnosis Guild / Interfold"]
 [dependencies]
 aztec = { git = "https://github.com/aztec-labs-eng/aztec-nr", tag = "v6.0.0", directory = "aztec" }
 crisp_aztec = { path = "../crisp_aztec" }
+crisp_aztec_lib = { path = "../crisp_aztec_lib" }
+crisp_aztec_votes = { path = "../crisp_aztec_votes" }
 zkpassport_registry_contract = { path = "../vendor/zkpassport/registry_contract" }
 zkpassport = { path = "../vendor/zkpassport/core" }
 zkpassport_aztec_verifier = { path = "../vendor/zkpassport/verifier" }

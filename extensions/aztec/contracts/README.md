@@ -1,7 +1,11 @@
 # CRISP on Aztec: contracts
 
 `CrispAztec` (crate `crisp_aztec`, aztec-nr v6.0.0) is the Aztec side of a CRISP round whose ballots are
-cast on Aztec. It is paired with `CRISPAztecProgram` on L1 (`../l1`):
+cast on Aztec. It is paired with `CRISPAztecProgram` on L1 (`../l1`). The workspace holds a second contract, `CrispAztecVotes`
+(crate `crisp_aztec_votes`, [below](#crispaztecvotes-token-weighted-voting)), for token-weighted rounds; both use the library crate
+`crisp_aztec_lib`.
+
+```
 
 ```
 L1 program ──ROUND──▶ open_round        voters:  register ──▶ census tree (LeanIMT, Poseidon)
@@ -20,11 +24,11 @@ the Solidity code and the circuits, and sends the final input root to L1.
 export PATH=$HOME/.aztec/versions/6.0.0/bin:$HOME/.aztec/bin:$PATH   # aztec CLI 6.0.0
 cd extensions/aztec/contracts
 
-aztec compile        # target/crisp_aztec-CrispAztec.json, transpiled for the AVM
-aztec test           # crisp_aztec_test (TXE)
-aztec-nargo test --package crisp_aztec   # pure-function unit tests (crisp_aztec/src/tests.nr)
+aztec compile        # target/crisp_aztec-CrispAztec.json and target/crisp_aztec_votes-CrispAztecVotes.json, transpiled for the AVM
+aztec test           # crisp_aztec_test (TXE): both contracts; add --package crisp_aztec_test
+aztec-nargo test --package crisp_aztec   # pure-function unit tests of the shared code (crisp_aztec/src/tests.nr)
 aztec profile gates target
-pnpm -C ../sdk codegen   # regenerate the TypeScript bindings (../sdk/src/bindings/CrispAztec.ts)
+pnpm -C ../sdk codegen   # regenerate the TypeScript bindings (../sdk/src/bindings/)
 ```
 
 Run `aztec compile` from this directory (the workspace root); from a member directory it skips the transpile step. The `bug:
@@ -32,10 +36,14 @@ Brillig function call isn't properly covered…` lines come from aztec-nr and th
 
 ## Layout
 
-`crisp_aztec/src/`: `main.nr` (the contract), `tree.nr` + `nodes.nr` (IMTs over a `NodeStore`), `hashing.nr` (EIP-712 digests,
-`inputId`, leaf, message contents), `ballot.nr` (the base-proof checks), `identity.nr` (ZKPassport service config), `constants.nr`,
-`tests.nr`. `crisp_aztec_test/` holds the TXE tests and fixtures; `vendor/zkpassport/` the vendored ZKPassport verifier, core and
-registry.
+`crisp_aztec_lib/src/` (shared, `type = "lib"`): `tree.nr` + `nodes.nr` (IMTs over a `NodeStore`), `hashing.nr` (EIP-712 digests,
+`inputId`, leaf, KEY and ROOT contents, byte helpers), `ballot.nr` (the base-proof checks), `constants.nr` (limits, type hashes, message
+words, log tags), `types.nr` (`InputEntry`).
+`crisp_aztec/src/`: `main.nr` (the contract), `identity.nr` (ZKPassport service config), `messages.nr` (its 12-word ROUND content),
+`types.nr`, `tests.nr` (unit tests of the shared code and the ROUND content).
+`crisp_aztec_votes/src/`: `main.nr` (the contract), `messages.nr` (6-word ROUND and ENROLL contents), `staging.nr` (staging-key digest, address, secret, commitment), `types.nr`.
+`crisp_aztec_test/` holds the TXE tests (`src/lib.nr` for `CrispAztec`, `src/votes.nr` for `CrispAztecVotes`) and fixtures;
+`vendor/zkpassport/` the vendored ZKPassport verifier, core and registry.
 
 ### Vendored ZKPassport
 
@@ -104,7 +112,7 @@ Non-obvious points:
 
 On L1 a voter's proof is a stack of five: the three base circuits, then the Interfold `user_data_encryption` aggregation and
 `crisp_fold` (2^21 gates each). On Aztec the voter proves only the three base circuits and `cast` verifies all three
-(`verify_honk_proof_non_zk`), making in Noir every check the two aggregation circuits make (`crisp_aztec/src/ballot.nr`): each
+(`verify_honk_proof_non_zk`), making in Noir every check the two aggregation circuits make (`crisp_aztec_lib/src/ballot.nr`): each
 verification key's Poseidon2 hash equals `Config.{ct0,ct1,crisp}_vk_hash`; ct0 and ct1 commit to the same `u`; the ciphertext and
 `k1` commitments are derived from the encryption proofs' public inputs and placed in the crisp proof's public inputs; the
 public-key commitment equals the round's committee key. The circuits are unchanged and L1 still uses the full stack.
@@ -118,11 +126,11 @@ public-key commitment equals the round's committee key. The circuits are unchang
 ## Public logs
 
 Raw public logs (`emit_public_log_unsafe`), read with `getPublicLogsByTag`; tag `1` `INPUT_COMMITTED`, `2` `MEMBER_REGISTERED`, `3`
-`ROUND_CLOSED`, `4` `ROUND_OPENED`, `5` `KEY_PUBLISHED`. The field layouts are in `crisp_aztec/src/main.nr`.
+`ROUND_CLOSED`, `4` `ROUND_OPENED`, `5` `KEY_PUBLISHED`; `CrispAztecVotes` adds `6` `STAGING_KEY_BOUND` `[round_id, index, slot, commitment, root]`. The field layouts are in `crisp_aztec/src/main.nr`; `CrispAztecVotes` emits the same tags and layouts, so one log reader serves both.
 
 ## Tests
 
-`crisp_aztec/src/tests.nr` asserts, against values produced by the real Solidity code and viem, the tree roots, the input-tree
+`crisp_aztec/src/tests.nr` (testing `crisp_aztec_lib`) asserts, against values produced by the real Solidity code and viem, the tree roots, the input-tree
 fixtures of `packages/crisp-contracts/tests/fixtures/input-tree*.json`, the EIP-712 digests, `inputId`, an attestation and the L1
 message contents of `message-vectors.json`.
 
@@ -131,6 +139,30 @@ ZKPassport outer-proof check are no-ops), so real verification, the L1 round tri
 `../e2e` harness). The ZKPassport fixture is bound to an address TXE has no account for, so the tests re-bind it to a created account
 and move its unique identifier to stand for different documents; that works only because TXE does not check the proof. The `cast`
 tests use zero proofs with the real verification keys of `crisp_aztec_test/src/base_fixture.nr` (`insecure-64`).
+
+## CrispAztecVotes: token-weighted voting
+
+For governance rounds weighted by a token (`CRISPAztecVotesProgram` on L1, `../l1`) there is no identity registration. The L1 program
+reads `getPastVotes` at the round snapshot and bridges each slot's weight with an ENROLL message; anyone consumes it with `enroll`,
+so nobody can forge a weight. Everything else (`cast`, `_append_input`, `publish_key`, `close_round`, the trees, the logs) is the
+shared code of `CrispAztec`, with the same arguments and checks.
+
+| Function | Kind | What it does |
+| -------- | ---- | ------------ |
+| `constructor` | public | L1 program, Interfold, both EIP-712 domain separators, the availability signer key, the three base vk hashes (no ZKPassport). |
+| `open_round(round_id, num_options, input_start, input_end, input_limit, leaf_index)` | public | Consumes the 6-word ROUND `sha256_to_field(abi.encode(1, roundId, numOptions, inputStart, inputEnd, inputLimit))`. |
+| `publish_key`, `cast`, `_append_input`, `close_round` | | As in `CrispAztec`. |
+| `enroll(round_id, slot, weight, leaf_index)` | public, permissionless | Consumes ENROLL `abi.encode(4, roundId, uint256(slot), weight)`; the round must be open, `now < input_end`, the slot not enrolled, `weight != 0`. Inserts the leaf `hash_2([slot, weight])` (the leaf `register*` inserts, with the weight as credits) into the census LeanIMT (cap 65,536), keeps the new root and logs `MEMBER_REGISTERED [round_id, index, slot, leaf, root]`. |
+| `bind_staging_key(round_id, slot, public_key_x, public_key_y, signature)` | private | The slot's wallet signs EIP-712 `StagingKey(uint256 e3Id)` in the ballot domain (`("CRISP","1",chainId,program)`). Checks the secp256k1 signature in-circuit and `address(pubkey) == slot`, derives `secret = Poseidon2::hash([r_hi, r_lo, s_hi, s_lo], 4)` (the signature's `r`, `s` as 128-bit big-endian limbs) and the commitment `hash_2([secret, round_id])` (circom Poseidon, as the census), and enqueues `_bind`. The signature stays on the device. |
+| `_bind(round_id, slot, commitment)` | public, `#[only_self]` | Slot enrolled, at most `MAX_STAGING_BINDS = 3` binds per slot and round, commitment not already in the tree; LeanIMT insert into the round's staging tree (cap 65,536), keeps the root, logs `STAGING_KEY_BOUND`. |
+| views | utility | `get_config`, `get_round`, `get_committee_key`, `is_closed`, `get_input_count`, `get_census_count`, `get_census_root`, `is_census_root_known`, `is_slot_enrolled`, `get_input`, `get_staging_bind_count`, `get_staging_root`, `is_staging_root_known`. |
+
+The staging tree lets a voter prove membership (`staging_pass_votes`) without naming a slot: a governance slot's public key is public,
+so a tag derived from it would link a staging request to its sender. The secret never leaves the voter; only `hash_2([secret, round_id])` does.
+Storage is merged into `Counts` and `SlotState` structs because the contract's storage type would otherwise exceed Noir's type-complexity limit.
+
+The weight is the leaf's second input, so a ballot's `credits` is the slot's weight (`buildCast` in the SDK). Enrollment ends with the input
+window, and a slot's weight is fixed by its message.
 
 ## Gas and gates
 
