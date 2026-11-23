@@ -100,9 +100,15 @@ export interface Fixture {
 export const L2_PROGRAM = '0x1c0a1f5b3a8bd1a8f6bd3d7e0c7d5c0bd1d6d9c3d6a3b6e4f3a2b1c0d9e8f7a6'
 
 export async function deployFixture(
-  options: { minVotingDuration?: bigint; remoteFinalityWindow?: bigint; setL2Program?: boolean; bind?: boolean } = {},
+  options: {
+    minVotingDuration?: bigint
+    remoteFinalityWindow?: bigint
+    setL2Program?: boolean
+    bind?: boolean
+    contract?: 'CRISPAztecProgram' | 'CRISPAztecVotesProgram'
+  } = {},
 ): Promise<Fixture> {
-  const { minVotingDuration = 0n, remoteFinalityWindow = 0n, setL2Program = true, bind = true } = options
+  const { minVotingDuration = 0n, remoteFinalityWindow = 0n, setL2Program = true, bind = true, contract = 'CRISPAztecProgram' } = options
   const [owner, , , , , rollup] = await ethers.getSigners()
 
   // The Inbox needs a rollup address and a fee asset only for its fee-juice portal; neither is exercised here.
@@ -112,7 +118,7 @@ export async function deployFixture(
   const receiptVerifier = await ethers.deployContract('MockOpenVmReceiptVerifier')
   const dataAvailability = await ethers.deployContract('MockDataAvailabilityVerifier')
   const interfold = await ethers.deployContract('MockInterfold')
-  const program = await ethers.deployContract('CRISPAztecProgram', [
+  const program = await ethers.deployContract(contract, [
     await owner.getAddress(),
     await receiptVerifier.getAddress(),
     await receiptVerifier.imageId(),

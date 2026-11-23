@@ -38,15 +38,34 @@ crisp_aztec.close_round ──ROOT──▶ Outbox ─ submitInputRoot ─▶ ve
 - **`remoteFinalityWindow`** is the tail between the end of voting and a deliverable root (Aztec must close the round and an epoch
   proof containing it must reach the Outbox); `validate` reverts `ComputeWindowTooShort` when Interfold's compute window is
   shorter. Deploy default: 10800 s on Sepolia, 0 locally; override with `CRISP_REMOTE_FINALITY_WINDOW`.
-- The ABI the SDK, keeper and server read is tracked at `abi/CRISPAztecProgram.json`; regenerate it with `pnpm export:abi` after
+- The ABIs the SDK, keeper and server read are tracked at `abi/CRISPAztecProgram.json` and `abi/CRISPAztecVotesProgram.json`; regenerate it with `pnpm export:abi` after
   any contract change (a test fails on drift).
+
+## Token-weighted votes: `CRISPAztecVotesProgram`
+
+Both programs extend `CRISPAztecTransport` (Inbox/Outbox bridge, `setL2Program`, `submitInputRoot`). `CRISPAztecVotesProgram`
+runs the Interfold governance's token-weighted rounds against `crisp_aztec_votes`:
+
+- `customParams` are `CRISPProgram`'s seven fields; only `creditMode` CUSTOM (1), `credits` 0 and `censusMode` ONCHAIN (2) are
+  accepted. Snapshot (`clock() - 1`), divisor (`supply / t + 1` unless larger is requested) and the floor rule
+  (`minVotingPower >= divisor`) are those of `CRISPProgram`; views `snapshotOf`, `tokenOf`, `minVotingPowerOf`,
+  `votingPowerDivisorOf`, `weightOf(e3Id, slot)` (`getPastVotes / divisor`, zero below the floor), `isEnrolled`, and
+  `availabilityFinalizationWindow() == 0`.
+- Messages (`CRISPAztecVotesMessages`): ROUND `abi.encode(1, roundId, numOptions, inputStart, inputEnd, inputLimit)`;
+  ENROLL `abi.encode(4, roundId, uint256(uint160(slot)), weight)`; KEY and ROOT as in `CRISPRemoteMessages`.
+- `enroll(e3Id, slots)` is permissionless: it reads each slot's weight from the token itself, skips enrolled and below-floor slots,
+  sends ENROLL and emits `Enrolled(e3Id, slot, weight, content, index)`, where `index` is the Inbox leaf index the Aztec `enroll`
+  consumes. It reverts for an unknown E3 and once the input window ended.
+
+Deploy it with `CRISP_AZTEC_KIND=votes pnpm deploy:localhost` (or `deploy:sepolia`); the deployment is recorded as
+`CRISPAztecVotesProgram`.
 
 ## Commands
 
 ```bash
 pnpm test               # unit tests: real Aztec Inbox and Outbox bytecode (v6.0.0) + test doubles for Interfold/OpenVM/DA
 pnpm check:network      # needs `aztec start --local-network`: sends ROUND and KEY through the live Inbox
-pnpm deploy:localhost   # CRISPAztecProgram next to the Interfold + CRISP stack already on the local anvil
+pnpm deploy:localhost   # CRISPAztecProgram (CRISP_AZTEC_KIND=votes: CRISPAztecVotesProgram) next to the Interfold + CRISP stack already on the local anvil
 pnpm deploy:sepolia     # Aztec testnet bridge, Interfold + CRISP from packages/crisp-contracts/deployed_contracts.json
 ```
 

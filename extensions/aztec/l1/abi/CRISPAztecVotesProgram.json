@@ -1,0 +1,1506 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_initialOwner",
+        "type": "address"
+      },
+      {
+        "internalType": "contract IOpenVmReceiptVerifier",
+        "name": "_openVmVerifier",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "_imageId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "contract IDataAvailabilityVerifier",
+        "name": "_dataAvailabilityVerifier",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "_minVotingDuration",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "_remoteFinalityWindow",
+        "type": "uint256"
+      },
+      {
+        "internalType": "contract IAztecInbox",
+        "name": "_inbox",
+        "type": "address"
+      },
+      {
+        "internalType": "contract IAztecOutbox",
+        "name": "_outbox",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "_rollupVersion",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "inputs": [],
+    "name": "CallerNotAuthorized",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "CensusModeRequiresToken",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      }
+    ],
+    "name": "CommitteeKeyAlreadyRelayed",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "computeWindow",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "required",
+        "type": "uint256"
+      }
+    ],
+    "name": "ComputeWindowTooShort",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "CustomCreditsRequireVotesToken",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "expected",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "actual",
+        "type": "bytes32"
+      }
+    ],
+    "name": "DataAvailabilityHashMismatch",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "E3AlreadyInitialized",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      }
+    ],
+    "name": "E3NotAssignedToProgram",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      }
+    ],
+    "name": "E3NotOfBoundInterfold",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InboxAddressZero",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "numInputs",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "limit",
+        "type": "uint256"
+      }
+    ],
+    "name": "InputCountExceedsLimit",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      }
+    ],
+    "name": "InputRootAlreadySubmitted",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      }
+    ],
+    "name": "InputRootNotSubmitted",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "inputEnd",
+        "type": "uint256"
+      }
+    ],
+    "name": "InputWindowClosed",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InputsLiveOnRemoteChain",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InterfoldAddressZero",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InterfoldAlreadyBound",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InterfoldNotContract",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidComputeContext",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidDataAvailabilityVerifier",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidImageId",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidInputRoot",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidL2Program",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "minVotingDuration",
+        "type": "uint256"
+      }
+    ],
+    "name": "InvalidMinVotingDuration",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidNumOptions",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "roundId",
+        "type": "uint256"
+      }
+    ],
+    "name": "InvalidRoundId",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidTallyLength",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      }
+    ],
+    "name": "KeyNotPublished",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "L2ProgramAlreadySet",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "L2ProgramNotSet",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "MinVotingPowerBelowScale",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "OpenVmVerifierAddressZero",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "OutboxAddressZero",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "owner",
+        "type": "address"
+      }
+    ],
+    "name": "OwnableInvalidOwner",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "OwnableUnauthorizedAccount",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ProgramNotRegistered",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "expected",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "inboxVersion",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "outboxVersion",
+        "type": "uint256"
+      }
+    ],
+    "name": "RollupVersionMismatch",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "value",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "length",
+        "type": "uint256"
+      }
+    ],
+    "name": "StringsInsufficientHexLength",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "censusMode",
+        "type": "uint256"
+      }
+    ],
+    "name": "UnsupportedCensusMode",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "creditMode",
+        "type": "uint256"
+      }
+    ],
+    "name": "UnsupportedCreditMode",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "credits",
+        "type": "uint256"
+      }
+    ],
+    "name": "UnsupportedCredits",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "divisor",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "minimum",
+        "type": "uint256"
+      }
+    ],
+    "name": "VotingPowerDivisorBelowMinimum",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "earliestStart",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "actualStart",
+        "type": "uint256"
+      }
+    ],
+    "name": "VotingStartsBeforeKeyDeadline",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "votingStartsAt",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "votingEndsAt",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "required",
+        "type": "uint256"
+      }
+    ],
+    "name": "VotingWindowTooShort",
+    "type": "error"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "committeePublicKey",
+        "type": "bytes32"
+      }
+    ],
+    "name": "CommitteeKeyRelayed",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "slot",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "weight",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "content",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      }
+    ],
+    "name": "Enrolled",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "inputRoot",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "numInputs",
+        "type": "uint256"
+      }
+    ],
+    "name": "InputRootSubmitted",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "interfold",
+        "type": "address"
+      }
+    ],
+    "name": "InterfoldBound",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "content",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "leaf",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      }
+    ],
+    "name": "L1ToL2MessageSent",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "l2Program",
+        "type": "bytes32"
+      }
+    ],
+    "name": "L2ProgramSet",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "previousOwner",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "newOwner",
+        "type": "address"
+      }
+    ],
+    "name": "OwnershipTransferred",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "content",
+        "type": "bytes32"
+      }
+    ],
+    "name": "RoundConfigSent",
+    "type": "event"
+  },
+  {
+    "inputs": [],
+    "name": "ENCRYPTION_SCHEME_ID",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "FIELD_MODULUS",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "MAX_INPUTS_PER_ROUND",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "MAX_MSG_NON_ZERO_COEFFS",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "MAX_VOTE_OPTIONS",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "MIN_VOTING_DURATION",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "SECRET_HASH",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "availabilityFinalizationWindow",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "pure",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "contract IInterfold",
+        "name": "_interfold",
+        "type": "address"
+      }
+    ],
+    "name": "bindInterfold",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "dataAvailabilityVerifier",
+    "outputs": [
+      {
+        "internalType": "contract IDataAvailabilityVerifier",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      }
+    ],
+    "name": "decodeTally",
+    "outputs": [
+      {
+        "internalType": "uint256[]",
+        "name": "votes",
+        "type": "uint256[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "roundId",
+        "type": "uint256"
+      }
+    ],
+    "name": "e3IdOf",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "earliestVotingStart",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address[]",
+        "name": "slots",
+        "type": "address[]"
+      }
+    ],
+    "name": "enroll",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "enrolled",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      }
+    ],
+    "name": "getParamsHash",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      }
+    ],
+    "name": "getRound",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "bytes32",
+            "name": "paramsHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "uint256",
+            "name": "numOptions",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "inputLimit",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bool",
+            "name": "keyRelayed",
+            "type": "bool"
+          },
+          {
+            "internalType": "bool",
+            "name": "rootSubmitted",
+            "type": "bool"
+          },
+          {
+            "internalType": "uint256",
+            "name": "inputRoot",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "numInputs",
+            "type": "uint256"
+          }
+        ],
+        "internalType": "struct CRISPRemoteProgram.Round",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "imageId",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "inbox",
+    "outputs": [
+      {
+        "internalType": "contract IAztecInbox",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "interfold",
+    "outputs": [
+      {
+        "internalType": "contract IInterfold",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "slot",
+        "type": "address"
+      }
+    ],
+    "name": "isEnrolled",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "l2Program",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "minVotingDuration",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      }
+    ],
+    "name": "minVotingPowerOf",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "openVmVerifier",
+    "outputs": [
+      {
+        "internalType": "contract IOpenVmReceiptVerifier",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "outbox",
+    "outputs": [
+      {
+        "internalType": "contract IAztecOutbox",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "owner",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      }
+    ],
+    "name": "publishCommitteeKey",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes",
+        "name": "",
+        "type": "bytes"
+      }
+    ],
+    "name": "publishInput",
+    "outputs": [],
+    "stateMutability": "pure",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "remoteFinalityWindow",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      }
+    ],
+    "name": "remoteRoundId",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "pure",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "renounceOwnership",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "rollupVersion",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      }
+    ],
+    "name": "scopeHashOf",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      }
+    ],
+    "name": "scopeOf",
+    "outputs": [
+      {
+        "internalType": "string",
+        "name": "",
+        "type": "string"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "_l2Program",
+        "type": "bytes32"
+      }
+    ],
+    "name": "setL2Program",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes",
+        "name": "data",
+        "type": "bytes"
+      }
+    ],
+    "name": "sha256ToField",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "pure",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      }
+    ],
+    "name": "snapshotOf",
+    "outputs": [
+      {
+        "internalType": "uint48",
+        "name": "",
+        "type": "uint48"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "inputRoot",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "numInputs",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "epoch",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "numCheckpointsInEpoch",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "leafIndex",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32[]",
+        "name": "path",
+        "type": "bytes32[]"
+      }
+    ],
+    "name": "submitInputRoot",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes4",
+        "name": "interfaceId",
+        "type": "bytes4"
+      }
+    ],
+    "name": "supportsInterface",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "pure",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      }
+    ],
+    "name": "tokenOf",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "newOwner",
+        "type": "address"
+      }
+    ],
+    "name": "transferOwnership",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes",
+        "name": "e3ProgramParams",
+        "type": "bytes"
+      },
+      {
+        "internalType": "bytes",
+        "name": "",
+        "type": "bytes"
+      },
+      {
+        "internalType": "bytes",
+        "name": "customParams",
+        "type": "bytes"
+      }
+    ],
+    "name": "validate",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "ciphertextOutputHash",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "ciphertextCommitment",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bytes",
+        "name": "proof",
+        "type": "bytes"
+      }
+    ],
+    "name": "verify",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "expectedContentHash",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bytes",
+        "name": "proof",
+        "type": "bytes"
+      }
+    ],
+    "name": "verifyDataAvailability",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "bytes32",
+            "name": "contentHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "uint32",
+            "name": "blockNumber",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint128",
+            "name": "leafIndex",
+            "type": "uint128"
+          }
+        ],
+        "internalType": "struct IDataAvailabilityVerifier.DataReference",
+        "name": "receipt",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      }
+    ],
+    "name": "votingPowerDivisorOf",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "e3Id",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "slot",
+        "type": "address"
+      }
+    ],
+    "name": "weightOf",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  }
+]
