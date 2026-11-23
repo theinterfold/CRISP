@@ -21,6 +21,7 @@ import {
   type AztecSession,
   type CastArguments,
   type RoundRules,
+  type TypedDataSigner,
 } from '@crisp-e3/aztec'
 import { CrispSDK, decodeTally, destroyBBApi, setCircuits } from '@crisp-e3/sdk'
 import { loadCircuits } from '@crisp-e3/sdk/insecure-64'
@@ -346,7 +347,7 @@ const runRound = async (): Promise<void> => {
     const { staging_max_requests: stagingMaxRequests } = await getRemoteInputConfig(SERVER_URL)
     const stagingCounters = voters.map(() => 0)
     const stagingFor = (index: number) => ({
-      signer: async (digest: Hex) => signDigest(voters[index].slotKey, digest),
+      signer: (digest: Hex) => sign({ hash: digest, privateKey: voters[index].slotKey, to: 'hex' }),
       maxRequests: stagingMaxRequests,
       counter: stagingCounters[index]++,
     })
@@ -365,7 +366,7 @@ const runRound = async (): Promise<void> => {
         committeePublicKey,
         availabilitySigner: d.serverSigner as Address,
         staging: stagingFor(index),
-        ballot: ballot ? { vote: ballot, sign: async (digest) => signDigest(voter.slotKey, digest) } : undefined,
+        ballot: ballot ? { vote: ballot, sign: signerOf(voter.slotKey) } : undefined,
         onProgress: (progress) => log(`${stamp()} ${voter.name}: ${JSON.stringify(progress)}`),
       }))
       const sent = await clients[index].cast(args)
@@ -387,7 +388,7 @@ const runRound = async (): Promise<void> => {
         committeePublicKey,
         availabilitySigner: d.serverSigner as Address,
         staging: stagingFor(0),
-        ballot: { vote: voters[0].ballot!, sign: async (digest) => signDigest(voters[0].slotKey, digest) },
+        ballot: { vote: voters[0].ballot!, sign: signerOf(voters[0].slotKey) },
       })
       try {
         await clients[0].cast(tamper(honest))
@@ -499,5 +500,9 @@ const sdkPlaintext = async (l1: PublicClient, interfold: { address: Address; abi
   return e3.plaintextOutput
 }
 
-/** Sign an EIP-712 digest raw (no EIP-191 prefix) with the slot key: the 65-byte `r ‖ s ‖ v` `buildCast` expects. */
-const signDigest = (key: Hex, digest: Hex): Promise<Hex> => sign({ hash: digest, privateKey: key, to: 'hex' })
+/** The slot key's EIP-712 signer: what `buildCast` takes for the ballot and for the staging pass. */
+const signerOf = (key: Hex): TypedDataSigner => {
+  const account = privateKeyToAccount(key)
+
+  return (typedData) => account.signTypedData(typedData as never)
+}

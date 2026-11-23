@@ -98,3 +98,33 @@ export const stageInput = async (
     signer: body.signer,
   }
 }
+
+/** What `POST /voting/remote-input/enroll` answers. */
+export type EnrollmentResult = {
+  /** The L1 transaction the server's relayer sent; `undefined` when every slot was skipped. */
+  txHash?: Hex
+  enrolled: Address[]
+  skipped: { slot: Address; reason: string }[]
+}
+
+/**
+ * Ask the CRISP server to enroll `slots` in a votes round: it sends the L1 `enroll` (the voter pays nothing). The server drops
+ * slots that are enrolled or below the weight floor and says why. Anyone may also call `enroll` on L1 directly.
+ */
+export const requestEnrollment = async (
+  serverUrl: string,
+  e3Id: bigint,
+  slots: readonly Address[],
+  fetchImpl: typeof fetch = fetch,
+): Promise<EnrollmentResult> => {
+  const response = await fetchImpl(`${serverUrl}/voting/remote-input/enroll`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ round_id: e3Id.toString(), slots }),
+  })
+  if (!response.ok) throw await failure('enrollment', response)
+
+  const body = (await response.json()) as { tx_hash?: Hex | null; enrolled: Address[]; skipped: { slot: Address; reason: string }[] }
+
+  return { txHash: body.tx_hash ?? undefined, enrolled: body.enrolled, skipped: body.skipped }
+}

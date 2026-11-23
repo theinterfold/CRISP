@@ -45,20 +45,35 @@ const AVAILABILITY_TYPES = {
   ],
 } as const
 
-/** `CRISPProgram.ballotDigest`: what the slot owner signs, and what the fold proof exposes as `digest_hi/lo`. */
-export const ballotDigest = (args: {
+/**
+ * What a voter's wallet signs, for the ballot and for the staging request alike: EIP-712 typed data, as
+ * `walletClient.signTypedData` (with its account bound) and a local `account.signTypedData` take it. Returns the 65-byte
+ * `r ‖ s ‖ v` signature of the slot key.
+ */
+export type TypedDataSigner = (typedData: {
+  domain: ReturnType<typeof crispDomain>
+  types: Record<string, readonly { name: string; type: string }[]>
+  primaryType: string
+  message: Record<string, unknown>
+}) => Promise<Hex>
+
+/** The EIP-712 `Ballot` a slot owner signs. */
+export const ballotTypedData = (args: {
   l1ChainId: bigint | number
   program: Address
   e3Id: bigint
   slot: Address
   ciphertextCommitment: Hex
-}): Hex =>
-  hashTypedData({
+}) =>
+  ({
     domain: crispDomain(args.l1ChainId, args.program),
     types: BALLOT_TYPES,
     primaryType: 'Ballot',
     message: { e3Id: args.e3Id, slot: args.slot, ciphertextCommitment: args.ciphertextCommitment },
-  })
+  }) as const
+
+/** `CRISPProgram.ballotDigest`: what the slot owner signs, and what the fold proof exposes as `digest_hi/lo`. */
+export const ballotDigest = (args: Parameters<typeof ballotTypedData>[0]): Hex => hashTypedData(ballotTypedData(args))
 
 /** `CRISPProgram.inputAvailabilityDigest`: what the availability service signs once it has stored the ciphertext. */
 export const availabilityDigest = (args: {

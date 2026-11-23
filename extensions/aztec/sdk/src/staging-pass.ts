@@ -12,7 +12,6 @@ import { bytesToHex, encodeAbiParameters, hexToBytes, keccak256, recoverPublicKe
 import { publicKeyToAddress } from 'viem/utils'
 
 import stagingPassCircuit from '../../../core/circuits/staging_pass/compiled/staging_pass.json'
-import type { DigestSigner } from './cast'
 import type { Census } from './census'
 import { roundIdOf } from './messages'
 
@@ -41,6 +40,9 @@ export type StagingPass = {
   /** `census_root, round_id, request_digest_hi, request_digest_lo, max_requests, tag`, each a 32-byte hex field. */
   publicInputs: Hex[]
 }
+
+/** Signs a raw 32-byte digest (no EIP-191 prefix) with a slot key: the 65-byte `r ‖ s ‖ v` signature. ZKPassport rounds' staging pass. */
+export type DigestSigner = (digest: Hex) => Promise<Hex>
 
 /** The staging request a pass is bound to; every request has this shape, whether it carries a vote or a mask. */
 export type StagingRequest = {
