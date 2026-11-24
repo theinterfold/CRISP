@@ -72,6 +72,36 @@ fn round_params(custom_params: &[u8]) -> eyre::Result<CustomParams> {
     })
 }
 
+/// The custom parameters of a votes round (`PROGRAM_KIND=aztec-votes`) are `CRISPProgram`'s seven
+/// flat words: `abi.encode(token, minVotingPower, numOptions, creditMode, credits, censusMode,
+/// requestedDivisor)`. The L1 program accepts only CUSTOM credits with the ONCHAIN census.
+type VotesCustomParams = (
+    sol_data::Address,
+    sol_data::Uint<256>,
+    sol_data::Uint<256>,
+    sol_data::Uint<256>,
+    sol_data::Uint<256>,
+    sol_data::Uint<256>,
+    sol_data::Uint<256>,
+);
+
+fn votes_round_params(custom_params: &[u8]) -> eyre::Result<CustomParams> {
+    let (token, min_voting_power, num_options, _, _, _, divisor) =
+        <VotesCustomParams as SolType>::abi_decode_params(custom_params)
+            .context("Failed to decode custom params from E3 event")?;
+    Ok(CustomParams {
+        token_address: token.to_string(),
+        balance_threshold: min_voting_power.to_string(),
+        num_options: num_options.to_string(),
+        // The program weighs a ballot by the slot's voting power over the round's divisor, and
+        // reads each slot's power itself: the server lists nobody as the electorate.
+        credit_mode: CreditMode::Custom,
+        credits: None,
+        census_mode: CensusMode::Onchain,
+        voting_power_divisor: divisor.to_string(),
+    })
+}
+
 /// The custom parameters of a Gnosis round: `abi.encode(censusMode, censusRoot, censusTotal,
 /// proposalHash, metadataCid)`, five flat words with no leading offset. The L1 program validates
 /// them and the voting contract enforces them; the server reads nothing from them.
@@ -128,6 +158,8 @@ pub(super) async fn handle_e3_requested<S: DataStore>(
     let gnosis = CONFIG.is_gnosis();
     let custom_params = if gnosis {
         gnosis_round_params(&event.e3.customParams, CONFIG.gnosis_token()?)?
+    } else if CONFIG.is_aztec_votes() {
+        votes_round_params(&event.e3.customParams)?
     } else {
         round_params(&event.e3.customParams)?
     };
@@ -717,6 +749,33 @@ mod tests {
         let old = (U256::from(4), U256::from(10), U256::from(18), true).abi_encode_params();
         assert!(round_params(&old).is_err());
         assert!(round_params(&[0u8; 31]).is_err());
+    }
+
+    #[test]
+    fn custom_params_of_a_votes_round_are_the_seven_words_of_the_l1_program() {
+        let token = Address::repeat_byte(0x77);
+        let encoded = <VotesCustomParams as SolType>::abi_encode_params(&(
+            token,
+            U256::from(1_000),
+            U256::from(3),
+            U256::from(1),
+            U256::ZERO,
+            U256::from(2),
+            U256::from(7),
+        ));
+
+        let params = votes_round_params(&encoded).unwrap();
+
+        assert_eq!(params.token_address, token.to_string());
+        assert_eq!(params.balance_threshold, "1000");
+        assert_eq!(params.num_options, "3");
+        assert_eq!(params.credit_mode, CreditMode::Custom);
+        assert_eq!(params.credits, None);
+        assert_eq!(params.census_mode, CensusMode::Onchain);
+        assert_eq!(params.voting_power_divisor, "7");
+        // The ZKPassport decoder, which a votes server ran by mistake, refuses this layout.
+        assert!(round_params(&encoded).is_err());
+        assert!(votes_round_params(&encoded[..encoded.len() - 1]).is_err());
     }
 
     #[test]
