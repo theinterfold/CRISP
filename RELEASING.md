@@ -123,8 +123,9 @@ A client can only use a deployed contract whose class is the class of the inline
 publish from the sources that the deployed contracts were compiled from. The build has no preset: it
 takes the base circuits from `@crisp-e3/sdk` at run time.
 
-`check-dist.mjs` (`prepublishOnly`) imports both entries of the build. It refuses a build whose
-artifact is not transpiled.
+`check-dist.mjs` (`prepublishOnly`) refuses three builds: one whose artifacts are older than the
+contract sources, one that is older than its artifacts, and one whose artifact is not transpiled
+(it imports both entries).
 
 What it leaves behind differs by channel. Production commits the bump so the tree and client stay on
 the production version. Testing restores the version bump because the deployable client does not
