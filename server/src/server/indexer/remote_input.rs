@@ -136,9 +136,22 @@ pub(super) async fn handle_e3_requested<S: DataStore>(
         request_time.saturating_sub(1),
     )
     .await?;
+    // A mask is written to another slot, so a client of a votes round needs the holders of voting
+    // power to draw targets from. The retry pass discovers them, as it does for an L1 round that
+    // registered without its census: it reads the divisor and the snapshot that the program
+    // stored, which `CRISPAztecVotesProgram` serves with the getters of `CRISPProgram`, and
+    // replaces the snapshot recorded above. A ZKPassport round has no token and no masks.
+    let owes_discovery = CONFIG.is_aztec_votes();
+    if owes_discovery {
+        repo.set_discovery_pending(true).await?;
+    }
     CurrentRoundRepository::new(store)
         .record_round(&e3_id)
         .await?;
+    // Only after `record_round`: the retry task sleeps when it finds nothing owed.
+    if owes_discovery {
+        DISCOVERY_OWED.notify_one();
+    }
 
     // The committee key may have been indexed while this handler ran.
     activate_round_if_ready(&e3_id, &ctx).await?;

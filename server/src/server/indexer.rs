@@ -1544,9 +1544,16 @@ pub fn spawn_recovery_tasks<S: DataStore>(
     store: SharedStore<S>,
     availability: Arc<AvailabilityService>,
 ) {
-    // A remote program has no L1 input deadline, finalization jobs, or holder discovery: its round
-    // is computed once the input root reaches L1 and the inputs have been ingested.
+    // A remote program has no L1 input deadline and no finalization jobs: its round is computed
+    // once the input root reaches L1 and the inputs have been ingested. Only a votes round has
+    // holders to discover (`remote_input::handle_e3_requested`).
     if CONFIG.is_aztec() {
+        if CONFIG.is_aztec_votes() {
+            tokio::spawn(supervise("pending-discovery retry", {
+                let store = store.clone();
+                move || retry_pending_discovery(store.clone())
+            }));
+        }
         tokio::spawn(supervise("remote-input ingest", move || {
             remote_input::run_ingest(store.clone(), Arc::clone(&availability))
         }));
