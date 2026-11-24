@@ -9,7 +9,6 @@ import {
   type EnrolledMessage,
   type RoundClosed,
   type WithOrigin,
-  CrispAztec,
   CrispAztecVotes,
   connectAztec,
   getEnrolledMessages,
@@ -27,6 +26,7 @@ import {
   submitInputRoot,
   votesRoundContent,
 } from '@crisp-e3/aztec'
+import { CrispAztec } from '@crisp-e3/aztec/passport'
 import { createPublicClient, createWalletClient, getAddress, hexToBigInt, http, type Hex, type PublicClient, type WalletClient } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 

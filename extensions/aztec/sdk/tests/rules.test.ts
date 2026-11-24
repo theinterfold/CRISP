@@ -8,14 +8,8 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 import { SNARK_SCALAR_FIELD } from '../src/constants'
-import {
-  NATIONALITY_MODE,
-  type RoundRules,
-  decodeCustomParams,
-  encodeCustomParams,
-  nationalityCommitment,
-  registrationSubproofs,
-} from '../src/rules'
+import { NATIONALITY_MODE, type RoundRules, decodeCustomParams, encodeCustomParams, registrationSubproofs } from '../src/rules'
+import { nationalityCommitment } from '../src/zkpassport'
 
 // ZKPassport's own conformance anchors, parsed from the vendored Noir library the contract verifies against.
 const fixtures = readFileSync(new URL('../../contracts/vendor/zkpassport/core/src/fixtures.nr', import.meta.url), 'utf8')

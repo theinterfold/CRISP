@@ -4,10 +4,10 @@
 // without even the implied warranty of MERCHANTABILITY
 // or FITNESS FOR A PARTICULAR PURPOSE.
 
+// Nothing here may import `@zkpassport/*`: a client of token-weighted rounds must not load it. See `passport.ts`.
 export * from './ballot'
 export * from './cast'
 export * from './census'
-export * from './client'
 export * from './constants'
 export * from './head'
 export * from './inputTree'
@@ -22,5 +22,4 @@ export * from './staging-pass'
 export * from './votes-staging'
 export * from './votesClient'
 export * from './witness'
-export * from './zkpassport'
 export { getBaseVerificationKeys } from '@crisp-e3/sdk'

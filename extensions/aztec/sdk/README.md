@@ -4,7 +4,8 @@ TypeScript client for CRISP rounds whose ballots are cast on Aztec (v6): the vot
 The contract is [`../contracts`](../contracts), the L1 program [`../l1`](../l1).
 
 ```ts
-import { connectAztec, CrispAztec, buildCast } from '@crisp-e3/aztec'
+import { connectAztec, buildCast } from '@crisp-e3/aztec'
+import { CrispAztec } from '@crisp-e3/aztec/passport'
 
 const session = await connectAztec('http://localhost:8080') // a fresh account, fees paid by the SponsoredFPC
 const crisp = await CrispAztec.connect(session, contractAddress)
@@ -14,6 +15,12 @@ const census = await crisp.getCensus(e3Id) // rebuilt from MEMBER_REGISTERED log
 const cast = await buildCast({ serverUrl, program, l1ChainId, e3Id, slot, census, ballot: { vote, sign } /* … */ })
 await crisp.cast(cast)
 ```
+
+The package has two entries:
+
+- `@crisp-e3/aztec` has the shared code and the client of token-weighted rounds (`CrispAztecVotes`). It does not load ZKPassport.
+- `@crisp-e3/aztec/passport` has the client of ZKPassport rounds: `CrispAztec`, `deployCrispAztec`, `nationalityCommitment` and the
+  proof capsule helpers. It is the only entry that loads `@zkpassport/*`.
 
 ## Build and test
 
@@ -64,7 +71,7 @@ contract (`aztec compile` in `../contracts`): regenerate it with `pnpm codegen` 
 - **Registration picks its entry point by round**: `register` reads the round's rules and calls the matching `register*` (a 4 to 6
   subproof ZKPassport capsule).
 - **A round's rules are one 7-field custom-params value.** `encodeCustomParams` / `decodeCustomParams` (with `RoundRules`) build and
-  read what `Interfold.request` carries; `assertRules` rejects what L1 would. `nationalityCommitment(mode, countries)` (async) is
+  read what `Interfold.request` carries; `assertRules` rejects what L1 would. `nationalityCommitment(mode, countries)` (async, from `@crisp-e3/aztec/passport`) is
   the value a round with a nationality rule must carry (it sorts exclusion lists); `registrationSubproofs(rules)` is the ZKPassport
   proof's size (4 to 6).
 - **Ballots and staging keys are signed as EIP-712 typed data.** `TypedDataSigner` is `(typedData) => Promise<Hex>` returning the

@@ -9,20 +9,19 @@ import { join } from 'node:path'
 
 import { createAztecNodeDebugClient } from '@aztec-labs/stdlib/interfaces/client'
 import {
-  CrispAztec,
   NATIONALITY_MODE,
   getRemoteInputConfig,
   buildCast,
   connectAztec,
   destroyStagingPassProver,
   encodeCustomParams,
-  nationalityCommitment,
   scopeOf,
   type AztecSession,
   type CastArguments,
   type RoundRules,
   type TypedDataSigner,
 } from '@crisp-e3/aztec'
+import { CrispAztec, nationalityCommitment } from '@crisp-e3/aztec/passport'
 import { CrispSDK, decodeTally, destroyBBApi, setCircuits } from '@crisp-e3/sdk'
 import { loadCircuits } from '@crisp-e3/sdk/insecure-64'
 import {
