@@ -8,7 +8,9 @@ import type { AztecAddress } from '@aztec-labs/aztec.js/addresses'
 import { Fr } from '@aztec-labs/foundation/curves/bn254'
 import { Capsule } from '@aztec-labs/stdlib/tx'
 import { PROOF_CAPSULE_SLOT, PROOF_FIELDS, VK_FIELDS, fetchOuterVk } from '@zkpassport/aztec'
-import { getProofData } from '@zkpassport/utils'
+import { ProofType, getCountryParameterCommitment, getProofData } from '@zkpassport/utils'
+
+import { NATIONALITY_MODE, assertCountries } from './rules'
 
 /** The part of a ZKPassport SDK `ProofResult` (mode `compressed`) that registration needs. */
 export type CompressedProofResult = { proof?: string; vkeyHash?: string }
@@ -61,4 +63,21 @@ export const registrationCapsule = async (
   const fields = assembleProofCapsule({ vk, proof, publicInputs }, subproofs)
 
   return new Capsule(contract, new Fr(PROOF_CAPSULE_SLOT), fields, sender)
+}
+
+/**
+ * ZKPassport's Poseidon2 parameter commitment of a nationality list: what the proof of a `nationality in` (mode 1) or
+ * `nationality not in` (mode 2) request commits to, and what `open_round` stores. An inclusion list
+ * keeps the order given, an exclusion list is sorted the way ZKPassport sorts it, so any order works for mode 2.
+ */
+export const nationalityCommitment = async (mode: typeof NATIONALITY_MODE.IN | typeof NATIONALITY_MODE.OUT, countries: readonly string[]): Promise<bigint> => {
+  assertCountries(countries)
+  const exclusion = mode === NATIONALITY_MODE.OUT
+  const commitment = await getCountryParameterCommitment(
+    exclusion ? ProofType.NATIONALITY_EXCLUSION : ProofType.NATIONALITY_INCLUSION,
+    [...countries] as Parameters<typeof getCountryParameterCommitment>[1],
+    exclusion,
+  )
+
+  return commitment
 }

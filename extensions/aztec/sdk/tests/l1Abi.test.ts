@@ -9,7 +9,7 @@ import { formatAbiItem } from 'viem/utils'
 import type { Abi } from 'viem'
 import { describe, expect, it } from 'vitest'
 
-import { programAbi } from '../src/l1'
+import { programAbi, votesProgramAbi } from '../src/l1'
 
 // The ABI the L1 package exports from its compiled `CRISPAztecProgram`.
 const abiOf = (name: string): Abi => JSON.parse(readFileSync(new URL(`../../l1/abi/${name}.json`, import.meta.url), 'utf8'))
@@ -27,3 +27,5 @@ const matchesCompiled = (name: string, subset: Abi) =>
   )
 
 describe('program ABI subset', () => matchesCompiled('CRISPAztecProgram', programAbi as Abi))
+
+describe('votes program ABI subset', () => matchesCompiled('CRISPAztecVotesProgram', [...programAbi, ...votesProgramAbi] as Abi))

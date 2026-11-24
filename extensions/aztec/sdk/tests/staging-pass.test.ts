@@ -14,7 +14,7 @@ import { concat, getAddress, hexToBytes, pad, type Hex } from 'viem'
 import { privateKeyToAccount, sign } from 'viem/accounts'
 import { afterAll, describe, expect, it } from 'vitest'
 
-import type { Census } from '../src/census'
+import { stagingTreeFromLogs, type Census } from '../src/census'
 import { e3IdOf, roundIdOf } from '../src/messages'
 import {
   buildStagingPass,
@@ -24,6 +24,7 @@ import {
   type StagingPass,
   type StagingRequest,
 } from '../src/staging-pass'
+import { buildVotesStagingPass, destroyVotesStagingPassProver, stagingCommitment, votesStagingTag } from '../src/votes-staging'
 
 // Hardhat's first accounts: the registered slots. The fourth is not registered.
 const KEYS: Hex[] = [
@@ -57,16 +58,38 @@ const request: StagingRequest = {
 
 /** The bb binary the CRISP server runs (6.0.0); `BB_BINARY` overrides the one on the PATH. */
 const BB = process.env.BB_BINARY ?? 'bb'
-const FIXTURE = join(__dirname, '../../../../server/tests/fixtures/staging_pass.json')
+const FIXTURES = join(__dirname, '../../../../server/tests/fixtures')
 const VK = join(__dirname, '../../../core/circuits/staging_pass/compiled/staging_pass.vk')
+const VOTES_VK = join(__dirname, '../../../core/circuits/staging_pass_votes/compiled/staging_pass_votes.vk')
+
+/** `WRITE_STAGING_FIXTURE=1` refreshes the passes the server's Rust tests check (`server/tests/fixtures/<name>.json`). */
+const writeFixture = (name: string, pass: StagingPass): void => {
+  if (!process.env.WRITE_STAGING_FIXTURE) return
+  writeFileSync(
+    join(FIXTURES, `${name}.json`),
+    `${JSON.stringify(
+      {
+        chain_id: Number(request.l1ChainId),
+        program: request.program,
+        e3_id: request.e3Id.toString(),
+        slot: request.slot,
+        ciphertext_commitment: request.ciphertextCommitment,
+        parent_index_plus_one: request.parentIndexPlusOne,
+        staging_pass: { proof: pass.proof, public_inputs: pass.publicInputs },
+      },
+      null,
+      2,
+    )}\n`,
+  )
+}
 
 /** The same call the server makes: `bb verify` of the default target (`evm`) over raw proof and public-input files. */
-const bbVerifies = (pass: StagingPass): boolean => {
+const bbVerifies = (pass: StagingPass, vk = VK): boolean => {
   const dir = mkdtempSync(join(tmpdir(), 'staging-pass-'))
   try {
     writeFileSync(join(dir, 'proof'), hexToBytes(pass.proof))
     writeFileSync(join(dir, 'public_inputs'), hexToBytes(concat(pass.publicInputs)))
-    execFileSync(BB, ['verify', '-p', join(dir, 'proof'), '-i', join(dir, 'public_inputs'), '-k', VK, '-t', 'evm'], { stdio: 'pipe' })
+    execFileSync(BB, ['verify', '-p', join(dir, 'proof'), '-i', join(dir, 'public_inputs'), '-k', vk, '-t', 'evm'], { stdio: 'pipe' })
     return true
   } catch {
     return false
@@ -75,7 +98,10 @@ const bbVerifies = (pass: StagingPass): boolean => {
   }
 }
 
-afterAll(destroyStagingPassProver)
+afterAll(async () => {
+  await destroyStagingPassProver()
+  await destroyVotesStagingPassProver()
+})
 
 describe('staging pass', () => {
   it('binds the request digest and the tag layout the server recomputes', () => {
@@ -100,25 +126,7 @@ describe('staging pass', () => {
 
     expect(bbVerifies(pass)).toBe(true)
 
-    // `WRITE_STAGING_FIXTURE=1` refreshes the pass the server's Rust tests verify (`server/tests/fixtures/staging_pass.json`).
-    if (process.env.WRITE_STAGING_FIXTURE) {
-      writeFileSync(
-        FIXTURE,
-        `${JSON.stringify(
-          {
-            chain_id: Number(request.l1ChainId),
-            program: request.program,
-            e3_id: request.e3Id.toString(),
-            slot: request.slot,
-            ciphertext_commitment: request.ciphertextCommitment,
-            parent_index_plus_one: request.parentIndexPlusOne,
-            staging_pass: { proof: pass.proof, public_inputs: pass.publicInputs },
-          },
-          null,
-          2,
-        )}\n`,
-      )
-    }
+    writeFixture('staging_pass', pass)
 
     // A flipped proof byte.
     const bytes = hexToBytes(pass.proof)
@@ -132,6 +140,34 @@ describe('staging pass', () => {
     expect(bbVerifies(swapped(5, tag + 1n))).toBe(false)
     expect(bbVerifies(swapped(3, lo ^ 1n))).toBe(false)
     expect(bbVerifies(swapped(0, root + 1n))).toBe(false)
+  }, 300_000)
+
+  it('makes a votes pass for a bound staging secret that the server verifier accepts', async () => {
+    const secret = 0x1234n
+    const commitments = [5n, stagingCommitment(secret, 7n), 6n]
+    // The tree as a client reads it: from the STAGING_KEY_BOUND logs, each with the root after its own insertion.
+    const stagingTree = stagingTreeFromLogs(
+      commitments.map((commitment, index) => ({
+        kind: 'StagingKeyBound',
+        e3Id: E3_ID,
+        roundId: 7n,
+        index,
+        slot: accounts[index].address,
+        commitment,
+        root: generateMerkleTree(commitments.slice(0, index + 1)).root!,
+      })),
+    )
+    const pass = await buildVotesStagingPass({ secret, stagingTree, request, maxRequests: MAX_REQUESTS, counter: 3 })
+
+    // The order the server reads them in.
+    const [root, round, hi, lo, max, tag] = pass.publicInputs.map((field) => BigInt(field))
+    expect(root).toBe(stagingTree.root)
+    expect(round).toBe(7n)
+    expect((hi << 128n) | lo).toBe(BigInt(stagingRequestDigest(request)))
+    expect(max).toBe(BigInt(MAX_REQUESTS))
+    expect(tag).toBe(votesStagingTag(secret, 7n, 3))
+    expect(bbVerifies(pass, VOTES_VK)).toBe(true)
+    writeFixture('staging_pass_votes', pass)
   }, 300_000)
 
   it('keeps the tags of one key apart per counter and per round', () => {

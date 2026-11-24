@@ -52,7 +52,18 @@ export type RoundOpened = { kind: 'RoundOpened'; e3Id: bigint; roundId: bigint }
 /** `[5, round_id, committee_public_key]` */
 export type KeyPublished = { kind: 'KeyPublished'; e3Id: bigint; roundId: bigint; committeePublicKey: Hex }
 
-export type CrispLog = InputCommitted | MemberRegistered | RoundClosed | RoundOpened | KeyPublished
+/** `[6, round_id, index, slot, commitment, root]`: a slot's staging commitment entered the round's staging tree (`crisp_aztec_votes`). */
+export type StagingKeyBound = {
+  kind: 'StagingKeyBound'
+  e3Id: bigint
+  roundId: bigint
+  index: number
+  slot: Address
+  commitment: bigint
+  root: bigint
+}
+
+export type CrispLog = InputCommitted | MemberRegistered | RoundClosed | RoundOpened | KeyPublished | StagingKeyBound
 export type WithOrigin<T> = T & { origin: LogOrigin }
 
 const U128 = (1n << 128n) - 1n
@@ -98,6 +109,16 @@ export const decodeLog = (fields: readonly bigint[], interfold: Address): CrispL
     case LOG_TAG.KEY_PUBLISHED:
       expectLength(tag, fields, 3)
       return { kind: 'KeyPublished', ...ids(), committeePublicKey: hex32(fields[2]) }
+    case LOG_TAG.STAGING_KEY_BOUND:
+      expectLength(tag, fields, 6)
+      return {
+        kind: 'StagingKeyBound',
+        ...ids(),
+        index: Number(fields[2]),
+        slot: address(fields[3]),
+        commitment: fields[4],
+        root: fields[5],
+      }
     default:
       throw new Error(`Unknown CRISP public log tag ${tag}`)
   }
@@ -132,6 +153,7 @@ const TAG_OF: { [K in CrispLog['kind']]: number } = {
   RoundClosed: LOG_TAG.ROUND_CLOSED,
   RoundOpened: LOG_TAG.ROUND_OPENED,
   KeyPublished: LOG_TAG.KEY_PUBLISHED,
+  StagingKeyBound: LOG_TAG.STAGING_KEY_BOUND,
 }
 
 /**

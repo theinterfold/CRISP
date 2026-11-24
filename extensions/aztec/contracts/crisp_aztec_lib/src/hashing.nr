@@ -2,7 +2,7 @@
 // expression; the tests pin each one to a vector produced by that Solidity code.
 
 use crate::constants::{
-    BALLOT_TYPEHASH, INPUT_AVAILABILITY_TYPEHASH, INPUT_ID_TAG, MESSAGE_KEY, MESSAGE_ROOT, MESSAGE_ROUND,
+    BALLOT_TYPEHASH, INPUT_AVAILABILITY_TYPEHASH, INPUT_ID_TAG, MESSAGE_KEY, MESSAGE_ROOT,
 };
 use aztec::protocol::{address::EthAddress, hash::sha256_to_field, traits::ToField};
 use keccak256::keccak256;
@@ -24,7 +24,7 @@ pub fn word(value: Field) -> [u8; 32] {
     value.to_be_bytes()
 }
 
-fn put<let N: u32, let M: u32>(mut buf: [u8; N], offset: u32, bytes: [u8; M]) -> [u8; N] {
+pub fn put<let N: u32, let M: u32>(mut buf: [u8; N], offset: u32, bytes: [u8; M]) -> [u8; N] {
     for i in 0..M {
         buf[offset + i] = bytes[i];
     }
@@ -63,7 +63,7 @@ pub fn from_halves(halves: [Field; 2]) -> [u8; 32] {
     bytes
 }
 
-fn eip712_digest(domain_separator: [u8; 32], struct_hash: [u8; 32]) -> [u8; 32] {
+pub fn eip712_digest(domain_separator: [u8; 32], struct_hash: [u8; 32]) -> [u8; 32] {
     let mut message = [0; 66];
     message[0] = 0x19;
     message[1] = 0x01;
@@ -137,41 +137,6 @@ pub fn input_leaf(
     preimage = put(preimage, 64, slot_bytes);
     preimage = put(preimage, 84, parent_bytes);
     bytes_to_field(sha256_digest(preimage))
-}
-
-/// Content of the ROUND message `Interfold.request` sends from L1. Word 2 is the round id (`uint96(e3Id)`).
-pub fn round_content(
-    round_id: Field,
-    num_options: Field,
-    credits: Field,
-    input_start: u64,
-    input_end: u64,
-    input_limit: u32,
-    scope_hash: Field,
-    min_age: u8,
-    allow_mock_documents: bool,
-    nationality_mode: u8,
-    nationality_commitment: Field,
-) -> Field {
-    let words = [
-        MESSAGE_ROUND,
-        round_id,
-        num_options,
-        credits,
-        input_start as Field,
-        input_end as Field,
-        input_limit as Field,
-        scope_hash,
-        min_age as Field,
-        allow_mock_documents as Field,
-        nationality_mode as Field,
-        nationality_commitment,
-    ];
-    let mut encoded = [0; 384];
-    for i in 0..12 {
-        encoded = put(encoded, i * 32, word(words[i]));
-    }
-    sha256_to_field(encoded)
 }
 
 /// Content of the KEY message `publishCommitteeKey` sends from L1.

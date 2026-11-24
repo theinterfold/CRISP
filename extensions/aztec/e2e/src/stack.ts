@@ -8,7 +8,8 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync }
 import { arch, homedir, platform } from 'node:os'
 import { join } from 'node:path'
 
-import { connectAztec, deployCrispAztec, getBaseVerificationKeys, domainSeparator } from '@crisp-e3/aztec'
+import { connectAztec, getBaseVerificationKeys, domainSeparator } from '@crisp-e3/aztec'
+import { deployCrispAztec } from '@crisp-e3/aztec/passport'
 import { destroyBBApi, setCircuits } from '@crisp-e3/sdk'
 import { loadCircuits } from '@crisp-e3/sdk/insecure-64'
 import { getAddress, type Address } from 'viem'

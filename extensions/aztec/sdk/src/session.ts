@@ -12,15 +12,14 @@ import { SPONSORED_FPC_SALT } from '@aztec-labs/constants'
 import { Fq, Fr } from '@aztec-labs/foundation/curves/bn254'
 import { SponsoredFPCContract } from '@aztec-labs/noir-contracts.js/SponsoredFPC'
 import type { AztecNode } from '@aztec-labs/stdlib/interfaces/client'
-import { EmbeddedWallet } from '@aztec-labs/wallets/embedded'
+import { EmbeddedWallet, type EmbeddedWalletOptions } from '@aztec-labs/wallets/embedded'
 
 /**
  * A connection to an Aztec network: a node, a wallet holding one account, and the sponsor that pays its fees.
  *
- * The account is an initializerless Schnorr account created from random keys. It needs no deployment
- * transaction, nothing links two sessions, and nothing is stored once the process exits: a voter's account is
- * disposable by design, and a keeper's holds no funds. The fee is paid by the network's canonical SponsoredFPC,
- * which sponsors every transaction.
+ * The account is an initializerless Schnorr account. It needs no deployment transaction. By default its keys are random:
+ * nothing links two sessions and nothing is stored once the process exits, so a voter's account is disposable and a
+ * keeper's holds no funds. The fee is paid by the network's canonical SponsoredFPC, which sponsors every transaction.
  */
 export type AztecSession = {
   node: AztecNode
@@ -46,13 +45,21 @@ export type ConnectOptions = {
    * this off there trades the check for speed.
    */
   prove?: boolean
+  /** The account's keys. Default: random ones. Pass stored keys to keep one Aztec address across sessions. */
+  account?: { secret: Fr; salt: Fr; signingKey: Fq }
+  /** The PXE's store. Default: the wallet's own. A browser passes an in-memory store, so that every tab can hold a session. */
+  pxeStore?: NonNullable<EmbeddedWalletOptions['pxe']>['store']
 }
 
 export const connectAztec = async (nodeUrl: string, options: ConnectOptions = {}): Promise<AztecSession> => {
   const node = createAztecNodeClient(nodeUrl)
-  const wallet = await EmbeddedWallet.create(node, { ephemeral: true, pxe: { proverEnabled: options.prove ?? true } })
+  const wallet = await EmbeddedWallet.create(node, {
+    ephemeral: true,
+    pxe: { proverEnabled: options.prove ?? true, ...(options.pxeStore && { store: options.pxeStore }) },
+  })
   try {
-    const account = await wallet.createSchnorrInitializerlessAccount(Fr.random(), Fr.random(), Fq.random())
+    const { secret, salt, signingKey } = options.account ?? { secret: Fr.random(), salt: Fr.random(), signingKey: Fq.random() }
+    const account = await wallet.createSchnorrInitializerlessAccount(secret, salt, signingKey)
     const fpc = await sponsoredFpc()
     await wallet.registerContract(fpc, SponsoredFPCContract.artifact)
 

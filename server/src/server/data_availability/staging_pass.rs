@@ -37,9 +37,12 @@ const MAX_CONCURRENT_VERIFICATIONS: usize = 2;
 /// How long a request may wait for a verification slot before it is turned away (503). Forcing a
 /// verification needs only public data, so the queue must not grow with the flood.
 const VERIFY_QUEUE_TIMEOUT: Duration = Duration::from_secs(2);
-/// The bytes of a proof of the circuit: fixed by its size (2^17 gates, zero knowledge, `evm`).
-/// Anything else cannot verify, so it is refused before `bb` is spawned.
+/// The bytes of a proof of each pass circuit: fixed by its size (zero knowledge, `evm`). Anything
+/// else cannot verify, so it is refused before `bb` is spawned.
+/// `staging_pass`, 2^17 gates.
 const PROOF_BYTES: usize = 9152;
+/// `staging_pass_votes`, 2^15 gates.
+const VOTES_PROOF_BYTES: usize = 8384;
 /// The most often the remote chain is asked for census roots of one round on behalf of requests
 /// that name a root not known yet.
 const ROOT_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
@@ -165,6 +168,8 @@ pub(super) struct StagingPasses {
     max_requests: u32,
     chain_id: u64,
     program: Address,
+    /// The proof size of the circuit the verification key belongs to.
+    proof_bytes: usize,
     refresh_interval: Duration,
     /// Roots by round, read from the remote chain on demand and kept until the round is released.
     roots: Mutex<HashMap<U256, Arc<RoundRoots>>>,
@@ -184,10 +189,17 @@ impl StagingPasses {
             max_requests,
             chain_id,
             program,
+            proof_bytes: PROOF_BYTES,
             refresh_interval: ROOT_REFRESH_INTERVAL,
             roots: Mutex::default(),
             windows: Mutex::default(),
         }
+    }
+
+    /// Check the passes of `staging_pass_votes`, the circuit of `PROGRAM_KIND=aztec-votes`.
+    pub(super) fn for_votes(mut self) -> Self {
+        self.proof_bytes = VOTES_PROOF_BYTES;
+        self
     }
 
     #[cfg(test)]
@@ -220,7 +232,7 @@ impl StagingPasses {
             .map_err(|_| reject_input(MALFORMED))?;
         let proof = hex::decode(pass.proof.strip_prefix("0x").unwrap_or(&pass.proof))
             .ok()
-            .filter(|proof| proof.len() == PROOF_BYTES)
+            .filter(|proof| proof.len() == self.proof_bytes)
             .ok_or_else(|| reject_input(MALFORMED))?;
 
         let digest = staging_request_digest(
@@ -408,6 +420,8 @@ mod tests {
     /// A real pass made by `extensions/aztec/sdk/tests/staging-pass.test.ts`
     /// (`WRITE_STAGING_FIXTURE=1`) for the request it names.
     const FIXTURE: &str = include_str!("../../../tests/fixtures/staging_pass.json");
+    /// The pass the same test made with `staging_pass_votes`, for the same request.
+    const VOTES_FIXTURE: &str = include_str!("../../../tests/fixtures/staging_pass_votes.json");
     const CHAIN_ID: u64 = 11_155_111;
 
     fn fixture() -> serde_json::Value {
@@ -976,6 +990,63 @@ mod tests {
 
         service
             .admit_staging_pass(e3_id(), &request())
+            .await
+            .unwrap();
+    }
+
+    /// The fixture's request with the votes pass.
+    fn votes_request() -> RemoteInputRequest {
+        let fixture: serde_json::Value = serde_json::from_str(VOTES_FIXTURE).unwrap();
+        RemoteInputRequest {
+            staging_pass: serde_json::from_value(fixture["staging_pass"].clone()).unwrap(),
+            ..request()
+        }
+    }
+
+    /// A server of `PROGRAM_KIND=aztec-votes` whose chain has the staging root of `votes_request`.
+    fn votes_service(verifier: Arc<dyn PassVerifier>) -> AvailabilityService {
+        let root = U256::from_str_radix(
+            votes_request().staging_pass.public_inputs[0].trim_start_matches("0x"),
+            16,
+        )
+        .unwrap();
+        let mut service = test_service(1024);
+        service.remote = Some(RemoteInputs::for_test(
+            Chain::with(vec![root]),
+            StagingPasses::new(verifier, 16, CHAIN_ID, program()).for_votes(),
+        ));
+        service
+    }
+
+    #[tokio::test]
+    async fn each_kind_takes_only_the_pass_of_its_own_circuit() {
+        let votes = votes_service(Arc::new(Verdict(true, AtomicUsize::new(0))));
+        assert_eq!(
+            refused(votes.admit_staging_pass(e3_id(), &request()).await),
+            MALFORMED
+        );
+        votes
+            .admit_staging_pass(e3_id(), &votes_request())
+            .await
+            .unwrap();
+
+        let (_, passport) = accepting();
+        assert_eq!(
+            refused(passport.admit_staging_pass(e3_id(), &votes_request()).await),
+            MALFORMED
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "needs the bb 6.0.0 binary"]
+    async fn the_sdks_votes_pass_is_admitted_with_the_real_verifier() {
+        let vk = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../extensions/core/circuits/staging_pass_votes/compiled/staging_pass_votes.vk"
+        );
+        let service = votes_service(Arc::new(BbVerifier::new(&bb(), vk, None).unwrap()));
+        service
+            .admit_staging_pass(e3_id(), &votes_request())
             .await
             .unwrap();
     }

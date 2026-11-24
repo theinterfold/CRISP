@@ -7,7 +7,8 @@
 import { defineConfig } from 'tsup'
 
 export default defineConfig({
-  entry: ['src/index.ts'],
+  // Two entries with shared chunks, so that a class is the same object whichever entry it comes from.
+  entry: ['src/index.ts', 'src/passport.ts'],
   format: ['esm'],
   dts: true,
   clean: true,

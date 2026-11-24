@@ -29,6 +29,10 @@ pub enum ProgramKind {
     #[default]
     Crisp,
     Aztec,
+    /// A `CRISPAztecVotesProgram`: the Aztec ingest of `aztec`, with token-weighted slots that
+    /// `POST /voting/remote-input/enroll` bridges from L1.
+    #[serde(rename = "aztec-votes")]
+    AztecVotes,
 }
 
 // Do not derive `Debug`: this structure owns private keys and other secrets.
@@ -79,6 +83,13 @@ pub struct Config {
     /// zero (the default) turns the upload route off.
     #[serde(default)]
     pub external_outputs_max_bytes: u64,
+    /// Base URL of another CRISP server's availability route, for example
+    /// `https://private-crisp.theinterfold.com/availability`. When set, this server uploads each
+    /// aggregate ciphertext it publishes to `PUT {url}/objects/{hash}?e3_id={id}`, so ciphernodes
+    /// that read that server in `mock_http` mode can fetch it. Mock data availability only; absent
+    /// (the default) uploads nothing.
+    #[serde(default)]
+    pub external_output_upload_url: Option<String>,
     /// Shared secret for the round-scheduler endpoint. Absent disables the endpoint.
     #[serde(default)]
     pub cron_api_key: Option<String>,
@@ -137,8 +148,9 @@ pub struct Config {
     #[serde(default)]
     pub relay_min_balance_eth: Option<String>,
 
-    /// What `E3_PROGRAM_ADDRESS` is: `crisp` (the L1 `CRISPProgram`, the default) or `aztec` (a
-    /// `CRISPAztecProgram`, whose inputs live on Aztec). One instance serves one program.
+    /// What `E3_PROGRAM_ADDRESS` is: `crisp` (the L1 `CRISPProgram`, the default), `aztec` (a
+    /// `CRISPAztecProgram`, whose inputs live on Aztec) or `aztec-votes` (a
+    /// `CRISPAztecVotesProgram`). One instance serves one program.
     #[serde(default)]
     pub program_kind: ProgramKind,
     /// The Aztec node whose public logs list the inputs. Required for `PROGRAM_KIND=aztec`.
@@ -193,9 +205,18 @@ impl Config {
         is_local_chain_id(self.chain_id)
     }
 
-    /// Whether this instance serves rounds whose inputs live on Aztec.
+    /// Whether this instance serves rounds whose inputs live on Aztec (`aztec` or `aztec-votes`).
     pub fn is_aztec(&self) -> bool {
-        self.program_kind == ProgramKind::Aztec
+        matches!(
+            self.program_kind,
+            ProgramKind::Aztec | ProgramKind::AztecVotes
+        )
+    }
+
+    /// Whether this instance serves the token-weighted Aztec program, whose slots are enrolled
+    /// from L1.
+    pub fn is_aztec_votes(&self) -> bool {
+        self.program_kind == ProgramKind::AztecVotes
     }
 
     /// The `CrispAztec` contract address of an Aztec instance. `from_env` refuses a missing or
@@ -308,6 +329,10 @@ impl Config {
         Self::validate_external_outputs(
             &config.data_availability_mode(),
             config.external_outputs_max_bytes,
+        )?;
+        Self::validate_external_output_upload(
+            &config.data_availability_mode(),
+            config.external_output_upload_url.as_deref(),
         )?;
         Self::validate_relay(
             config.chain_id,
@@ -443,6 +468,38 @@ impl Config {
         Ok(())
     }
 
+    /// Refuse an upload URL outside mock data availability, where ciphernodes read Avail and
+    /// never the other server, and one that cannot be the base of `{url}/objects/{hash}`. The
+    /// messages never repeat the URL, which can name a private host.
+    fn validate_external_output_upload(mode: &str, url: Option<&str>) -> Result<(), ConfigError> {
+        let Some(url) = url else {
+            return Ok(());
+        };
+        if mode != "mock" {
+            return Err(invalid(
+                "EXTERNAL_OUTPUT_UPLOAD_URL requires DATA_AVAILABILITY_MODE=mock",
+            ));
+        }
+        let url: reqwest::Url = url
+            .parse()
+            .map_err(|_| invalid("EXTERNAL_OUTPUT_UPLOAD_URL is not a valid URL"))?;
+        if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
+            return Err(invalid(
+                "EXTERNAL_OUTPUT_UPLOAD_URL must be an http(s) URL with a host",
+            ));
+        }
+        if !url.username().is_empty()
+            || url.password().is_some()
+            || url.query().is_some()
+            || url.fragment().is_some()
+        {
+            return Err(invalid(
+                "EXTERNAL_OUTPUT_UPLOAD_URL must be the availability route itself, without credentials, query or fragment",
+            ));
+        }
+        Ok(())
+    }
+
     fn validate_e3_param_set(chain_id: u64, param_set: u8) -> Result<(), ConfigError> {
         if param_set != 0 && param_set != 2 {
             return Err(invalid(format!(
@@ -556,6 +613,32 @@ mod tests {
         assert!(Config::validate_external_outputs("avail", object).is_err());
         assert!(Config::validate_external_outputs("mock", object - 1).is_err());
         assert!(Config::validate_external_outputs("mock", object).is_ok());
+    }
+
+    #[test]
+    fn an_output_upload_url_needs_mock_data_availability_and_an_http_route() {
+        let route = Some("https://private-crisp.theinterfold.com/availability");
+        assert!(Config::validate_external_output_upload("avail", None).is_ok());
+        assert!(Config::validate_external_output_upload("mock", None).is_ok());
+        assert!(Config::validate_external_output_upload("mock", route).is_ok());
+        assert!(Config::validate_external_output_upload(
+            "mock",
+            Some("http://127.0.0.1:4000/availability/")
+        )
+        .is_ok());
+        assert!(Config::validate_external_output_upload("avail", route).is_err());
+        for refused in [
+            "private-crisp.theinterfold.com/availability",
+            "ftp://private-crisp.theinterfold.com/availability",
+            "https://user:secret@private-crisp.theinterfold.com/availability",
+            "https://private-crisp.theinterfold.com/availability?key=1",
+            "https://private-crisp.theinterfold.com/availability#top",
+        ] {
+            let error = Config::validate_external_output_upload("mock", Some(refused))
+                .expect_err(refused)
+                .to_string();
+            assert!(!error.contains("secret"), "{error}");
+        }
     }
 
     #[test]

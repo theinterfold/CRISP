@@ -5,12 +5,13 @@
 // in `packages/crisp-contracts/tests/fixtures`. Digests are viem `hashTypedData` / `encodeAbiParameters` values;
 // message contents are `extensions/aztec/l1/tests/fixtures/message-vectors.json`.
 
-use crate::{
+use crate::messages::round_content;
+use crisp_aztec_lib::{
     ballot::{ciphertext_commitment, crisp_public_inputs, pk_commitment},
     constants::{BALLOT_TYPEHASH, INPUT_AVAILABILITY_TYPEHASH, LAZY_ZEROS},
     hashing::{
         availability_digest, ballot_digest, from_halves, full_e3_id, input_id, input_leaf, key_content, root_content,
-        round_content, to_halves,
+        to_halves,
     },
     tree::{lazy_insert, lazy_root, lean_insert, lean_root, NodeStore},
 };

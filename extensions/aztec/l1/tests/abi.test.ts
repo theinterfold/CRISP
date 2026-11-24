@@ -9,7 +9,7 @@ import { expect } from 'chai'
 import { artifacts } from 'hardhat'
 
 describe('exported ABI', function () {
-  for (const name of ['CRISPAztecProgram']) {
+  for (const name of ['CRISPAztecProgram', 'CRISPAztecVotesProgram']) {
     it(`abi/${name}.json matches the compiled contract (run \`pnpm export:abi\`)`, async function () {
       const { abi } = await artifacts.readArtifact(name)
       const tracked = JSON.parse(readFileSync(new URL(`../abi/${name}.json`, import.meta.url), 'utf8'))

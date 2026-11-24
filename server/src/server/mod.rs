@@ -127,6 +127,8 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let chain_rate_limiter = web::Data::new(rate_limit::ChainRateLimiter::with_trust(
         CONFIG.trust_proxy_headers,
     ));
+    // Only an `aztec-votes` instance has the enrollment relay; without it the route is a 404.
+    let enroll_service = routes::EnrollService::from_config(&CONFIG)?.map(web::Data::new);
     let server = HttpServer::new(move || {
         let cors = Cors::default()
             .allow_any_origin()
@@ -142,6 +144,11 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             .app_data(web::Data::from(availability.clone()))
             .app_data(rate_limiter.clone())
             .app_data(chain_rate_limiter.clone())
+            .configure(|config| {
+                if let Some(service) = &enroll_service {
+                    config.app_data(service.clone());
+                }
+            })
             .configure(routes::setup_routes)
     })
     .bind(&bind_addr)?;

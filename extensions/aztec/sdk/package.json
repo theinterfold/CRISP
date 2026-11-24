@@ -15,6 +15,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./passport": {
+      "types": "./dist/passport.d.ts",
+      "import": "./dist/passport.js",
+      "default": "./dist/passport.js"
     }
   },
   "scripts": {
@@ -22,7 +27,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest --run",
     "base-vk-hashes": "node scripts/base-vk-hashes.mjs",
-    "codegen": "aztec codegen ../contracts/target/crisp_aztec-CrispAztec.json -o src/bindings -f"
+    "codegen": "aztec codegen ../contracts/target/crisp_aztec-CrispAztec.json -o src/bindings -f",
+    "codegen:votes": "aztec codegen ../contracts/target/crisp_aztec_votes-CrispAztecVotes.json -o src/bindings -f"
   },
   "dependencies": {
     "@aztec-foundation/bb.js": "6.0.0",

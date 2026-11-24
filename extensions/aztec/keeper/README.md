@@ -12,6 +12,13 @@ L1 account with gas and an Aztec node (Aztec fees are paid by the SponsoredFPC).
 | `closeRound` | the input window has ended on Aztec, the round is not closed | `close_round`, which sends the root to the Outbox |
 | `submitRoot` | the round is closed, L1 has no root                          | L1 `submitInputRoot` with the Outbox witness      |
 
+With `CRISP_AZTEC_KIND=votes` (default `zkpassport`) the keeper serves `CRISPAztecVotesProgram` and `crisp_aztec_votes`: `openRound`
+consumes the 6-word ROUND message, and one more step runs:
+
+| Step     | When                                                                                   | Effect                                                       |
+| -------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `enroll` | an L1 `Enrolled` event of an open round has no matching slot in Aztec's census, window open | consumes each pending ENROLL message (`enroll`), permissionless |
+
 State is never kept on disk: every pass re-reads L1 and the Aztec logs, so a restart or a second keeper repeats nothing. A failed
 step is retried on the next pass.
 
@@ -28,8 +35,8 @@ CRISP_AZTEC_CONTRACT=0x… \
 pnpm -C extensions/aztec/keeper start
 ```
 
-`CRISP_AZTEC_PROGRAM` is `CRISPAztecProgram` on L1 and `CRISP_AZTEC_CONTRACT` is `crisp_aztec` on
-Aztec. `KEEPER_START_BLOCK` (default `0`) is the first L1 block to look for rounds in: set it to the
+`CRISP_AZTEC_PROGRAM` is `CRISPAztecProgram` (`CRISPAztecVotesProgram` for `CRISP_AZTEC_KIND=votes`) on L1 and `CRISP_AZTEC_CONTRACT`
+is `crisp_aztec` (`crisp_aztec_votes`) on Aztec. `KEEPER_START_BLOCK` (default `0`) is the first L1 block to look for rounds in: set it to the
 program's deployment block on a public network. `KEEPER_POLL_INTERVAL_MS` defaults to `10000`.
 
 ## Things that are not obvious

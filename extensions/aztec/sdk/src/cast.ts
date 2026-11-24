@@ -4,16 +4,14 @@
 // without even the implied warranty of MERCHANTABILITY
 // or FITNESS FOR A PARTICULAR PURPOSE.
 
-import { CrispSDK, getZeroVote, type ProofOptions, type Vote } from '@crisp-e3/sdk'
+import { CrispSDK, getZeroVote, prepareBallot, type ProofOptions, type SlotHead, type Vote } from '@crisp-e3/sdk'
 import { bytesToHex, hexToBytes, keccak256, recoverAddress, type Address, type Hex } from 'viem'
 
-import { availabilityDigest, ballotDigest, inputId } from './ballot'
+import { availabilityDigest, ballotDigest, ballotTypedData, inputId, type TypedDataSigner } from './ballot'
 import type { Census } from './census'
 import { stageInput, type InputAttestation } from './server'
-import { buildStagingPass } from './staging-pass'
-
-/** What a voter signs: the EIP-712 ballot digest, raw (no EIP-191 prefix), with the key of the slot address. */
-export type DigestSigner = (digest: Hex) => Promise<Hex>
+import { buildStagingPass, type DigestSigner, type StagingPass } from './staging-pass'
+import { buildVotesStagingPass, stageWithNextPass } from './votes-staging'
 
 export type BuildCastInputs = {
   serverUrl: string
@@ -35,19 +33,35 @@ export type BuildCastInputs = {
   /** The availability signer the server is configured with; an attestation by anyone else is refused. */
   availabilitySigner: Address
   /** Omit for a mask: a mask carries no signature and is indistinguishable from a vote on chain. */
-  ballot?: { vote: Vote; sign: DigestSigner }
+  ballot?: { vote: Vote; sign: TypedDataSigner }
   /**
-   * The staging pass of this request (`staging-pass.ts`): signed by the voter's OWN registered slot key, for a vote and a mask
-   * alike, so the server cannot tell them apart. For a vote that is the ballot's signer; for a mask `slot` is the masked
-   * slot and this is the masker's.
+   * The staging pass of this request, made by the voter's OWN slot for a vote and a mask alike, so the server cannot tell them
+   * apart (for a mask `slot` is the masked slot and this is the masker's). ZKPassport rounds sign the request digest with the
+   * slot key (`staging-pass.ts`); votes rounds prove the slot's bound staging secret (`votes-staging.ts`).
    */
-  staging: {
-    signer: DigestSigner
-    /** The server's `staging_max_requests`. */
-    maxRequests: number
-    /** The next unused pass counter of the signer's key in this round (`BuildStagingPassInputs.counter`). */
-    counter: number
-  }
+  staging:
+    | {
+        signer: DigestSigner
+        /** The server's `staging_max_requests`. */
+        maxRequests: number
+        /** The next unused pass counter of the signer's key in this round (`BuildStagingPassInputs.counter`). */
+        counter: number
+      }
+    | {
+        /** The slot's staging secret and the round's staging tree (`CrispAztecVotes.stagingKey`). */
+        secret: bigint
+        stagingTree: Census
+        maxRequests: number
+        /** The first pass counter to try. A pass the server already holds moves on to the next one (`stagingCounter`). */
+        counter: number
+      }
+  /**
+   * The head of `slot`'s chain of inputs, which this input must name as its parent or the tally drops it (`resolveSlotHead`).
+   * Omitted, the server's previous-ciphertext is used, which on Aztec lags by the ~1-2 h an epoch takes to be proven.
+   */
+  head?: SlotHead
+  /** Votes rounds: called each time staging waits for the server to read a staging key that was bound a moment ago. */
+  onStagingWait?: () => void
   onProgress?: ProofOptions['onProgress']
 }
 
@@ -78,6 +92,8 @@ export type CastArguments = {
   /** The ciphertext, staged with the server; kept for the caller's own bookkeeping. */
   encryptedVote: Uint8Array
   attestation: InputAttestation
+  /** The pass counter that staged the ciphertext. The next pass of the same key starts after it. */
+  stagingCounter: number
 }
 
 // Public inputs of the crisp ballot proof, in the order the circuit declares them (the first eight are the fold's too).
@@ -96,9 +112,8 @@ export const buildCast = async (inputs: BuildCastInputs): Promise<CastArguments>
   const { serverUrl, program, l1ChainId, e3Id, slot, census } = inputs
   const crisp = new CrispSDK(serverUrl)
 
-  const prepared = await crisp.prepareBallot({
+  const prepareRequest = {
     censusMode: 'merkle',
-    e3Id,
     slotAddress: slot,
     publicKey: inputs.committeePublicKey,
     merkleLeaves: census.leaves,
@@ -106,10 +121,16 @@ export const buildCast = async (inputs: BuildCastInputs): Promise<CastArguments>
     numOptions: inputs.numOptions,
     isMaskVote: !inputs.ballot,
     vote: inputs.ballot?.vote ?? getZeroVote(inputs.numOptions),
-  })
+  } as const
+  // With a head the ballot is prepared against it directly; without one the server names it (`CrispSDK.prepareBallot`). The two
+  // halves of a head only mean something together, so they are passed as a pair or not at all.
+  const prepared = inputs.head
+    ? await prepareBallot({ ...prepareRequest, previousCiphertext: inputs.head.ciphertext, previousIndex: inputs.head.index })
+    : await crisp.prepareBallot({ ...prepareRequest, e3Id })
 
-  const digest = ballotDigest({ l1ChainId, program, e3Id, slot, ciphertextCommitment: prepared.ctCommitment })
-  const signature = inputs.ballot ? await inputs.ballot.sign(digest) : undefined
+  const ballotRequest = { l1ChainId, program, e3Id, slot, ciphertextCommitment: prepared.ctCommitment }
+  const digest = ballotDigest(ballotRequest)
+  const signature = inputs.ballot ? await inputs.ballot.sign(ballotTypedData(ballotRequest)) : undefined
   const result = await crisp.finishBallotBase(prepared, digest, signature, { onProgress: inputs.onProgress })
 
   const pi = result.crisp.publicInputs.map((value) => BigInt(value))
@@ -130,13 +151,18 @@ export const buildCast = async (inputs: BuildCastInputs): Promise<CastArguments>
     ciphertextCommitment: prepared.ctCommitment,
     parentIndexPlusOne: result.parentIndexPlusOne,
   }
-  const stagingPass = await buildStagingPass({
-    ...inputs.staging,
-    census,
-    credits: inputs.credits,
-    request: { l1ChainId, program, ...staged },
-  })
-  const attestation = await stageInput(serverUrl, { ...staged, stagingPass })
+  const request = { l1ChainId, program, ...staged }
+  const stage = (stagingPass: StagingPass) => stageInput(serverUrl, { ...staged, stagingPass })
+  const { staging } = inputs
+  const { attestation, counter: stagingCounter } =
+    'secret' in staging
+      ? await stageWithNextPass({
+          ...staging,
+          prove: (counter) => buildVotesStagingPass({ ...staging, counter, request }),
+          stage,
+          onWait: inputs.onStagingWait,
+        })
+      : { attestation: await stage(await buildStagingPass({ ...staging, census, credits: inputs.credits, request })), counter: staging.counter }
 
   const id = inputId({
     program,
@@ -174,6 +200,7 @@ export const buildCast = async (inputs: BuildCastInputs): Promise<CastArguments>
     signature: attestation.signature,
     encryptedVote: result.encryptedVote,
     attestation,
+    stagingCounter,
   }
 }
 

@@ -4,7 +4,6 @@
 // without even the implied warranty of MERCHANTABILITY
 // or FITNESS FOR A PARTICULAR PURPOSE.
 
-import { ProofType, getCountryParameterCommitment } from '@zkpassport/utils'
 import { decodeAbiParameters, encodeAbiParameters, parseAbiParameters, type Hex } from 'viem'
 
 import { SNARK_SCALAR_FIELD } from './constants'
@@ -50,23 +49,6 @@ export const assertCountries = (countries: readonly string[]): void => {
   if (countries.length === 0 || countries.length > MAX_COUNTRIES) throw new Error(`A nationality rule lists 1 to ${MAX_COUNTRIES} countries`)
   for (const country of countries)
     if (!COUNTRY.test(country)) throw new Error(`"${country}" is not an ICAO alpha-3 country code (three letters A-Z, e.g. DEU)`)
-}
-
-/**
- * ZKPassport's Poseidon2 parameter commitment of a nationality list: what the proof of a `nationality in` (mode 1) or
- * `nationality not in` (mode 2) request commits to, and what `open_round` stores. An inclusion list
- * keeps the order given, an exclusion list is sorted the way ZKPassport sorts it, so any order works for mode 2.
- */
-export const nationalityCommitment = async (mode: typeof NATIONALITY_MODE.IN | typeof NATIONALITY_MODE.OUT, countries: readonly string[]): Promise<bigint> => {
-  assertCountries(countries)
-  const exclusion = mode === NATIONALITY_MODE.OUT
-  const commitment = await getCountryParameterCommitment(
-    exclusion ? ProofType.NATIONALITY_EXCLUSION : ProofType.NATIONALITY_INCLUSION,
-    [...countries] as Parameters<typeof getCountryParameterCommitment>[1],
-    exclusion,
-  )
-
-  return commitment
 }
 
 /** Check the rules like `CRISPRemoteProgram.validate` does, so a poll the program would refuse is never requested. */

@@ -14,6 +14,18 @@ const E3_ID = e3IdOf(INTERFOLD, 7n)
 const decodeLog = (fields: bigint[]) => decode(fields, INTERFOLD)
 
 describe('decodeLog', () => {
+  it('decodes STAGING_KEY_BOUND with its slot', () => {
+    expect(decodeLog([6n, 7n, 2n, 0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266n, 11n, 12n])).toEqual({
+      kind: 'StagingKeyBound',
+      e3Id: E3_ID,
+      roundId: 7n,
+      index: 2,
+      slot: '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266',
+      commitment: 11n,
+      root: 12n,
+    })
+  })
+
   it('decodes INPUT_COMMITTED and rebuilds the vote hash from its u128 halves', () => {
     const hi = 0x0102030405060708090a0b0c0d0e0f10n
     const lo = 0x1112131415161718191a1b1c1d1e1f20n

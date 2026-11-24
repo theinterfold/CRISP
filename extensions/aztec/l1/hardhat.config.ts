@@ -39,6 +39,8 @@ const config: HardhatUserConfig = {
       type: 'http',
       url: process.env.RPC_URL ?? 'https://ethereum-sepolia-rpc.publicnode.com',
       chainType: 'l1',
+      // Sepolia's base fee is a few wei, but ethers falls back to a 1 gwei tip; a fixed price in wei keeps a deploy affordable.
+      ...(process.env.SEPOLIA_GAS_PRICE ? { gasPrice: BigInt(process.env.SEPOLIA_GAS_PRICE) } : {}),
     },
   },
   paths: {

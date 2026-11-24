@@ -7,14 +7,15 @@
 //! Reads the inputs of CRISP rounds from the `CrispAztec` contract through an Aztec node.
 //!
 //! The node exposes public logs only by tag (`node_getPublicLogsByTags`), and indexes a log by its
-//! first field. `CrispAztec` emits `INPUT_COMMITTED` with the field `1` first, so one tag query
-//! lists every input of the contract in the order the L2 accepted them.
+//! first field. `CrispAztec` (and `CrispAztecVotes`, whose logs are identical) emits
+//! `INPUT_COMMITTED` with the field `1` first, so one tag query lists every input of the contract
+//! in the order the L2 accepted them.
 
 mod log;
 
 pub use log::{
     e3_id_of, round_id_of, InputCommitted, MemberRegistered, INPUT_COMMITTED_TAG,
-    MEMBER_REGISTERED_TAG,
+    MEMBER_REGISTERED_TAG, STAGING_KEY_BOUND_TAG,
 };
 
 use alloy::primitives::{Address, B256, U256};
@@ -128,6 +129,8 @@ pub struct AztecInputSource {
     interfold: Address,
     /// The first L2 block that can hold a log of the contract. Rounds start from it.
     start_block: Option<u64>,
+    /// The tag of the log a staging pass takes its roots from.
+    root_tag: u64,
 }
 
 impl AztecInputSource {
@@ -142,7 +145,15 @@ impl AztecInputSource {
             contract: contract.to_string(),
             interfold,
             start_block,
+            root_tag: MEMBER_REGISTERED_TAG,
         }
+    }
+
+    /// Take the roots from the `STAGING_KEY_BOUND` logs of `CrispAztecVotes`: a pass proves
+    /// membership of a bound staging key, and the census is not in it.
+    pub fn with_staging_roots(mut self) -> Self {
+        self.root_tag = STAGING_KEY_BOUND_TAG;
+        self
     }
 }
 
@@ -275,11 +286,11 @@ impl RemoteInputSource for AztecInputSource {
         } else {
             None
         };
-        let logs = self.logs(MEMBER_REGISTERED_TAG, after, to_block).await?;
+        let logs = self.logs(self.root_tag, after, to_block).await?;
 
         let mut roots = Vec::new();
         for (_, fields) in &logs {
-            let member = MemberRegistered::decode(fields)?;
+            let member = MemberRegistered::decode(fields, self.root_tag)?;
             if e3_id_of(self.interfold, member.round_id) == e3_id {
                 roots.push(member.census_root);
             }

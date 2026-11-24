@@ -400,3 +400,27 @@ async fn a_member_log_of_another_shape_stops_the_census_read() {
         .await
         .is_err());
 }
+
+/// `CrispAztecVotes` staging roots come from `STAGING_KEY_BOUND` logs, which share the layout of
+/// `MEMBER_REGISTERED`.
+#[tokio::test]
+async fn staging_roots_are_read_under_the_staging_key_bound_tag() {
+    let bound = |round, root| {
+        let mut log = member_log(round, 0, root, (12, 0, 0));
+        log["logData"][0] = field(U256::from(STAGING_KEY_BOUND_TAG));
+        log
+    };
+    let (node, requests) = node(vec![answer(vec![bound(7, 0x91), bound(8, 0x92)])]).await;
+
+    let page = source(node, None)
+        .with_staging_roots()
+        .census_roots(e3(7), None, false)
+        .await
+        .unwrap();
+
+    assert_eq!(page.roots, [U256::from(0x91)]);
+    assert_eq!(
+        requests.lock().unwrap()[0]["params"][0]["tags"],
+        json!([format!("{:#066x}", STAGING_KEY_BOUND_TAG)])
+    );
+}
