@@ -26,7 +26,7 @@ interface PackageJson {
 const NOIR_JS = '@noir-lang/noir_js'
 
 /** The packages this script versions and publishes, in workspace order. */
-const PACKAGE_DIRS = ['packages/crisp-sdk', 'packages/crisp-contracts', 'packages/crisp-zk-inputs']
+const PACKAGE_DIRS = ['packages/crisp-sdk', 'packages/crisp-contracts', 'packages/crisp-zk-inputs', 'extensions/aztec/sdk']
 
 /**
  * Release channels, split by BFV preset.
@@ -175,7 +175,7 @@ class CRISPPublisher {
       // In dry-run mode, just show what would happen
       if (this.options.dryRun) {
         const channel = CHANNELS[this.channel]
-        const packages = ['@crisp-e3/sdk', '@crisp-e3/contracts', '@crisp-e3/zk-inputs']
+        const packages = ['@crisp-e3/sdk', '@crisp-e3/contracts', '@crisp-e3/zk-inputs', '@crisp-e3/aztec']
 
         const steps: string[][] = [
           ['Update package versions in:', ...packages],
@@ -288,6 +288,7 @@ class CRISPPublisher {
       console.log('   npm install @crisp-e3/sdk@' + this.newVersion)
       console.log('   npm install @crisp-e3/contracts@' + this.newVersion)
       console.log('   npm install @crisp-e3/zk-inputs@' + this.newVersion)
+      console.log('   npm install @crisp-e3/aztec@' + this.newVersion)
     } catch (error) {
       console.error('❌ Error during publish:', error)
       process.exit(1)
@@ -304,6 +305,9 @@ class CRISPPublisher {
       { path: 'packages/crisp-sdk', name: '@crisp-e3/sdk' },
       { path: 'packages/crisp-contracts', name: '@crisp-e3/contracts' },
       { path: 'packages/crisp-zk-inputs', name: '@crisp-e3/zk-inputs' },
+      // After the SDK: it resolves `@crisp-e3/sdk` through that package's `dist`. Its build inlines
+      // the compiled Aztec contracts (`extensions/aztec/contracts/target`), which git does not track.
+      { path: 'extensions/aztec/sdk', name: '@crisp-e3/aztec' },
     ]
 
     for (const pkg of packagesToBuild) {
@@ -348,15 +352,17 @@ class CRISPPublisher {
   private async publishPackages(): Promise<void> {
     console.log('\n📤 Publishing packages to npm...')
 
-    // Dependency order. `@crisp-e3/sdk` depends on `@crisp-e3/zk-inputs`, and pnpm rewrites that
-    // workspace dependency to a concrete version at pack time. npm does not check at publish time
-    // that the named version exists, so every package publishes first and the registry wait runs
-    // once for all of them. npm then processes the uploads in parallel instead of one after the
-    // other. updateClientLockFile() installs from the registry right after this.
+    // Dependency order. `@crisp-e3/sdk` depends on `@crisp-e3/zk-inputs`, and `@crisp-e3/aztec` on
+    // `@crisp-e3/sdk`. pnpm rewrites those workspace dependencies to a concrete version at pack
+    // time. npm does not check at publish time that the named version exists, so every package
+    // publishes first and the registry wait runs once for all of them. npm then processes the
+    // uploads in parallel instead of one after the other. updateClientLockFile() installs from the
+    // registry right after this.
     const packagesToPublish = [
       { path: 'packages/crisp-zk-inputs', name: '@crisp-e3/zk-inputs' },
       { path: 'packages/crisp-sdk', name: '@crisp-e3/sdk' },
       { path: 'packages/crisp-contracts', name: '@crisp-e3/contracts' },
+      { path: 'extensions/aztec/sdk', name: '@crisp-e3/aztec' },
     ]
 
     const tag = this.options.tag || CHANNELS[this.channel].tag
@@ -469,6 +475,7 @@ class CRISPPublisher {
           'packages/crisp-sdk/package.json',
           'packages/crisp-contracts/package.json',
           'packages/crisp-zk-inputs/package.json',
+          'extensions/aztec/sdk/package.json',
           'client/package.json',
           'client/pnpm-lock.yaml',
           'pnpm-lock.yaml',
@@ -482,6 +489,7 @@ class CRISPPublisher {
 - Updated @crisp-e3/sdk to ${this.newVersion}
 - Updated @crisp-e3/contracts to ${this.newVersion}
 - Updated @crisp-e3/zk-inputs to ${this.newVersion}
+- Updated @crisp-e3/aztec to ${this.newVersion}
 - Published to npm`
 
       // Commit changes
@@ -834,7 +842,7 @@ Examples:
 
 The script will:
   1. Check for uncommitted changes
-  2. Update versions in @crisp-e3/sdk, @crisp-e3/contracts, @crisp-e3/zk-inputs
+  2. Update versions in @crisp-e3/sdk, @crisp-e3/contracts, @crisp-e3/zk-inputs, @crisp-e3/aztec
   2b. Build the SDK against the channel's preset set
   3. Update @crisp-e3/sdk dependency and the @noir-lang/noir_js override in client/package.json
                                                                (prod only)

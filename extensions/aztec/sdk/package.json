@@ -1,12 +1,16 @@
 {
   "name": "@crisp-e3/aztec",
   "version": "0.28.1",
-  "private": true,
   "type": "module",
   "description": "Client for CRISP rounds that collect ballots on Aztec: voter flows, keeper operations and L1 helpers",
   "license": "LGPL-3.0-only",
+  "author": {
+    "name": "gnosisguild",
+    "url": "https://github.com/gnosisguild"
+  },
   "files": [
-    "dist"
+    "dist",
+    "!dist/*.map"
   ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -28,7 +32,12 @@
     "test": "vitest --run",
     "base-vk-hashes": "node scripts/base-vk-hashes.mjs",
     "codegen": "aztec codegen ../contracts/target/crisp_aztec-CrispAztec.json -o src/bindings -f",
-    "codegen:votes": "aztec codegen ../contracts/target/crisp_aztec_votes-CrispAztecVotes.json -o src/bindings -f"
+    "codegen:votes": "aztec codegen ../contracts/target/crisp_aztec_votes-CrispAztecVotes.json -o src/bindings -f",
+    "check:dist": "node scripts/check-dist.mjs",
+    "prepublishOnly": "pnpm check:dist"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
     "@aztec-foundation/bb.js": "6.0.0",
