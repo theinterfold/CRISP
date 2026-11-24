@@ -233,12 +233,15 @@ and `ALLOW_SEPOLIA_MOCK_DATA_AVAILABILITY=true`, and point the ciphernodes at th
 directory, built with Noir `v1.0.0-rc.3` and bb `6.0.0`.
 
 Those nodes read every E3 output from this server, so another E3 program on the same mock must
-have its output here too. With `EXTERNAL_OUTPUTS_MAX_BYTES` set, its server uploads the output
-after `publishCiphertextOutput` with `PUT /availability/objects/<keccak256>?e3_id=<id>` and the raw
-bytes as the body. The CRISP server stores only the hash that Interfold holds as the output of an
-E3 in `CiphertextReady`, before its decryption deadline, so the route needs no credentials. It
-drops each output after that deadline. Nodes retry a missing output, so an upload after the
-publication is in time.
+have its output here too. The receiving server sets `EXTERNAL_OUTPUTS_MAX_BYTES`; the server of the
+other program sets `EXTERNAL_OUTPUT_UPLOAD_URL` to this server's `/availability` route. Once Interfold
+references the output (`publishCiphertextOutput`), that server sends it with
+`PUT /availability/objects/<keccak256>?e3_id=<id>` and the raw bytes as the body. It repeats the
+upload after a restart and retries a transient failure with a growing delay until the decryption
+deadline; a final refusal is logged as an error and not retried. The CRISP server stores only the
+hash that Interfold holds as the output of an E3 in `CiphertextReady`, before its decryption
+deadline, so the route needs no credentials. It drops each output after that deadline. Nodes retry
+a missing output, so an upload after the publication is in time.
 
 Before starting the CRISP server with Avail:
 

@@ -40,8 +40,10 @@ use std::{
 use tokio::{sync::Semaphore, task::JoinSet};
 use tracing::{info, warn};
 
+mod output_upload;
 mod remote_input;
 mod staging_pass;
+use output_upload::{OutputUploader, UploadRetries};
 pub use remote_input::RemoteInputRequest;
 use remote_input::RemoteInputs;
 
@@ -779,6 +781,13 @@ pub struct AvailabilityService {
     external_outputs_lock: Arc<Mutex<()>>,
     /// Zero turns `store_external_output` off.
     external_outputs_max_bytes: u64,
+    /// The route that this server uploads its own aggregate ciphertexts to
+    /// (`EXTERNAL_OUTPUT_UPLOAD_URL`). `None` uploads nothing.
+    output_uploader: Option<OutputUploader>,
+    /// One entry for each output job whose upload is over, keyed by job ID. Every `Submitted`
+    /// output job without one still owes an upload (`drive_output_uploads`).
+    output_uploads: Tree,
+    output_upload_retries: Arc<Mutex<UploadRetries>>,
 }
 
 struct ActiveJobGuard<'a> {
@@ -857,6 +866,14 @@ impl AvailabilityService {
                 } else {
                     0
                 },
+                output_uploader: config
+                    .external_output_upload_url
+                    .as_deref()
+                    .filter(|_| config.data_availability_mode() == "mock")
+                    .map(OutputUploader::new)
+                    .transpose()?,
+                output_uploads: db.open_tree("data-availability-output-uploads")?,
+                output_upload_retries: Arc::default(),
             };
         service.validate_storage()?;
         Ok(service)
@@ -1634,15 +1651,19 @@ impl AvailabilityService {
             // Keep one bounded batch alive. An unbounded fan-out turns a backlog that any client
             // can stage into a memory and RPC spike, and queues the request-path steps of new
             // inputs behind every pending job on the FIFO `job_slots` semaphore.
-            let mut tasks = JoinSet::new();
-            for id in self.pending_ids() {
-                while tasks.len() >= MAX_CONCURRENT_JOB_STEPS {
-                    tasks.join_next().await;
+            let drive_jobs = async {
+                let mut tasks = JoinSet::new();
+                for id in self.pending_ids() {
+                    while tasks.len() >= MAX_CONCURRENT_JOB_STEPS {
+                        tasks.join_next().await;
+                    }
+                    let service = Arc::clone(&self);
+                    tasks.spawn(async move { service.process(&id).await });
                 }
-                let service = Arc::clone(&self);
-                tasks.spawn(async move { service.process(&id).await });
-            }
-            while tasks.join_next().await.is_some() {}
+                while tasks.join_next().await.is_some() {}
+            };
+            // Uploads run beside the jobs, so a receiver that answers slowly delays no job.
+            tokio::join!(drive_jobs, self.drive_output_uploads());
             tokio::time::sleep(JOB_POLL_INTERVAL).await;
         }
     }
@@ -2765,6 +2786,9 @@ mod tests {
             external_outputs: db.open_tree("external-outputs").unwrap(),
             external_outputs_lock: Arc::default(),
             external_outputs_max_bytes: 0,
+            output_uploader: None,
+            output_uploads: db.open_tree("output-uploads").unwrap(),
+            output_upload_retries: Arc::default(),
         }
     }
 

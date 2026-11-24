@@ -1,9 +1,5 @@
-pub mod ballot;
-pub mod constants;
-pub mod hashing;
 pub mod identity;
-pub mod nodes;
-pub mod tree;
+pub mod messages;
 mod tests;
 pub mod types;
 
@@ -14,19 +10,23 @@ use aztec::macros::aztec;
 #[aztec]
 pub contract CrispAztec {
     use crate::{
+        identity::{assert_registration_shape, service_config},
+        messages::round_content,
+        types::{Config, RoundConfig},
+    };
+    use crisp_aztec_lib::{
         ballot::{crisp_public_inputs, CT0_PUBLIC_INPUTS, CT1_PUBLIC_INPUTS},
         constants::{
             LOG_INPUT_COMMITTED, LOG_KEY_PUBLISHED, LOG_MEMBER_REGISTERED, LOG_ROUND_CLOSED, LOG_ROUND_OPENED,
             MAX_LEAVES, NATIONALITY_NONE, NATIONALITY_OUT,
         },
         hashing::{
-            availability_digest, ballot_digest, from_halves, full_e3_id, input_id, input_leaf, key_content,
-            round_content, root_content, to_halves, bytes_to_field,
+            availability_digest, ballot_digest, bytes_to_field, from_halves, full_e3_id, input_id, input_leaf,
+            key_content, root_content, to_halves,
         },
-        identity::{assert_registration_shape, service_config},
         nodes::PublicNodes,
         tree::{ceil_log2, lazy_insert, lazy_root, lean_insert},
-        types::{Config, InputEntry, RoundConfig},
+        types::InputEntry,
     };
     use aztec::{
         macros::{functions::{external, initializer, only_self}, storage::storage},

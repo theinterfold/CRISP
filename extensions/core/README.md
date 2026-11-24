@@ -11,20 +11,22 @@ always reverts.
 
 | Hook                                                         | Contract                                                                                                                                         |
 | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `_sendToRemote(e3Id, message) returns (content)`             | Deliver one of the `CRISPRemoteMessages` layouts to the remote CRISP contract. Called inside `validate` (ROUND) and `publishCommitteeKey` (KEY). |
+| `_initRound(e3Id, e3, plaintextModulus, customParams) returns (message, numOptions, inputLimit)` | Decode and validate the request's custom parameters, emit any adapter event, and build the ROUND message (the layout is the adapter's) with the round's option count and input limit. Called once from `validate`, after the base's checks and the input-timing check. |
+| `_sendToRemote(e3Id, message) returns (content)`             | Deliver one of the messages to the remote CRISP contract. Called inside `validate` (ROUND) and `publishCommitteeKey` (KEY). |
 | `scopeOf(e3Id)`                                              | The string a voter's identity proof is bound to. Unique per program, chain and round.                                                            |
 | an entry point calling `_acceptInputRoot(e3Id, root, count)` | Authenticate the ROOT message through the L2's own bridge first. Everything the base needs is the root and the count.                            |
 
 `CRISPAztecProgram` (`extensions/aztec/l1`) is the reference implementation. A new L2 adds a sibling under `extensions/<l2>/`,
-imports `@crisp-e3/extension-core/contracts/CRISPRemoteProgram.sol`, and implements the three hooks.
+imports `@crisp-e3/extension-core/contracts/CRISPRemoteProgram.sol`, and implements the hooks above, with its own custom parameters
+and ROUND layout if its round rules differ.
 
-## Round rules
+## Round rules (Aztec adapter)
 
 A round's custom parameters are `abi.encode(numOptions, credits, minAge, allowMockDocuments, nationalityMode, countries,
 nationalityCommitment)` (see `aztec/README.md`). With a nationality rule the L2 checks ZKPassport's Poseidon2 commitment of the country
 list, which L1 cannot recompute: `nationalityCommitment` must be a non-zero field element (0 without a rule), and a wrong one only
-makes the poll unregistrable, so apps recompute it from `RoundRules` and refuse a mismatch. `validate` emits `RoundRules(...)`, the
-one place a client reads the list a round was created with.
+makes the poll unregistrable, so apps recompute it from `RoundRules` and refuse a mismatch. `CRISPAztecProgram._initRound` emits
+`RoundRules(...)`, the one place a client reads the list a round was created with.
 
 ## Invariants every adapter inherits
 
@@ -37,9 +39,9 @@ one place a client reads the list a round was created with.
   hashes per transaction.
 - **A root is accepted once, while the E3 is in `KeyPublished`, and never zero.** `verify` rejects a compute proof whose
   `inputRoot` is not the delivered root.
-- **Message layouts are a protocol.** `CRISPRemoteMessages` fixes them as 32-byte ABI words with the message kind first (ROUND has
-  12 words). The L2 contract and every off-chain encoder copy them by hand; a change is a cross-component change. The Aztec byte
-  vectors live in `extensions/aztec/l1/tests/fixtures/message-vectors.json`.
+- **Message layouts are a protocol.** `CRISPRemoteMessages` fixes them as 32-byte ABI words with the message kind first. KEY and
+  ROOT are shared; ROUND is the adapter's (12 words on the Aztec poll). The L2 contract and every off-chain encoder copy them by
+  hand; a change is a cross-component change. The Aztec byte vectors live in `extensions/aztec/l1/tests/fixtures/message-vectors.json`.
 - **`minVotingDuration` of zero turns off the timing checks** (local networks only).
 - **`remoteFinalityWindow` guards the compute deadline.** Interfold's compute deadline counts from the end of the input window, but
   the remote root only becomes deliverable after the L2 closes the round and settles. `validate` reverts `ComputeWindowTooShort` if
@@ -58,3 +60,16 @@ address, so tags are unlinkable to slots as long as the key stays unpublished. T
 loads it) and `compiled/staging_pass.vk` (the server loads it; the Docker image ships it) for bb 6.0.0's default `evm` target. Both
 are checked in: **rerun the script whenever `circuits/lib` or the circuit changes, or the server rejects every pass.** `nargo test`
 in the circuit directory runs its tests.
+
+### Votes staging pass (`circuits/staging_pass_votes`)
+
+The `aztec-votes` kind enrolls governance slots, which are wallet addresses whose public keys are public, so the tag of the pass
+above would let the server link a request to its sender. `circuits/staging_pass_votes` keys the tag by a per-round **staging
+secret** instead (derived from the owner's signature in the Aztec `bind_staging_key`, which inserts the commitment
+`Poseidon2(secret, round_id)` into the round's staging tree). Private: `secret`, the staging-tree path
+(`merkle_proof_length`, `indices[20]`, `siblings[20]`) and `k`. Public, in order: `staging_root`, `round_id`, `request_digest_hi`,
+`request_digest_lo`, `max_requests`, `tag`. It proves the commitment is in `staging_root` (`crisp_lib`'s LeanIMT path), `k <
+max_requests` and `tag = Poseidon3(secret, round_id, k)`; the digest halves (128-bit limbs) are only bound as public inputs, the
+proof signs nothing. `build.sh` writes `compiled/staging_pass_votes.json` and `compiled/staging_pass_votes.vk` the same way (same
+`nargo`, bb 6.0.0 `evm` target); rerun it whenever `circuits/lib` or the circuit changes. The server loads the key through
+`STAGING_PASS_VK_PATH` when `PROGRAM_KIND=aztec-votes`.

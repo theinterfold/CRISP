@@ -7,7 +7,9 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
+import { pad, toHex } from 'viem'
 import {
+  encodeVotesRoundMessage,
   encodeKeyMessage,
   encodeRootMessage,
   encodeRoundMessage,
@@ -86,5 +88,14 @@ describe('L1 message vectors', () => {
   it('uses the secret hash of secret 0 that the L1 program sends with every message', async () => {
     expect(SECRET_HASH).toBe(vectors.secretHash.value)
     expect((await computeSecretHash(Fr.ZERO)).toString()).toBe(SECRET_HASH)
+  })
+})
+
+describe('votes messages', () => {
+  it('encodes the 6-word ROUND message like CRISPAztecVotesMessages.round', () => {
+    const word = (value: number): string => pad(toHex(value), { size: 32 }).slice(2)
+    expect(encodeVotesRoundMessage({ roundId: 7n, numOptions: 3n, inputStart: 1000n, inputEnd: 2000n, inputLimit: 500n })).toBe(
+      `0x${[1, 7, 3, 1000, 2000, 500].map(word).join('')}`,
+    )
   })
 })

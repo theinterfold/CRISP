@@ -46,7 +46,7 @@ async function recordedContract(ethers: any, chain: string, names: string[], wha
 }
 
 /**
- * Deploys `CRISPAztecProgram` next to an existing Interfold + CRISP stack and registers it with Interfold.
+ * Deploys `CRISPAztecProgram` (or, with `CRISP_AZTEC_KIND=votes`, `CRISPAztecVotesProgram`) next to an existing Interfold + CRISP stack and registers it with Interfold.
  *
  * Environment (all optional unless stated):
  * - `OPENVM_RECEIPT_VERIFIER`, `DATA_AVAILABILITY_VERIFIER`, `INTERFOLD_ADDRESS`: override the CRISP deploy record.
@@ -54,7 +54,8 @@ async function recordedContract(ethers: any, chain: string, names: string[], wha
  * - `MIN_VOTING_DURATION`: seconds; 0 disables the timing checks (local network only). Default: 0 on localhost, 3600 on Sepolia.
  * - `CRISP_REMOTE_FINALITY_WINDOW`: seconds Interfold's compute window must cover for the Aztec round to close and settle
  *   (`validate` reverts below it); 0 disables the check. Default: 0 on localhost, 10800 on Sepolia.
- * - `CRISP_AZTEC_L2_ADDRESS`: Aztec address of the deployed `crisp_aztec` contract; set once on the program.
+ * - `CRISP_AZTEC_KIND`: `zkpassport` (default, `CRISPAztecProgram`) or `votes` (`CRISPAztecVotesProgram`, token-weighted).
+ * - `CRISP_AZTEC_L2_ADDRESS`: Aztec address of the deployed `crisp_aztec` (or `crisp_aztec_votes`) contract; set once on the program.
  * - `CRISP_INITIAL_OWNER`: owner of the program (default: deployer). Required on Sepolia when governance owns Interfold.
  * - `REDEPLOY=true`: deploy a new program even if one is recorded for this network.
  *
@@ -105,14 +106,18 @@ export async function deploy(): Promise<void> {
 
   const receiptVerifier = new ethers.Contract(verifier, ['function imageId() view returns (bytes32)'], deployer)
 
-  const recorded = readDeployment(chain, 'CRISPAztecProgram')
+  const kind = process.env.CRISP_AZTEC_KIND ?? 'zkpassport'
+  if (kind !== 'zkpassport' && kind !== 'votes') throw new Error(`CRISP_AZTEC_KIND must be zkpassport or votes, got ${kind}`)
+  const contractName = kind === 'votes' ? 'CRISPAztecVotesProgram' : 'CRISPAztecProgram'
+
+  const recorded = readDeployment(chain, contractName)
   let programAddress: string
   if (recorded && process.env.REDEPLOY !== 'true' && (await ethers.provider.getCode(recorded.address)) !== '0x') {
     programAddress = recorded.address
-    console.log(`Reusing CRISPAztecProgram ${programAddress}`)
+    console.log(`Reusing ${contractName} ${programAddress}`)
   } else {
     const program = await ethers.deployContract(
-      'CRISPAztecProgram',
+      contractName,
       [
         initialOwner,
         verifier,
@@ -129,7 +134,7 @@ export async function deploy(): Promise<void> {
     await program.waitForDeployment()
     programAddress = await program.getAddress()
     const receipt = await program.deploymentTransaction()!.wait()
-    storeDeployment(chain, 'CRISPAztecProgram', {
+    storeDeployment(chain, contractName, {
       address: programAddress,
       blockNumber: receipt!.blockNumber,
       constructorArgs: {
@@ -145,7 +150,7 @@ export async function deploy(): Promise<void> {
       },
     })
   }
-  const program = await ethers.getContractAt('CRISPAztecProgram', programAddress, deployer)
+  const program = await ethers.getContractAt(contractName, programAddress, deployer)
 
   // Register with Interfold and bind, as the CRISP deploy does for CRISPProgram. Governance-owned Interfolds
   // (Sepolia, mainnet) need the same two calls from their owner.
@@ -179,9 +184,9 @@ export async function deploy(): Promise<void> {
   }
 
   console.log(`
-      CRISPAztecProgram deployment (${chain}):
+      ${contractName} deployment (${chain}):
       ----------------------------------------------------------------------
-      CRISPAztecProgram: ${programAddress}
+      ${contractName}: ${programAddress}
       Interfold: ${interfoldAddress}
       OpenVM receipt verifier: ${verifier}
       Data availability verifier: ${dataAvailability}

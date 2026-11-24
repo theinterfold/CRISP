@@ -6,14 +6,18 @@
 
 import { getAddress, isHex, type Address, type Hex } from 'viem'
 
+/** Which Aztec program the keeper serves: ZKPassport rounds (`crisp_aztec`) or token-weighted ones (`crisp_aztec_votes`). */
+export type KeeperKind = 'zkpassport' | 'votes'
+
 export type KeeperConfig = {
+  kind: KeeperKind
   aztecNodeUrl: string
   l1RpcUrl: string
   /** Pays the gas of the L1 transactions; holds no other authority. */
   l1PrivateKey: Hex
-  /** `CRISPAztecProgram` on L1. */
+  /** `CRISPAztecProgram` (kind `zkpassport`) or `CRISPAztecVotesProgram` (kind `votes`) on L1. */
   program: Address
-  /** `crisp_aztec` on Aztec. */
+  /** `crisp_aztec` or `crisp_aztec_votes` on Aztec. */
   contract: string
   /** First L1 block to look for rounds in. */
   startBlock: bigint
@@ -36,7 +40,11 @@ export const loadConfig = (env: Record<string, string | undefined>): KeeperConfi
   const pollIntervalMs = Number(env.KEEPER_POLL_INTERVAL_MS ?? 10_000)
   if (!Number.isInteger(pollIntervalMs) || pollIntervalMs <= 0) throw new Error('KEEPER_POLL_INTERVAL_MS must be a positive integer')
 
+  const kind = env.CRISP_AZTEC_KIND?.trim() || 'zkpassport'
+  if (kind !== 'zkpassport' && kind !== 'votes') throw new Error('CRISP_AZTEC_KIND must be zkpassport or votes')
+
   return {
+    kind,
     aztecNodeUrl: required(env, 'AZTEC_NODE_URL'),
     l1RpcUrl: required(env, 'L1_RPC_URL'),
     l1PrivateKey,

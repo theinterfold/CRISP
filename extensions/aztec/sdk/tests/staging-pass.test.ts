@@ -14,7 +14,7 @@ import { concat, getAddress, hexToBytes, pad, type Hex } from 'viem'
 import { privateKeyToAccount, sign } from 'viem/accounts'
 import { afterAll, describe, expect, it } from 'vitest'
 
-import type { Census } from '../src/census'
+import { stagingTreeFromLogs, type Census } from '../src/census'
 import { e3IdOf, roundIdOf } from '../src/messages'
 import {
   buildStagingPass,
@@ -24,6 +24,7 @@ import {
   type StagingPass,
   type StagingRequest,
 } from '../src/staging-pass'
+import { buildVotesStagingPass, destroyVotesStagingPassProver, stagingCommitment, votesStagingTag } from '../src/votes-staging'
 
 // Hardhat's first accounts: the registered slots. The fourth is not registered.
 const KEYS: Hex[] = [
@@ -59,14 +60,15 @@ const request: StagingRequest = {
 const BB = process.env.BB_BINARY ?? 'bb'
 const FIXTURE = join(__dirname, '../../../../server/tests/fixtures/staging_pass.json')
 const VK = join(__dirname, '../../../core/circuits/staging_pass/compiled/staging_pass.vk')
+const VOTES_VK = join(__dirname, '../../../core/circuits/staging_pass_votes/compiled/staging_pass_votes.vk')
 
 /** The same call the server makes: `bb verify` of the default target (`evm`) over raw proof and public-input files. */
-const bbVerifies = (pass: StagingPass): boolean => {
+const bbVerifies = (pass: StagingPass, vk = VK): boolean => {
   const dir = mkdtempSync(join(tmpdir(), 'staging-pass-'))
   try {
     writeFileSync(join(dir, 'proof'), hexToBytes(pass.proof))
     writeFileSync(join(dir, 'public_inputs'), hexToBytes(concat(pass.publicInputs)))
-    execFileSync(BB, ['verify', '-p', join(dir, 'proof'), '-i', join(dir, 'public_inputs'), '-k', VK, '-t', 'evm'], { stdio: 'pipe' })
+    execFileSync(BB, ['verify', '-p', join(dir, 'proof'), '-i', join(dir, 'public_inputs'), '-k', vk, '-t', 'evm'], { stdio: 'pipe' })
     return true
   } catch {
     return false
@@ -75,7 +77,10 @@ const bbVerifies = (pass: StagingPass): boolean => {
   }
 }
 
-afterAll(destroyStagingPassProver)
+afterAll(async () => {
+  await destroyStagingPassProver()
+  await destroyVotesStagingPassProver()
+})
 
 describe('staging pass', () => {
   it('binds the request digest and the tag layout the server recomputes', () => {
@@ -132,6 +137,33 @@ describe('staging pass', () => {
     expect(bbVerifies(swapped(5, tag + 1n))).toBe(false)
     expect(bbVerifies(swapped(3, lo ^ 1n))).toBe(false)
     expect(bbVerifies(swapped(0, root + 1n))).toBe(false)
+  }, 300_000)
+
+  it('makes a votes pass for a bound staging secret that the server verifier accepts', async () => {
+    const secret = 0x1234n
+    const commitments = [5n, stagingCommitment(secret, 7n), 6n]
+    // The tree as a client reads it: from the STAGING_KEY_BOUND logs, each with the root after its own insertion.
+    const stagingTree = stagingTreeFromLogs(
+      commitments.map((commitment, index) => ({
+        kind: 'StagingKeyBound',
+        e3Id: E3_ID,
+        roundId: 7n,
+        index,
+        slot: accounts[index].address,
+        commitment,
+        root: generateMerkleTree(commitments.slice(0, index + 1)).root!,
+      })),
+    )
+    const pass = await buildVotesStagingPass({ secret, stagingTree, request, maxRequests: MAX_REQUESTS, counter: 3 })
+
+    // The order the server reads them in.
+    const [root, round, hi, lo, max, tag] = pass.publicInputs.map((field) => BigInt(field))
+    expect(root).toBe(stagingTree.root)
+    expect(round).toBe(7n)
+    expect((hi << 128n) | lo).toBe(BigInt(stagingRequestDigest(request)))
+    expect(max).toBe(BigInt(MAX_REQUESTS))
+    expect(tag).toBe(votesStagingTag(secret, 7n, 3))
+    expect(bbVerifies(pass, VOTES_VK)).toBe(true)
   }, 300_000)
 
   it('keeps the tags of one key apart per counter and per round', () => {

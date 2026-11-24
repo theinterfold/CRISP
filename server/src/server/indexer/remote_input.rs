@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 
-//! Rounds whose inputs are accepted on a remote chain (`PROGRAM_KIND=aztec`).
+//! Rounds whose inputs are accepted on a remote chain (`PROGRAM_KIND=aztec` or `aztec-votes`).
 //!
 //! The L1 round of such a program holds no inputs. The remote contract accepts them, and the server
 //! learns them from the remote chain's public logs, in the shape the L1 `InputCommitted` handler
@@ -70,6 +70,36 @@ fn round_params(custom_params: &[u8]) -> eyre::Result<CustomParams> {
     })
 }
 
+/// The custom parameters of a votes round (`PROGRAM_KIND=aztec-votes`) are `CRISPProgram`'s seven
+/// flat words: `abi.encode(token, minVotingPower, numOptions, creditMode, credits, censusMode,
+/// requestedDivisor)`. The L1 program accepts only CUSTOM credits with the ONCHAIN census.
+type VotesCustomParams = (
+    sol_data::Address,
+    sol_data::Uint<256>,
+    sol_data::Uint<256>,
+    sol_data::Uint<256>,
+    sol_data::Uint<256>,
+    sol_data::Uint<256>,
+    sol_data::Uint<256>,
+);
+
+fn votes_round_params(custom_params: &[u8]) -> eyre::Result<CustomParams> {
+    let (token, min_voting_power, num_options, _, _, _, divisor) =
+        <VotesCustomParams as SolType>::abi_decode_params(custom_params)
+            .context("Failed to decode custom params from E3 event")?;
+    Ok(CustomParams {
+        token_address: token.to_string(),
+        balance_threshold: min_voting_power.to_string(),
+        num_options: num_options.to_string(),
+        // The program weighs a ballot by the slot's voting power over the round's divisor, and
+        // reads each slot's power itself: the server lists nobody as the electorate.
+        credit_mode: CreditMode::Custom,
+        credits: None,
+        census_mode: CensusMode::Onchain,
+        voting_power_divisor: divisor.to_string(),
+    })
+}
+
 /// Record a round requested for the remote program.
 pub(super) async fn handle_e3_requested<S: DataStore>(
     event: E3Requested,
@@ -89,7 +119,11 @@ pub(super) async fn handle_e3_requested<S: DataStore>(
     .await
     .map_err(report)?;
 
-    let custom_params = round_params(&event.e3.customParams)?;
+    let custom_params = if CONFIG.is_aztec_votes() {
+        votes_round_params(&event.e3.customParams)?
+    } else {
+        round_params(&event.e3.customParams)?
+    };
     let input_deadline = e3.inputWindow[1].saturating_to::<u64>();
     let request_time = event.e3.requestBlock.saturating_to::<u64>();
 
@@ -432,7 +466,7 @@ pub(super) async fn run_ingest<S: DataStore>(
 ) -> eyre::Result<()> {
     let source = availability
         .remote_source()
-        .ok_or_else(|| eyre!("PROGRAM_KIND=aztec has no remote input source"))?;
+        .ok_or_else(|| eyre!("PROGRAM_KIND has no remote input source"))?;
     // A round that is over is not read again until a restart.
     let mut done = std::collections::HashSet::<String>::new();
     let mut last_compute = HashMap::<String, Instant>::new();
@@ -609,6 +643,33 @@ mod tests {
         let old = (U256::from(4), U256::from(10), U256::from(18), true).abi_encode_params();
         assert!(round_params(&old).is_err());
         assert!(round_params(&[0u8; 31]).is_err());
+    }
+
+    #[test]
+    fn custom_params_of_a_votes_round_are_the_seven_words_of_the_l1_program() {
+        let token = Address::repeat_byte(0x77);
+        let encoded = <VotesCustomParams as SolType>::abi_encode_params(&(
+            token,
+            U256::from(1_000),
+            U256::from(3),
+            U256::from(1),
+            U256::ZERO,
+            U256::from(2),
+            U256::from(7),
+        ));
+
+        let params = votes_round_params(&encoded).unwrap();
+
+        assert_eq!(params.token_address, token.to_string());
+        assert_eq!(params.balance_threshold, "1000");
+        assert_eq!(params.num_options, "3");
+        assert_eq!(params.credit_mode, CreditMode::Custom);
+        assert_eq!(params.credits, None);
+        assert_eq!(params.census_mode, CensusMode::Onchain);
+        assert_eq!(params.voting_power_divisor, "7");
+        // The ZKPassport decoder, which a votes server ran by mistake, refuses this layout.
+        assert!(round_params(&encoded).is_err());
+        assert!(votes_round_params(&encoded[..encoded.len() - 1]).is_err());
     }
 
     #[test]

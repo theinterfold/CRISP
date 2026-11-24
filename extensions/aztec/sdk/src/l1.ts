@@ -6,7 +6,7 @@
 
 import { parseAbi, type Address, type Hex, type PublicClient, type WalletClient } from 'viem'
 
-import { type RoundConfig, roundContent, roundIdOf } from './messages'
+import { type RoundConfig, type VotesRoundConfig, roundContent, roundIdOf } from './messages'
 import { decodeCustomParams, type RoundRules } from './rules'
 
 /** The part of `CRISPAztecProgram` and `CRISPRemoteProgram` this package calls or reads. */
@@ -152,4 +152,51 @@ export const submitInputRoot = async (
   })
 
   return wallet.writeContract(request)
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// The votes program (`CRISPAztecVotesProgram`): token-weighted rounds, weights bridged per slot by `enroll`
+// ---------------------------------------------------------------------------------------------------------
+
+/** The part of `CRISPAztecVotesProgram` this package reads, besides {@link programAbi}. */
+export const votesProgramAbi = parseAbi([
+  'event Enrolled(uint256 indexed e3Id, address indexed slot, uint256 weight, bytes32 leaf)',
+])
+
+/** Rebuild the ROUND configuration the votes program sent for `e3Id` from L1 state. A keeper opens the round on L2 from this. */
+export const getVotesRound = async (client: PublicClient, program: Address, e3Id: bigint): Promise<VotesRoundConfig> => {
+  const interfold = await client.readContract({ address: program, abi: programAbi, functionName: 'interfold' })
+  const [round, e3] = await Promise.all([
+    getL1Round(client, program, e3Id),
+    client.readContract({ address: interfold, abi: interfoldAbi, functionName: 'getE3', args: [e3Id] }),
+  ])
+
+  return {
+    roundId: roundIdOf(e3Id),
+    numOptions: round.numOptions,
+    inputStart: e3.inputWindow[0],
+    inputEnd: e3.inputWindow[1],
+    inputLimit: round.inputLimit,
+  }
+}
+
+/** An ENROLL message the program sent. `leaf` is the Inbox leaf that `CrispAztecVotes.enroll` consumes. */
+export type EnrolledMessage = { slot: Address; weight: bigint; leaf: Hex }
+
+/** Every `Enrolled` event of a round (optionally of some slots), oldest first. */
+export const getEnrolledMessages = async (
+  client: PublicClient,
+  program: Address,
+  e3Id: bigint,
+  options: { slots?: readonly Address[]; fromBlock?: bigint } = {},
+): Promise<EnrolledMessage[]> => {
+  const events = await client.getContractEvents({
+    address: program,
+    abi: votesProgramAbi,
+    eventName: 'Enrolled',
+    args: { e3Id, slot: options.slots && [...options.slots] },
+    fromBlock: options.fromBlock ?? 0n,
+  })
+
+  return events.map(({ args }) => ({ slot: args.slot as Address, weight: args.weight as bigint, leaf: args.leaf as Hex }))
 }

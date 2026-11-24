@@ -48,7 +48,7 @@ struct BfvParameters {
 /// guest, program server) is shared; see `extensions/README.md`. This contract has no input tree and takes no
 /// inputs on L1, so `publishInput` always reverts.
 ///
-/// Voters register on the L2: a ZKPassport proof the L2 verifies.
+/// Voter admission rules (identity proofs, token census, ...) are the adapter's: they travel in `customParams`.
 ///
 /// An adapter supplies only transport: {_sendToRemote}, {scopeOf}, and an entry point that authenticates the L2's
 /// root message and calls {_acceptInputRoot}. Everything else is chain-agnostic.
@@ -65,17 +65,6 @@ abstract contract CRISPRemoteProgram is IE3Program, IE3ProgramDataAvailability, 
     uint256 numInputs;
   }
 
-  /// @notice The decoded `customParams`.
-  struct CustomParams {
-    uint256 numOptions;
-    uint256 credits;
-    uint256 minAge;
-    bool allowMockDocuments;
-    uint8 nationalityMode;
-    string[] countries;
-    uint256 nationalityCommitment;
-  }
-
   /// @notice Encryption scheme ID used for the CRISP program.
   bytes32 public constant ENCRYPTION_SCHEME_ID = keccak256("fhe.rs:BFV");
   /// @notice Minimum time available to vote after a worst-case key setup.
@@ -89,12 +78,6 @@ abstract contract CRISPRemoteProgram is IE3Program, IE3ProgramDataAvailability, 
   /// @dev Bounds the L2 input tree (2^16 leaves): each L2 insert recomputes at most 16 Poseidon hashes, which is what
   /// fits a transaction on Aztec. Below `CRISPProgram.MAX_INPUTS_PER_ROUND`, so the BFV noise budget still holds.
   uint256 public constant MAX_INPUTS_PER_ROUND = 65_536;
-  /// @notice Largest accepted `minAge`: the ZKPassport `Query::age_min` the L2 contract applies asserts `min < 100`.
-  uint256 public constant MAX_MIN_AGE = 99;
-  /// @notice The most countries a nationality rule lists: ZKPassport commits a list into 600 bytes (200 alpha-3 codes).
-  uint256 public constant MAX_COUNTRIES = 200;
-  /// @notice The BN254 scalar field modulus: a nationality commitment is a field element.
-  uint256 public constant FIELD_MODULUS = 21888242871839275222246405745257275088548364400416034343698204186575808495617;
 
   /// @notice The Interfold controller. Zero until {bindInterfold}.
   IInterfold public interfold;
@@ -131,14 +114,6 @@ abstract contract CRISPRemoteProgram is IE3Program, IE3ProgramDataAvailability, 
   error InvalidMinVotingDuration(uint256 minVotingDuration);
   /// @notice The compute window leaves no budget for the remote chain to finalize the round's input root.
   error ComputeWindowTooShort(uint256 e3Id, uint256 computeWindow, uint256 required);
-  error InvalidNumOptions();
-  error InvalidMinAge(uint256 minAge);
-  error InvalidNationalityMode(uint256 mode);
-  /// @notice A country list that is empty or too long for the mode, or holds an entry that is not three letters `A-Z`.
-  error InvalidCountries();
-  /// @notice Zero or not a field element with a nationality rule, or non-zero without one.
-  error InvalidNationalityCommitment(uint256 commitment);
-  error CreditsExceedPlaintextModulus(uint256 credits, uint256 plaintextModulus);
   error VotingStartsBeforeKeyDeadline(uint256 e3Id, uint256 earliestStart, uint256 actualStart);
   error VotingWindowTooShort(uint256 e3Id, uint256 votingStartsAt, uint256 votingEndsAt, uint256 required);
   error KeyNotPublished(uint256 e3Id);
@@ -157,16 +132,6 @@ abstract contract CRISPRemoteProgram is IE3Program, IE3ProgramDataAvailability, 
   event InterfoldBound(address indexed interfold);
   /// @notice The round configuration was handed to the remote chain. `content` is what the bridge carries.
   event RoundConfigSent(uint256 indexed e3Id, bytes32 content);
-  /// @notice Who may join a round: the decoded rules, for apps that recompute the nationality commitment and build the
-  /// ZKPassport request (`nationalityCommitment` is zero iff `nationalityMode` is 0).
-  event RoundRules(
-    uint256 indexed e3Id,
-    uint256 minAge,
-    bool allowMockDocuments,
-    uint8 nationalityMode,
-    string[] countries,
-    uint256 nationalityCommitment
-  );
   /// @notice The committee key was handed to the remote chain.
   event CommitteeKeyRelayed(uint256 indexed e3Id, bytes32 committeePublicKey);
   /// @notice The remote chain's input root was authenticated and recorded.
@@ -202,6 +167,24 @@ abstract contract CRISPRemoteProgram is IE3Program, IE3ProgramDataAvailability, 
   // ---------------------------------------------------------------------------------------------
   // Adapter hooks
   // ---------------------------------------------------------------------------------------------
+
+  /// @notice Decode and validate the adapter's `customParams` and build the round's ROUND message.
+  /// @dev Called once from {validate}, after the caller and E3-assignment checks and the timing checks, before the
+  /// round is stored. May emit adapter events. The message layout is the adapter's own: {CRISPRemoteMessages.round}
+  /// is the Aztec/ZKPassport layout.
+  /// @param e3Id Full Interfold E3 id; {validate} has checked that its program is this contract.
+  /// @param e3 The provisional E3 record (`requestBlock` is a timestamp, `inputWindow` is set).
+  /// @param plaintextModulus BFV `t`, decoded from `e3ProgramParams`.
+  /// @param customParams Opaque adapter bytes from `Interfold.request`.
+  /// @return message The exact bytes handed to {_sendToRemote}.
+  /// @return numOptions Stored in the round; bounds {decodeTally}.
+  /// @return inputLimit Stored in the round; the most inputs {_acceptInputRoot} accepts, at most {MAX_INPUTS_PER_ROUND}.
+  function _initRound(
+    uint256 e3Id,
+    E3 memory e3,
+    uint256 plaintextModulus,
+    bytes calldata customParams
+  ) internal virtual returns (bytes memory message, uint256 numOptions, uint256 inputLimit);
 
   /// @notice Deliver `message` (one of the {CRISPRemoteMessages} layouts) to the remote contract.
   /// @return content The value the bridge carries for this message; reported in events.
@@ -252,27 +235,18 @@ abstract contract CRISPRemoteProgram is IE3Program, IE3ProgramDataAvailability, 
 
     _validateInputTiming(e3Id, e3);
 
-    CustomParams memory params = _decodeCustomParams(customParams);
-    CRISPRemoteMessages.RoundConfig memory config = _roundConfig(
+    (bytes memory message, uint256 numOptions, uint256 inputLimit) = _initRound(
       e3Id,
       e3,
-      params,
-      abi.decode(e3ProgramParams, (BfvParameters)).plaintextModulus
+      abi.decode(e3ProgramParams, (BfvParameters)).plaintextModulus,
+      customParams
     );
 
     round.paramsHash = keccak256(e3ProgramParams);
-    round.numOptions = config.numOptions;
-    round.inputLimit = config.inputLimit;
+    round.numOptions = numOptions;
+    round.inputLimit = inputLimit;
 
-    emit RoundRules(
-      e3Id,
-      params.minAge,
-      params.allowMockDocuments,
-      params.nationalityMode,
-      params.countries,
-      params.nationalityCommitment
-    );
-    bytes32 content = _sendToRemote(e3Id, CRISPRemoteMessages.round(config));
+    bytes32 content = _sendToRemote(e3Id, message);
     emit RoundConfigSent(e3Id, content);
 
     return ENCRYPTION_SCHEME_ID;
@@ -428,74 +402,6 @@ abstract contract CRISPRemoteProgram is IE3Program, IE3ProgramDataAvailability, 
   // ---------------------------------------------------------------------------------------------
   // Internals
   // ---------------------------------------------------------------------------------------------
-
-  /// @notice Decode and validate `customParams`.
-  /// @dev `abi.encode(uint256 numOptions, uint256 credits, uint256 minAge, bool allowMockDocuments, uint8 nationalityMode,
-  /// string[] countries, uint256 nationalityCommitment)`.
-  ///
-  /// - mode 0: no list and no commitment; mode 1 or 2: 1..{MAX_COUNTRIES} alpha-3 codes, three letters `A-Z` each.
-  /// - with a nationality rule the L2 checks ZKPassport's commitment of the list, which L1 cannot recompute, so it only
-  ///   checks that one is given (a wrong one makes the round unregistrable).
-  function _decodeCustomParams(bytes calldata customParams) internal pure returns (CustomParams memory params) {
-    (
-      params.numOptions,
-      params.credits,
-      params.minAge,
-      params.allowMockDocuments,
-      params.nationalityMode,
-      params.countries,
-      params.nationalityCommitment
-    ) = abi.decode(customParams, (uint256, uint256, uint256, bool, uint8, string[], uint256));
-
-    // The circuit asserts `num_options <= MAX_OPTIONS`; a larger round would accept no ballot at all.
-    if (params.numOptions < 2 || params.numOptions > MAX_VOTE_OPTIONS) revert InvalidNumOptions();
-    if (params.minAge > MAX_MIN_AGE) revert InvalidMinAge(params.minAge);
-
-    uint256 mode = params.nationalityMode;
-    if (mode > 2) revert InvalidNationalityMode(mode);
-    uint256 count = params.countries.length;
-    if (mode == 0 ? count != 0 : (count == 0 || count > MAX_COUNTRIES)) revert InvalidCountries();
-    for (uint256 i = 0; i < count; i++) {
-      bytes memory code = bytes(params.countries[i]);
-      if (code.length != 3) revert InvalidCountries();
-      for (uint256 j = 0; j < 3; j++) {
-        if (code[j] < "A" || code[j] > "Z") revert InvalidCountries();
-      }
-    }
-
-    uint256 commitment = params.nationalityCommitment;
-    if (mode != 0 ? (commitment == 0 || commitment >= FIELD_MODULUS) : commitment != 0) revert InvalidNationalityCommitment(commitment);
-  }
-
-  /// @notice Build the ROUND message from validated parameters.
-  /// @dev The input limit follows `CRISPProgram._initCredits` for constant credits (`(t - 1) / credits` keeps every option
-  /// total below the plaintext modulus `t`), capped at {MAX_INPUTS_PER_ROUND}.
-  function _roundConfig(
-    uint256 e3Id,
-    E3 memory e3,
-    CustomParams memory params,
-    uint256 plaintextModulus
-  ) internal view returns (CRISPRemoteMessages.RoundConfig memory config) {
-    uint256 credits = params.credits;
-    // One ballot of `t` credits or more wraps an option total on its own.
-    if (credits != 0 && credits >= plaintextModulus) revert CreditsExceedPlaintextModulus(credits, plaintextModulus);
-
-    uint256 limit = credits == 0 ? MAX_INPUTS_PER_ROUND : (plaintextModulus - 1) / credits;
-
-    config = CRISPRemoteMessages.RoundConfig({
-      roundId: remoteRoundId(e3Id),
-      numOptions: params.numOptions,
-      credits: credits,
-      inputStart: e3.inputWindow[0],
-      inputEnd: e3.inputWindow[1],
-      inputLimit: limit < MAX_INPUTS_PER_ROUND ? limit : MAX_INPUTS_PER_ROUND,
-      scopeHash: scopeHashOf(e3Id),
-      minAge: params.minAge,
-      allowMockDocuments: params.allowMockDocuments,
-      nationalityMode: params.nationalityMode,
-      nationalityCommitment: params.nationalityCommitment
-    });
-  }
 
   /// @notice The worst-case time from an E3 request to its published committee key.
   function _committeeReservation(IInterfold.E3TimeoutConfig memory timeouts) internal view returns (uint256) {

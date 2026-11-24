@@ -20,12 +20,18 @@ describe('loadConfig', () => {
   it('reads the required values and defaults the rest', () => {
     const config = loadConfig(env)
     expect(config.program).toBe('0x5FbDB2315678afecb367f032d93F642f64180aa3')
+    expect(config.kind).toBe('zkpassport')
     expect(config.startBlock).toBe(0n)
     expect(config.pollIntervalMs).toBe(10_000)
   })
 
   it.each(Object.keys(env))('names %s when it is missing', (name) => {
     expect(() => loadConfig({ ...env, [name]: undefined })).toThrow(name)
+  })
+
+  it('selects the votes kind and refuses another', () => {
+    expect(loadConfig({ ...env, CRISP_AZTEC_KIND: 'votes' }).kind).toBe('votes')
+    expect(() => loadConfig({ ...env, CRISP_AZTEC_KIND: 'other' })).toThrow(/CRISP_AZTEC_KIND/)
   })
 
   it('rejects a malformed key and a bad interval', () => {

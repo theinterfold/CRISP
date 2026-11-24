@@ -1,4 +1,4 @@
-// TXE tests of `CrispAztec`.
+// TXE tests of `CrispAztec` (the votes contract's are in `votes.nr`).
 //
 // TXE does not execute proof verification (`verify_honk_proof_non_zk` and the ZKPassport outer proof are no-ops), so
 // these tests cover everything around the verifications: message consumption, the registry and capsule plumbing, the
@@ -8,13 +8,14 @@
 
 mod base_fixture;
 mod vectors;
+mod votes;
 
-use crisp_aztec::{
+use crisp_aztec::{CrispAztec, messages::round_content, types::{Config, RoundConfig}};
+use crisp_aztec_lib::{
     ballot::{pk_commitment, CT0_PUBLIC_INPUTS, CT1_PUBLIC_INPUTS},
-    CrispAztec,
     constants::{NATIONALITY_IN, NATIONALITY_NONE, NATIONALITY_OUT},
-    hashing::{key_content, round_content},
-    types::{Config, InputEntry, RoundConfig},
+    hashing::key_content,
+    types::InputEntry,
 };
 use crate::base_fixture::{CRISP_VK, CRISP_VK_HASH, CT0_VK, CT0_VK_HASH, CT1_VK, CT1_VK_HASH};
 use crate::vectors::{

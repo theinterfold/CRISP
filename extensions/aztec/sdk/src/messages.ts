@@ -74,8 +74,22 @@ export const encodeKeyMessage = (roundId: bigint, committeePublicKey: Hex): Hex 
 export const encodeRootMessage = (roundId: bigint, inputRoot: bigint, numInputs: bigint): Hex =>
   encodeAbiParameters(words(4), [MESSAGE_KIND.ROOT, roundId, inputRoot, numInputs])
 
+/** Round configuration the votes program hands to `CrispAztecVotes` (`CRISPAztecVotesProgram`'s ROUND message). */
+export type VotesRoundConfig = {
+  roundId: bigint
+  numOptions: bigint
+  inputStart: bigint
+  inputEnd: bigint
+  inputLimit: bigint
+}
+
+/** `abi.encode(1, roundId, numOptions, inputStart, inputEnd, inputLimit)`: 6 words. */
+export const encodeVotesRoundMessage = (c: VotesRoundConfig): Hex =>
+  encodeAbiParameters(words(6), [MESSAGE_KIND.ROUND, c.roundId, c.numOptions, c.inputStart, c.inputEnd, c.inputLimit])
+
 /** The field element the bridge carries for each message: `sha256ToField` of its encoding. */
 export const roundContent = (config: RoundConfig): bigint => sha256ToField(encodeRoundMessage(config))
+export const votesRoundContent = (config: VotesRoundConfig): bigint => sha256ToField(encodeVotesRoundMessage(config))
 export const keyContent = (roundId: bigint, committeePublicKey: Hex): bigint => sha256ToField(encodeKeyMessage(roundId, committeePublicKey))
 export const rootContent = (roundId: bigint, inputRoot: bigint, numInputs: bigint): bigint =>
   sha256ToField(encodeRootMessage(roundId, inputRoot, numInputs))

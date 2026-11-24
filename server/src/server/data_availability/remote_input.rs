@@ -54,6 +54,12 @@ impl RemoteInputs {
                 .map_err(|error| anyhow::anyhow!("the Interfold address is invalid: {error}"))?,
             config.aztec_start_block,
         );
+        // A votes round proves membership of a bound staging key, not of the census.
+        let source = if config.is_aztec_votes() {
+            source.with_staging_roots()
+        } else {
+            source
+        };
         let signer = config
             .private_key
             .parse()

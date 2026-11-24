@@ -37,8 +37,9 @@ library CRISPRemoteMessages {
     uint256 nationalityCommitment;
   }
 
-  /// @notice `abi.encode(1, roundId, numOptions, credits, inputStart, inputEnd, inputLimit, scopeHash, minAge, allowMockDocuments,
-  /// nationalityMode, nationalityCommitment)`: 12 words.
+  /// @notice The Aztec / ZKPassport ROUND: `abi.encode(1, roundId, numOptions, credits, inputStart, inputEnd, inputLimit,
+  /// scopeHash, minAge, allowMockDocuments, nationalityMode, nationalityCommitment)`: 12 words. An adapter with other round
+  /// rules builds its own ROUND (kind 1, round id in word 2); {committeeKey} and {inputRoot} are shared.
   function round(RoundConfig memory config) internal pure returns (bytes memory) {
     return
       abi.encode(

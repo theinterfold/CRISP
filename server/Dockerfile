@@ -59,6 +59,8 @@ RUN timeout 600 curl -fsSL --retry 5 --connect-timeout 30 \
 # `bb verify` downloads its reference string on first use. Verify one real pass now, so the image
 # carries the string and the server needs no network and no writable home to verify.
 COPY extensions/core/circuits/staging_pass/compiled/staging_pass.vk /usr/local/share/crisp/staging_pass.vk
+# `PROGRAM_KIND=aztec-votes` verifies passes of `staging_pass_votes` instead: set STAGING_PASS_VK_PATH to this key.
+COPY extensions/core/circuits/staging_pass_votes/compiled/staging_pass_votes.vk /usr/local/share/crisp/staging_pass_votes.vk
 COPY server/tests/fixtures/staging_pass.json /tmp/staging_pass.json
 RUN mkdir -p /usr/local/share/bb-crs \
     && hex() { perl -e 'print pack("H*", $ARGV[0])' "$1"; } \
@@ -76,6 +78,7 @@ COPY --from=builder /app/dist/server \
     /usr/local/bin/server
 COPY --from=bb /usr/local/bin/bb /usr/local/bin/bb
 COPY --from=bb /usr/local/share/crisp/staging_pass.vk /usr/local/share/crisp/staging_pass.vk
+COPY --from=bb /usr/local/share/crisp/staging_pass_votes.vk /usr/local/share/crisp/staging_pass_votes.vk
 COPY --from=bb /usr/local/share/bb-crs /usr/local/share/bb-crs
 ENV BB_BINARY_PATH=/usr/local/bin/bb \
     STAGING_PASS_VK_PATH=/usr/local/share/crisp/staging_pass.vk \

@@ -19,6 +19,7 @@ const base: RoundState = {
   l2Closed: false,
   inputEnd: 1_000n,
   l2Now: 500n,
+  pendingEnrollments: 0,
 }
 
 describe('dueActions', () => {
@@ -42,6 +43,16 @@ describe('dueActions', () => {
     expect(dueActions({ ...live, l2Now: 999n })).toEqual([])
     expect(dueActions({ ...live, l2Now: 1_000n })).toEqual(['closeRound'])
     expect(dueActions({ ...live, l2Now: 2_000n, l2Closed: true })).toEqual(['submitRoot'])
+  })
+
+  it('enrolls pending slots of a live round while the input window is open', () => {
+    const live = { ...base, l2Opened: true, l1KeyRelayed: true, l2KeyPublished: true }
+    expect(dueActions({ ...live, pendingEnrollments: 0 })).toEqual([])
+    expect(dueActions({ ...live, pendingEnrollments: 2 })).toEqual(['enroll'])
+    // Not before the round is open on Aztec, and not once the window has ended or the round is closed.
+    expect(dueActions({ ...base, pendingEnrollments: 2 })).toEqual(['openRound'])
+    expect(dueActions({ ...live, pendingEnrollments: 2, l2Now: 1_000n })).toEqual(['closeRound'])
+    expect(dueActions({ ...live, pendingEnrollments: 2, l2Closed: true, l2Now: 2_000n })).toEqual(['submitRoot'])
   })
 
   it('does nothing for a round whose root is on L1 or that Interfold failed', () => {
