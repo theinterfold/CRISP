@@ -16,8 +16,8 @@
       }
     },
     "CRISPAztecVotesProgram": {
-      "address": "0x08e1C6288fb0E6f2a1850F08Db632dBC89c309Dc",
-      "blockNumber": 12198396,
+      "address": "0xC6F8e289a1316B9ecAFaDaB98d211dcb66D66c86",
+      "blockNumber": 12202493,
       "constructorArgs": {
         "initialOwner": "0x8837e47c4Bb520ADE83AAB761C3B60679443af1B",
         "openVmVerifier": "0x226436d8A72357c7992896B37f0A2E00dCb6A341",
