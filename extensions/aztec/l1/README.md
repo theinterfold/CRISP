@@ -56,7 +56,8 @@ runs the Interfold governance's token-weighted rounds against `crisp_aztec_votes
   reverts for an unknown E3 and once the input window ended.
 
 Deploy it with `CRISP_AZTEC_KIND=votes pnpm deploy:localhost` (or `deploy:sepolia`); the deployment is recorded as
-`CRISPAztecVotesProgram`.
+`CRISPAztecVotesProgram`. Keep `CRISP_AZTEC_KIND=votes` on the second run, the one with `CRISP_AZTEC_L2_ADDRESS`. Without it the
+script sets that address on `CRISPAztecProgram`, and `setL2Program` works only once.
 
 ## Commands
 

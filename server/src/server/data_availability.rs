@@ -1642,16 +1642,16 @@ impl AvailabilityService {
         Ok(())
     }
 
-    /// The worker loop. A storage error or a failed job step never ends it.
+    /// The worker loops. A storage error or a failed job step never ends them.
     pub async fn run(self: Arc<Self>) -> anyhow::Result<()> {
-        loop {
-            if let Err(error) = self.prune_relay_records(wall_clock_seconds()) {
-                warn!(%error, "Could not prune relay records; will retry");
-            }
-            // Keep one bounded batch alive. An unbounded fan-out turns a backlog that any client
-            // can stage into a memory and RPC spike, and queues the request-path steps of new
-            // inputs behind every pending job on the FIFO `job_slots` semaphore.
-            let drive_jobs = async {
+        let jobs = async {
+            loop {
+                if let Err(error) = self.prune_relay_records(wall_clock_seconds()) {
+                    warn!(%error, "Could not prune relay records; will retry");
+                }
+                // Keep one bounded batch alive. An unbounded fan-out turns a backlog that any
+                // client can stage into a memory and RPC spike, and queues the request-path steps
+                // of new inputs behind every pending job on the FIFO `job_slots` semaphore.
                 let mut tasks = JoinSet::new();
                 for id in self.pending_ids() {
                     while tasks.len() >= MAX_CONCURRENT_JOB_STEPS {
@@ -1661,11 +1661,18 @@ impl AvailabilityService {
                     tasks.spawn(async move { service.process(&id).await });
                 }
                 while tasks.join_next().await.is_some() {}
-            };
-            // Uploads run beside the jobs, so a receiver that answers slowly delays no job.
-            tokio::join!(drive_jobs, self.drive_output_uploads());
-            tokio::time::sleep(JOB_POLL_INTERVAL).await;
-        }
+                tokio::time::sleep(JOB_POLL_INTERVAL).await;
+            }
+        };
+        // Uploads have their own loop, so a receiver that answers slowly delays no job pass.
+        let uploads = async {
+            loop {
+                self.drive_output_uploads().await;
+                tokio::time::sleep(JOB_POLL_INTERVAL).await;
+            }
+        };
+        tokio::join!(jobs, uploads);
+        Ok(())
     }
 
     /// Take exclusive ownership of one job, or return `None` when another path owns it.

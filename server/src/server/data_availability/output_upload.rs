@@ -155,7 +155,8 @@ impl AvailabilityService {
                 Ok(step) => step,
                 Err(error) => UploadStep::Retry(format!("{error:#}")),
             };
-            if let Err(error) = self.settle_output_upload(&job, step, now) {
+            // The retry delay counts from the end of this attempt, not from the start of the pass.
+            if let Err(error) = self.settle_output_upload(&job, step, wall_clock_seconds()) {
                 warn!(job_id = job.id.as_str(), %error, "Could not record an output upload; will retry");
             }
         }

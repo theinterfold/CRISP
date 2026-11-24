@@ -86,6 +86,8 @@ export class CrispAztecVotes extends RoundClient {
     if (secret === undefined || !isBound(secret)) {
       const binding = await stagingKeyBinding(args)
       secret = binding.secret
+      // Stored before the bind is sent: a bind whose secret is lost uses up one of the slot's three.
+      await storage.set(key, toHex(secret))
       if (!isBound(secret)) {
         await this.send(
           this.contract.methods.bind_staging_key(
@@ -98,7 +100,6 @@ export class CrispAztecVotes extends RoundClient {
         )
         bound = await this.logs('StagingKeyBound', { e3Id })
       }
-      await storage.set(key, toHex(secret))
     }
 
     return { secret, stagingTree: stagingTreeFromLogs(bound) }
@@ -157,6 +158,7 @@ export const ensureEnrolled = async (options: {
   /** The votes program on L1. */
   program: Address
   e3Id: bigint
+  /** The slots a ballot needs: the voter's own and a mask target. The relay takes at most 32 in one request. */
   slots: readonly Address[]
   serverUrl: string
   /** Called with the slots that are about to be enrolled, which takes minutes. */

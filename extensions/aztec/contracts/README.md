@@ -32,15 +32,7 @@ pnpm -C ../sdk codegen   # regenerate the TypeScript bindings (../sdk/src/bindin
 Run `aztec compile` from this directory (the workspace root); from a member directory it skips the transpile step. The `bug:
 Brillig function call isn't properly covered…` lines come from aztec-nr and the vendored ZKPassport verifier.
 
-## Layout
-
-`crisp_aztec_lib/src/` (shared, `type = "lib"`): the trees, `hashing.nr`, `ballot.nr` (the base-proof checks), `constants.nr`, `types.nr`.
-`crisp_aztec/src/` and `crisp_aztec_votes/src/`: the contract, its ROUND (and ENROLL) message contents, its types; `crisp_aztec` also
-`identity.nr` (ZKPassport service config), `crisp_aztec_votes` also `staging.nr` (staging-key digest, address, secret, commitment).
-`crisp_aztec/src/tests.nr` holds the unit tests of the shared code. `crisp_aztec_test/` holds the TXE tests (`src/lib.nr` for `CrispAztec`,
-`src/votes.nr` for `CrispAztecVotes`) and fixtures; `vendor/zkpassport/` the vendored ZKPassport verifier, core and registry.
-
-### Vendored ZKPassport
+## Vendored ZKPassport
 
 `vendor/zkpassport/{core,registry_contract,verifier}` are copied from
 [`zkpassport/zkpassport-packages`](https://github.com/zkpassport/zkpassport-packages) `packages/aztec/noir` at commit

@@ -135,7 +135,7 @@ export const buildVotesStagingPass = async (inputs: BuildVotesStagingPassInputs)
 // The CRISP server's refusals (`staging_pass.rs`) that another attempt gets past.
 const TAG_USED = 'The staging pass was already used'
 const UNKNOWN_ROOT = 'The staging pass names a census root this round has not had'
-/** How long, and how often, a pass whose root the server has not read yet is sent again. The server reads new roots at most every 5 s. */
+/** How long, and how often, a pass whose root the server has not read yet is sent again, counted from its first refusal. The server reads new roots at most every 5 s. */
 const ROOT_WAIT_MS = 3 * 60_000
 const ROOT_RETRY_MS = 5_000
 
@@ -151,16 +151,18 @@ export const stageWithNextPass = async (args: {
   stage: (pass: StagingPass) => Promise<InputAttestation>
   onWait?: () => void
 }): Promise<{ attestation: InputAttestation; counter: number }> => {
-  const deadline = Date.now() + ROOT_WAIT_MS
   for (let counter = args.counter; counter < args.maxRequests; counter++) {
     const pass = await args.prove(counter)
+    let deadline: number | undefined
     for (;;) {
       try {
         return { attestation: await args.stage(pass), counter }
       } catch (error) {
         const refusal = error instanceof Error ? error.message : ''
         if (refusal.includes(TAG_USED)) break
-        if (!refusal.includes(UNKNOWN_ROOT) || Date.now() >= deadline) throw error
+        if (!refusal.includes(UNKNOWN_ROOT)) throw error
+        deadline ??= Date.now() + ROOT_WAIT_MS
+        if (Date.now() >= deadline) throw error
         args.onWait?.()
         await new Promise((resolve) => setTimeout(resolve, ROOT_RETRY_MS))
       }

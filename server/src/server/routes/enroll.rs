@@ -17,6 +17,7 @@ use crate::{
 use actix_web::{http::StatusCode, web, HttpRequest, HttpResponse};
 use alloy::{
     primitives::{Address, B256, U256},
+    providers::Provider,
     sol,
 };
 use async_trait::async_trait;
@@ -78,6 +79,8 @@ pub trait VotesChain: Send + Sync {
     async fn slot_states(&self, e3_id: U256, slots: &[Address]) -> eyre::Result<Vec<(bool, U256)>>;
     /// Send `enroll(e3Id, slots)` and wait until it is mined.
     async fn enroll(&self, e3_id: U256, slots: &[Address]) -> eyre::Result<B256>;
+    /// The balance of the key that sends `enroll`.
+    async fn relay_balance(&self) -> eyre::Result<U256>;
 }
 
 /// Reads with the shared provider of `HTTP_RPC_URL` and sends from the server key.
@@ -111,6 +114,11 @@ impl VotesChain for L1Votes {
         eyre::ensure!(receipt.status(), "the enroll transaction reverted");
         Ok(receipt.transaction_hash)
     }
+
+    async fn relay_balance(&self) -> eyre::Result<U256> {
+        let (provider, from) = rpc::sender().await?;
+        Ok(provider.get_balance(*from).await?)
+    }
 }
 
 /// The relay's shared state: the chain, the limits and the enrollments in flight.
@@ -119,6 +127,8 @@ pub struct EnrollService {
     callers: RateLimiter,
     rounds: RateLimiter,
     in_flight: Mutex<HashSet<(U256, Address)>>,
+    /// `RELAY_MIN_BALANCE_ETH`: below it the relay sends nothing. Zero is no floor.
+    min_balance: U256,
     trust_proxy_headers: bool,
 }
 
@@ -129,6 +139,7 @@ impl EnrollService {
             callers: RateLimiter::with_limits(PER_CALLER_LIMIT, usize::MAX),
             rounds: RateLimiter::with_limits(PER_ROUND_LIMIT, usize::MAX),
             in_flight: Mutex::new(HashSet::new()),
+            min_balance: U256::ZERO,
             trust_proxy_headers,
         }
     }
@@ -142,10 +153,9 @@ impl EnrollService {
             .e3_program_address
             .parse()
             .map_err(|error| eyre::eyre!("the E3 program address is invalid: {error}"))?;
-        Ok(Some(Self::new(
-            Arc::new(L1Votes { program }),
-            config.trust_proxy_headers,
-        )))
+        let mut service = Self::new(Arc::new(L1Votes { program }), config.trust_proxy_headers);
+        service.min_balance = config.relay_min_balance()?.unwrap_or_default();
+        Ok(Some(service))
     }
 
     /// Claim `slot` of `e3_id` for an enrollment. `false` when another request holds it.
@@ -185,7 +195,18 @@ impl EnrollService {
             return Ok(EnrollResponse { tx_hash: None, enrolled: claimed, skipped });
         }
 
-        let sent = self.chain.enroll(e3_id, &claimed).await;
+        let sent = async {
+            // The same key pays for every relay of this server, so the floor keeps a burst of
+            // enrollments from emptying it. A zero floor reads no balance.
+            if !self.min_balance.is_zero() {
+                eyre::ensure!(
+                    self.chain.relay_balance().await? >= self.min_balance,
+                    "the relay key is below RELAY_MIN_BALANCE_ETH"
+                );
+            }
+            self.chain.enroll(e3_id, &claimed).await
+        }
+        .await;
         // Mined or failed, the program (or the next request) decides from here.
         self.release(e3_id, &claimed);
         Ok(EnrollResponse { tx_hash: Some(sent?), enrolled: claimed, skipped })
@@ -275,6 +296,9 @@ mod tests {
         sent: StdMutex<Vec<Vec<Address>>>,
         hold: Option<Arc<Notify>>,
         send_fails: bool,
+        /// The relay key's balance. `None` fails the read, so a test without a floor proves that
+        /// no balance is read.
+        balance: Option<u64>,
     }
 
     #[async_trait]
@@ -296,6 +320,10 @@ mod tests {
             }
             eyre::ensure!(!self.send_fails, "the transaction reverted");
             Ok(B256::repeat_byte(0x11))
+        }
+
+        async fn relay_balance(&self) -> eyre::Result<U256> {
+            self.balance.map(U256::from).ok_or_else(|| eyre::eyre!("the balance was read"))
         }
     }
 
@@ -415,6 +443,22 @@ mod tests {
 
         // Mined, the slot is free again (the program would call it enrolled by then).
         assert!(service.claim(U256::from(42), A));
+    }
+
+    #[actix_web::test]
+    async fn a_key_below_the_balance_floor_sends_nothing() {
+        let chain = Arc::new(FakeChain { weights: vec![(A, 5)], balance: Some(9), ..Default::default() });
+        let mut service = EnrollService::new(chain.clone(), false);
+        service.min_balance = U256::from(10);
+        assert!(service.run(U256::from(42), vec![A]).await.is_err());
+        assert!(chain.sent.lock().unwrap().is_empty());
+        // The slot is free for the voter's own transaction, or for a funded relay.
+        assert!(service.claim(U256::from(42), A));
+        service.release(U256::from(42), &[A]);
+
+        // At the floor the relay sends.
+        service.min_balance = U256::from(9);
+        assert_eq!(service.run(U256::from(42), vec![A]).await.unwrap().enrolled, vec![A]);
     }
 
     #[actix_web::test]
