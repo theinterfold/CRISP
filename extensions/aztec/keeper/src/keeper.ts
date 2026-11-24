@@ -26,7 +26,7 @@ import {
   submitInputRoot,
   votesRoundContent,
 } from '@crisp-e3/aztec'
-import { CrispAztec } from '@crisp-e3/aztec/passport'
+import type { CrispAztec } from '@crisp-e3/aztec/passport'
 import { createPublicClient, createWalletClient, getAddress, hexToBigInt, http, type Hex, type PublicClient, type WalletClient } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 
@@ -60,8 +60,11 @@ export class Keeper {
 
   static async start(config: KeeperConfig, log: Log): Promise<Keeper> {
     const session = await connectAztec(config.aztecNodeUrl)
+    // The passport entry loads ZKPassport, which a keeper of token-weighted rounds has no use for.
     const crisp =
-      config.kind === 'votes' ? await CrispAztecVotes.connect(session, config.contract) : await CrispAztec.connect(session, config.contract)
+      config.kind === 'votes'
+        ? await CrispAztecVotes.connect(session, config.contract)
+        : await (await import('@crisp-e3/aztec/passport')).CrispAztec.connect(session, config.contract)
     const l1 = createPublicClient({ transport: http(config.l1RpcUrl) })
     const l1Wallet = createWalletClient({ account: privateKeyToAccount(config.l1PrivateKey), transport: http(config.l1RpcUrl) })
     const interfold = await l1.readContract({ address: config.program, abi: programAbi, functionName: 'interfold' })
