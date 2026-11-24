@@ -42,8 +42,6 @@ export type ResolveSlotHeadInputs = {
   cache?: CiphertextStore
   /** The CRISP server: serves the head once its epoch is proven. */
   serverUrl: string
-  /** Replaces the server lookup (default `CrispSDK.getPreviousCiphertext`). */
-  fetchServerHead?: (e3Id: bigint, slot: Address) => Promise<SlotHead | undefined>
 }
 
 /**
@@ -66,8 +64,7 @@ export const resolveSlotHead = async (inputs: ResolveSlotHeadInputs): Promise<Sl
   const cached = await inputs.cache?.get(e3Id, entry.encryptedVoteHash)
   if (cached && keccak256(cached) === entry.encryptedVoteHash) return { ciphertext: cached, index }
 
-  const fetchHead = inputs.fetchServerHead ?? ((id, address) => new CrispSDK(inputs.serverUrl).getPreviousCiphertext(id, address))
-  const head = await fetchHead(e3Id, slot)
+  const head = await new CrispSDK(inputs.serverUrl).getPreviousCiphertext(e3Id, slot)
   if (!head || head.index !== index || keccak256(bytesToHex(head.ciphertext)) !== entry.encryptedVoteHash) {
     throw new Error(
       `Slot ${slot}'s latest ballot (input ${index}) is on Aztec, but its bytes are neither stored on this client nor served by the CRISP server yet: ` +

@@ -138,7 +138,7 @@ export abstract class RoundClient {
   }
 
   /** The leaf index `consume_l1_to_l2_message` needs, once an L2 block has included the Inbox message. */
-  protected async messageLeafIndex(message: L1ToL2Message): Promise<bigint> {
+  protected async messageLeafIndex(message: Pick<L1ToL2Message, 'leaf'>): Promise<bigint> {
     const leaf = Fr.fromHexString(message.leaf)
     if (!(await waitForL1ToL2MessageReady(this.session.node, leaf, { timeoutSeconds: MESSAGE_TIMEOUT_SECONDS }))) {
       throw new Error(`The L1→L2 message ${message.leaf} was not included in an L2 block in time`)

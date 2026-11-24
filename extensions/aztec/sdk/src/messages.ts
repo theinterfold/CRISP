@@ -74,7 +74,7 @@ export const encodeKeyMessage = (roundId: bigint, committeePublicKey: Hex): Hex 
 export const encodeRootMessage = (roundId: bigint, inputRoot: bigint, numInputs: bigint): Hex =>
   encodeAbiParameters(words(4), [MESSAGE_KIND.ROOT, roundId, inputRoot, numInputs])
 
-/** Round configuration the votes program hands to `CrispAztecVotes` (`CRISPAztecVotesMessages.round`). */
+/** Round configuration the votes program hands to `CrispAztecVotes` (`CRISPAztecVotesProgram`'s ROUND message). */
 export type VotesRoundConfig = {
   roundId: bigint
   numOptions: bigint

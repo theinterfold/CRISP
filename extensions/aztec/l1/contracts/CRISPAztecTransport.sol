@@ -129,12 +129,12 @@ abstract contract CRISPAztecTransport is CRISPRemoteProgram {
     (content, ) = _sendToInbox(e3Id, message);
   }
 
-  /// @dev Like {_sendToRemote}, and also returns the Inbox leaf index the L2 contract consumes the message with.
-  function _sendToInbox(uint256 e3Id, bytes memory message) internal returns (bytes32 content, uint256 index) {
+  /// @dev Like {_sendToRemote}, and also returns the Inbox leaf the L2 contract consumes the message with.
+  function _sendToInbox(uint256 e3Id, bytes memory message) internal returns (bytes32 content, bytes32 leaf) {
     if (l2Program == bytes32(0)) revert L2ProgramNotSet();
 
     content = sha256ToField(message);
-    bytes32 leaf;
+    uint256 index;
     (leaf, index) = inbox.sendL2Message(
       AztecDataStructures.L2Actor({ actor: l2Program, version: rollupVersion }),
       content,

@@ -6,6 +6,7 @@
 
 import {
   type AztecSession,
+  type EnrolledMessage,
   type RoundClosed,
   type WithOrigin,
   CrispAztec,
@@ -120,7 +121,7 @@ export class Keeper {
     const l2Now = latest ? BigInt(latest.header.globalVariables.timestamp) : 0n
 
     for (const e3Id of open) {
-      const round = await this.read(e3Id, {
+      const { round, pending } = await this.read(e3Id, {
         l2Opened: opened.some((l) => l.e3Id === e3Id),
         l2KeyPublished: keyed.some((l) => l.e3Id === e3Id),
         l2Closed: closed.some((l) => l.e3Id === e3Id),
@@ -135,6 +136,7 @@ export class Keeper {
           await this.perform(
             action,
             round,
+            pending,
             closed.find((l) => l.e3Id === e3Id),
           )
         } catch (error) {
@@ -147,60 +149,54 @@ export class Keeper {
 
   private async learn(e3Id: bigint): Promise<void> {
     if (this.inputEnds.has(e3Id)) return
-    const interfold = await this.l1.readContract({ address: this.config.program, abi: programAbi, functionName: 'interfold' })
-    const e3 = await this.l1.readContract({ address: interfold, abi: interfoldAbi, functionName: 'getE3', args: [e3Id] })
+    const e3 = await this.l1.readContract({ address: this.crisp.interfold, abi: interfoldAbi, functionName: 'getE3', args: [e3Id] })
     this.inputEnds.set(e3Id, e3.inputWindow[1])
     this.log(`Round ${e3Id}: found; its input window ends at ${e3.inputWindow[1]}`)
   }
 
-  private async read(e3Id: bigint, l2: Pick<RoundState, 'l2Opened' | 'l2KeyPublished' | 'l2Closed' | 'l2Now'>): Promise<RoundState> {
-    const interfold = await this.l1.readContract({ address: this.config.program, abi: programAbi, functionName: 'interfold' })
-    const [stage, l1Round, pending] = await Promise.all([
-      this.l1.readContract({ address: interfold, abi: interfoldAbi, functionName: 'getE3Stage', args: [e3Id] }),
+  /**
+   * Where the round stands, with the ENROLL messages that Aztec has not consumed: one per `Enrolled` event whose slot is
+   * not in the census yet. They are read only when `enroll` could consume them (a token-weighted round that is open on
+   * Aztec and still accepts inputs), and the `enroll` step uses this list rather than reading it again.
+   */
+  private async read(e3Id: bigint, l2: Pick<RoundState, 'l2Opened' | 'l2KeyPublished' | 'l2Closed' | 'l2Now'>) {
+    const [stage, l1Round] = await Promise.all([
+      this.l1.readContract({ address: this.crisp.interfold, abi: interfoldAbi, functionName: 'getE3Stage', args: [e3Id] }),
       getL1Round(this.l1, this.config.program, e3Id),
-      this.pendingEnrollments(e3Id),
     ])
-
-    return {
+    const inputEnd = this.inputEnds.get(e3Id)!
+    let pending: EnrolledMessage[] = []
+    if (this.crisp instanceof CrispAztecVotes && l2.l2Opened && !l2.l2Closed && l2.l2Now < inputEnd) {
+      const enrolled = new Set((await this.crisp.logs('MemberRegistered', { e3Id })).map((log) => log.slot.toLowerCase()))
+      const messages = await getEnrolledMessages(this.l1, this.config.program, e3Id, { fromBlock: this.config.startBlock })
+      pending = messages.filter(({ slot }) => !enrolled.has(slot.toLowerCase()))
+    }
+    const round: RoundState = {
       e3Id,
       stage,
       l1KeyRelayed: l1Round.keyRelayed,
       l1RootSubmitted: l1Round.rootSubmitted,
-      inputEnd: this.inputEnds.get(e3Id)!,
+      inputEnd,
       pendingEnrollments: pending.length,
       ...l2,
     }
+
+    return { round, pending }
   }
 
-  /**
-   * The ENROLL messages of a token-weighted round that Aztec has not consumed: one per `Enrolled` event whose slot is
-   * not in the census yet. Nothing for a ZKPassport round.
-   */
-  private async pendingEnrollments(e3Id: bigint) {
-    if (!(this.crisp instanceof CrispAztecVotes)) return []
-    const enrolled = new Set((await this.crisp.logs('MemberRegistered', { e3Id })).map((log) => log.slot.toLowerCase()))
-    const messages = await getEnrolledMessages(this.l1, this.config.program, e3Id, { fromBlock: this.config.startBlock })
-
-    return messages.filter(({ slot }) => !enrolled.has(slot.toLowerCase()))
-  }
-
-  private async perform(action: Action, round: RoundState, closeLog: WithOrigin<RoundClosed> | undefined) {
+  private async perform(action: Action, round: RoundState, pending: EnrolledMessage[], closeLog: WithOrigin<RoundClosed> | undefined) {
     const { e3Id } = round
     const program = this.config.program
     switch (action) {
       case 'openRound': {
+        let txHash
         if (this.crisp instanceof CrispAztecVotes) {
           const config = await getVotesRound(this.l1, program, e3Id)
-          const message = (await getSentMessages(this.l1, program, e3Id)).find((m) => hexToBigInt(m.content) === votesRoundContent(config))
-          if (!message) throw new Error('the program has not sent the ROUND message')
-          const { txHash } = await this.crisp.openRound(config, message)
-          this.log(`Round ${e3Id}: opened on Aztec in ${txHash}`)
-          return
+          ;({ txHash } = await this.crisp.openRound(config, await this.sentMessage(e3Id, votesRoundContent(config), 'ROUND')))
+        } else {
+          const config = await getRoundConfig(this.l1, program, e3Id)
+          ;({ txHash } = await this.crisp.openRound(config, await this.sentMessage(e3Id, roundContent(config), 'ROUND')))
         }
-        const config = await getRoundConfig(this.l1, program, e3Id)
-        const message = (await getSentMessages(this.l1, program, e3Id)).find((m) => hexToBigInt(m.content) === roundContent(config))
-        if (!message) throw new Error('the program has not sent the ROUND message')
-        const { txHash } = await this.crisp.openRound(config, message)
         this.log(`Round ${e3Id}: opened on Aztec in ${txHash}`)
         return
       }
@@ -212,23 +208,20 @@ export class Keeper {
       }
       case 'publishKey': {
         const key = await this.relayedKey(e3Id)
-        const message = (await getSentMessages(this.l1, program, e3Id)).find(
-          (m) => hexToBigInt(m.content) === keyContent(roundIdOf(e3Id), key),
-        )
-        if (!message) throw new Error('the program has not sent the KEY message')
+        const message = await this.sentMessage(e3Id, keyContent(roundIdOf(e3Id), key), 'KEY')
         const { txHash } = await this.crisp.publishKey(e3Id, key, message)
         this.log(`Round ${e3Id}: committee key published on Aztec in ${txHash}`)
         return
       }
       case 'enroll': {
         if (!(this.crisp instanceof CrispAztecVotes)) throw new Error('only token-weighted rounds enroll slots')
-        for (const { slot, weight, message } of await this.pendingEnrollments(e3Id)) {
+        for (const enrollment of pending) {
           // Each message is a separate transaction, so one that fails (consumed by another keeper meanwhile) does not stop the rest.
           try {
-            const { txHash } = await this.crisp.enroll({ e3Id, slot, weight, message })
-            this.log(`Round ${e3Id}: slot ${slot} enrolled on Aztec in ${txHash}`)
+            const { txHash } = await this.crisp.enroll({ e3Id, ...enrollment })
+            this.log(`Round ${e3Id}: slot ${enrollment.slot} enrolled on Aztec in ${txHash}`)
           } catch (error) {
-            this.log(`Round ${e3Id}: enrolling ${slot} failed: ${describe(error)}`)
+            this.log(`Round ${e3Id}: enrolling ${enrollment.slot} failed: ${describe(error)}`)
           }
         }
         return
@@ -264,6 +257,14 @@ export class Keeper {
         this.log(`Round ${e3Id}: input root delivered to L1 in ${hash}`)
       }
     }
+  }
+
+  /** The Inbox message the program sent with `content`, which Aztec consumes. */
+  private async sentMessage(e3Id: bigint, content: bigint, name: 'ROUND' | 'KEY') {
+    const message = (await getSentMessages(this.l1, this.config.program, e3Id)).find((m) => hexToBigInt(m.content) === content)
+    if (!message) throw new Error(`the program has not sent the ${name} message`)
+
+    return message
   }
 
   /** The key the program relayed, as it announced it. */

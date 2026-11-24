@@ -71,17 +71,11 @@ pub struct EnrollResponse {
     pub skipped: Vec<Skipped>,
 }
 
-/// What the votes program knows of one slot of a round.
-pub struct SlotState {
-    pub enrolled: bool,
-    pub weight: U256,
-}
-
 /// The L1 side of the relay.
 #[async_trait]
 pub trait VotesChain: Send + Sync {
-    /// The state of every slot, in order.
-    async fn slot_states(&self, e3_id: U256, slots: &[Address]) -> eyre::Result<Vec<SlotState>>;
+    /// `(is enrolled, weight)` of every slot, in order.
+    async fn slot_states(&self, e3_id: U256, slots: &[Address]) -> eyre::Result<Vec<(bool, U256)>>;
     /// Send `enroll(e3Id, slots)` and wait until it is mined.
     async fn enroll(&self, e3_id: U256, slots: &[Address]) -> eyre::Result<B256>;
 }
@@ -93,26 +87,12 @@ struct L1Votes {
 
 #[async_trait]
 impl VotesChain for L1Votes {
-    async fn slot_states(&self, e3_id: U256, slots: &[Address]) -> eyre::Result<Vec<SlotState>> {
-        let provider = rpc::provider().await?;
-        let reads: Vec<_> = slots
-            .iter()
-            .map(|&slot| {
-                let program = IAztecVotesProgram::new(self.program, provider);
-                tokio::spawn(async move {
-                    let is_enrolled = program.isEnrolled(e3_id, slot);
-                    let weight_of = program.weightOf(e3_id, slot);
-                    tokio::join!(is_enrolled.call(), weight_of.call())
-                })
-            })
-            .collect();
-        let mut states = Vec::with_capacity(reads.len());
-        for read in reads {
-            let (enrolled, weight) = read.await?;
-            states.push(SlotState {
-                enrolled: enrolled?,
-                weight: weight?,
-            });
+    async fn slot_states(&self, e3_id: U256, slots: &[Address]) -> eyre::Result<Vec<(bool, U256)>> {
+        let program = IAztecVotesProgram::new(self.program, rpc::provider().await?);
+        let mut states = Vec::with_capacity(slots.len());
+        for &slot in slots {
+            let (enrolled, weight) = (program.isEnrolled(e3_id, slot), program.weightOf(e3_id, slot));
+            states.push(tokio::try_join!(enrolled.call(), weight.call())?);
         }
         Ok(states)
     }
@@ -190,10 +170,10 @@ impl EnrollService {
 
         let mut skipped = Vec::new();
         let mut claimed = Vec::new();
-        for (slot, state) in slots.into_iter().zip(states) {
-            if state.enrolled {
+        for (slot, (enrolled, weight)) in slots.into_iter().zip(states) {
+            if enrolled {
                 skipped.push(Skipped { slot, reason: "enrolled" });
-            } else if state.weight.is_zero() {
+            } else if weight.is_zero() {
                 skipped.push(Skipped { slot, reason: "no_weight" });
             } else if !self.claim(e3_id, slot) {
                 skipped.push(Skipped { slot, reason: "in_flight" });
@@ -299,17 +279,12 @@ mod tests {
 
     #[async_trait]
     impl VotesChain for FakeChain {
-        async fn slot_states(&self, _: U256, slots: &[Address]) -> eyre::Result<Vec<SlotState>> {
+        async fn slot_states(&self, _: U256, slots: &[Address]) -> eyre::Result<Vec<(bool, U256)>> {
             Ok(slots
                 .iter()
-                .map(|slot| SlotState {
-                    enrolled: self.enrolled.contains(slot),
-                    weight: U256::from(
-                        self.weights
-                            .iter()
-                            .find(|(held, _)| held == slot)
-                            .map_or(0, |(_, weight)| *weight),
-                    ),
+                .map(|slot| {
+                    let weight = self.weights.iter().find(|(held, _)| held == slot);
+                    (self.enrolled.contains(slot), U256::from(weight.map_or(0, |(_, weight)| *weight)))
                 })
                 .collect())
         }
@@ -443,24 +418,12 @@ mod tests {
     }
 
     #[actix_web::test]
-    async fn a_failed_send_frees_its_slots() {
-        let chain = Arc::new(FakeChain {
-            weights: vec![(A, 5)],
-            send_fails: true,
-            ..Default::default()
-        });
-        let service = EnrollService::new(chain, false);
-        assert!(service.run(U256::from(42), vec![A]).await.is_err());
-        assert!(service.claim(U256::from(42), A));
-    }
-
-    #[actix_web::test]
-    async fn a_failed_send_is_a_503_and_a_caller_is_limited() {
+    async fn a_failed_send_is_a_503_that_frees_its_slots_and_a_caller_is_limited() {
         let chain = Arc::new(FakeChain { weights: vec![(A, 5)], send_fails: true, ..Default::default() });
         let service = web::Data::new(EnrollService::new(chain, false));
         let app = test::init_service(
             App::new()
-                .app_data(service)
+                .app_data(service.clone())
                 .route("/enroll", web::post().to(enroll)),
         )
         .await;
@@ -475,6 +438,7 @@ mod tests {
             let response = test::call_service(&app, call()).await;
             assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
         }
+        assert!(service.claim(U256::from(42), A));
         let response = test::call_service(&app, call()).await;
         assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
     }

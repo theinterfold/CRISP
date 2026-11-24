@@ -158,11 +158,9 @@ export const submitInputRoot = async (
 // The votes program (`CRISPAztecVotesProgram`): token-weighted rounds, weights bridged per slot by `enroll`
 // ---------------------------------------------------------------------------------------------------------
 
-/** The part of `CRISPAztecVotesProgram` this package calls or reads, besides {@link programAbi}. */
+/** The part of `CRISPAztecVotesProgram` this package reads, besides {@link programAbi}. */
 export const votesProgramAbi = parseAbi([
-  'function weightOf(uint256 e3Id, address slot) view returns (uint256)',
-  'function isEnrolled(uint256 e3Id, address slot) view returns (bool)',
-  'event Enrolled(uint256 indexed e3Id, address indexed slot, uint256 weight, bytes32 content, uint256 index)',
+  'event Enrolled(uint256 indexed e3Id, address indexed slot, uint256 weight, bytes32 leaf)',
 ])
 
 /** Rebuild the ROUND configuration the votes program sent for `e3Id` from L1 state. A keeper opens the round on L2 from this. */
@@ -182,37 +180,23 @@ export const getVotesRound = async (client: PublicClient, program: Address, e3Id
   }
 }
 
-/** The weight `slot` carries in the round (`getPastVotes / divisor`, 0 below the floor). */
-export const weightOf = (client: PublicClient, program: Address, e3Id: bigint, slot: Address): Promise<bigint> =>
-  client.readContract({ address: program, abi: votesProgramAbi, functionName: 'weightOf', args: [e3Id, slot] })
+/** An ENROLL message the program sent. `leaf` is the Inbox leaf that `CrispAztecVotes.enroll` consumes. */
+export type EnrolledMessage = { slot: Address; weight: bigint; leaf: Hex }
 
-/** Whether `enroll` already bridged `slot`'s weight on L1 (its Aztec side may still be pending). */
-export const isEnrolled = (client: PublicClient, program: Address, e3Id: bigint, slot: Address): Promise<boolean> =>
-  client.readContract({ address: program, abi: votesProgramAbi, functionName: 'isEnrolled', args: [e3Id, slot] })
-
-/** An ENROLL message the program sent: what `CrispAztecVotes.enroll` consumes. */
-export type EnrolledMessage = { slot: Address; weight: bigint; message: L1ToL2Message }
-
-/** Every `Enrolled` event of a round (optionally of some slots), with the Inbox message each sent, oldest first. */
+/** Every `Enrolled` event of a round (optionally of some slots), oldest first. */
 export const getEnrolledMessages = async (
   client: PublicClient,
   program: Address,
   e3Id: bigint,
   options: { slots?: readonly Address[]; fromBlock?: bigint } = {},
 ): Promise<EnrolledMessage[]> => {
-  const fromBlock = options.fromBlock ?? 0n
-  const [events, sent] = await Promise.all([
-    client.getContractEvents({ address: program, abi: votesProgramAbi, eventName: 'Enrolled', args: { e3Id }, fromBlock }),
-    getSentMessages(client, program, e3Id, fromBlock),
-  ])
-  const wanted = options.slots && new Set(options.slots.map((slot) => slot.toLowerCase()))
+  const events = await client.getContractEvents({
+    address: program,
+    abi: votesProgramAbi,
+    eventName: 'Enrolled',
+    args: { e3Id, slot: options.slots && [...options.slots] },
+    fromBlock: options.fromBlock ?? 0n,
+  })
 
-  return events
-    .filter(({ args }) => !wanted || wanted.has((args.slot as Address).toLowerCase()))
-    .map(({ args }) => {
-      const message = sent.find((candidate) => candidate.index === args.index && BigInt(candidate.content) === BigInt(args.content as Hex))
-      if (!message) throw new Error(`The program emitted Enrolled for ${args.slot} without a matching L1ToL2MessageSent`)
-
-      return { slot: args.slot as Address, weight: args.weight as bigint, message }
-    })
+  return events.map(({ args }) => ({ slot: args.slot as Address, weight: args.weight as bigint, leaf: args.leaf as Hex }))
 }

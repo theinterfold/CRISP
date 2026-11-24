@@ -5,17 +5,18 @@
 // or FITNESS FOR A PARTICULAR PURPOSE.
 
 import { AztecAddress, EthAddress } from '@aztec-labs/aztec.js/addresses'
-import { getAddress, type Address, type Hex, type PublicClient } from 'viem'
+import { getAddress, toHex, type Address, type Hex, type PublicClient } from 'viem'
 
 import type { TypedDataSigner } from './ballot'
 import { CrispAztecVotesContract } from './bindings/CrispAztecVotes'
 import type { CastArguments } from './cast'
-import { stagingTreeFromLogs, type Census } from './census'
-import { getEnrolledMessages, type L1ToL2Message } from './l1'
+import { censusFromLogs, stagingTreeFromLogs, type Census } from './census'
+import { getEnrolledMessages, type EnrolledMessage, type L1ToL2Message } from './l1'
 import type { VotesRoundConfig } from './messages'
 import { castCallArguments, RoundClient, sharedDeployArguments, type SentTx, type SharedDeployParams } from './roundClient'
+import { requestEnrollment } from './server'
 import type { AztecSession } from './session'
-import { stagingKeyBinding } from './votes-staging'
+import { stagingCommitment, stagingKeyBinding, type SecretStorage } from './votes-staging'
 
 /** Deploy `crisp_aztec_votes`. Deploy the `CRISPAztecVotesProgram` on L1 first, then `setL2Program` with the result. */
 export const deployCrispAztecVotes = async (session: AztecSession, params: SharedDeployParams): Promise<CrispAztecVotes> => {
@@ -57,45 +58,50 @@ export class CrispAztecVotes extends RoundClient {
     return new CrispAztecVotes(session, contract, getAddress((result as { interfold: EthAddress }).interfold.toString()))
   }
 
-  async isSlotEnrolled(e3Id: bigint, slot: Address): Promise<boolean> {
-    return this.view<boolean>(this.contract.methods.is_slot_enrolled(this.roundIdFor(e3Id), BigInt(slot)))
-  }
-
-  /** The round's staging tree, rebuilt from its STAGING_KEY_BOUND logs: what `buildVotesStagingPass` proves membership of. */
-  async getStagingTree(e3Id: bigint): Promise<Census> {
-    return stagingTreeFromLogs(await this.logs('StagingKeyBound', { e3Id }))
-  }
-
   /**
-   * Bind `slot`'s staging secret, which a staging pass later proves without naming the slot (enroll the slot first). The wallet
-   * signs `StagingKey`; the secret and its commitment derive from the signature. If that commitment is already bound for the
-   * slot (a deterministic signer signing again) the secret is returned without a transaction; else a new bind is sent (the contract
-   * allows 3 per slot and round). Keep the secret (`stagingSecretStore`): a non-deterministic signer cannot re-derive it.
+   * The staging secret of `slot` in the round, and the staging tree that holds its commitment: what a staging pass proves without
+   * naming the slot. The secret kept in `storage` is used when its commitment is bound. Else the wallet signs `StagingKey`, the
+   * secret derives from the signature, and `bind_staging_key` binds its commitment unless it is bound already (a deterministic
+   * signer signing again). The slot must be enrolled first. The contract allows 3 binds per slot and round, which is why the
+   * secret is stored: a signer that signs differently each time cannot derive it again.
    */
-  async bindStagingKey(args: {
+  async stagingKey(args: {
     e3Id: bigint
     slot: Address
     signer: TypedDataSigner
     /** The CRISP program on L1 (the EIP-712 verifying contract). */
     program: Address
     l1ChainId: number
-  }): Promise<{ secret: bigint; commitment: bigint; tx?: SentTx }> {
-    const binding = await stagingKeyBinding(args)
-    const bound = await this.logs('StagingKeyBound', { e3Id: args.e3Id })
-    if (bound.some((log) => log.commitment === binding.commitment && log.slot.toLowerCase() === args.slot.toLowerCase())) {
-      return { secret: binding.secret, commitment: binding.commitment }
-    }
-    const tx = await this.send(
-      this.contract.methods.bind_staging_key(
-        this.roundIdFor(args.e3Id),
-        BigInt(args.slot),
-        Array.from(binding.publicKeyX),
-        Array.from(binding.publicKeyY),
-        Array.from(binding.signature),
-      ),
-    )
+    storage: SecretStorage
+  }): Promise<{ secret: bigint; stagingTree: Census }> {
+    const { e3Id, slot, storage } = args
+    const roundId = this.roundIdFor(e3Id)
+    const key = `crisp-aztec-votes:staging-secret:${args.program.toLowerCase()}:${e3Id}:${slot.toLowerCase()}`
+    let bound = await this.logs('StagingKeyBound', { e3Id })
+    // A commitment enters a round's staging tree once, and only its slot's signature derives it.
+    const isBound = (secret: bigint) => bound.some((log) => log.commitment === stagingCommitment(secret, roundId))
 
-    return { secret: binding.secret, commitment: binding.commitment, tx }
+    const stored = await storage.get(key)
+    let secret = stored ? BigInt(stored) : undefined
+    if (secret === undefined || !isBound(secret)) {
+      const binding = await stagingKeyBinding(args)
+      secret = binding.secret
+      if (!isBound(secret)) {
+        await this.send(
+          this.contract.methods.bind_staging_key(
+            roundId,
+            BigInt(slot),
+            Array.from(binding.publicKeyX),
+            Array.from(binding.publicKeyY),
+            Array.from(binding.signature),
+          ),
+        )
+        bound = await this.logs('StagingKeyBound', { e3Id })
+      }
+      await storage.set(key, toHex(secret))
+    }
+
+    return { secret, stagingTree: stagingTreeFromLogs(bound) }
   }
 
   /** Consume the ROUND message the votes program sent (`getVotesRound` rebuilds `config` from L1). */
@@ -120,9 +126,9 @@ export class CrispAztecVotes extends RoundClient {
   }
 
   /** Consume one ENROLL message (`getEnrolledMessages`): adds `slot` with `weight` to the census. Permissionless. */
-  async enroll(args: { e3Id: bigint; slot: Address; weight: bigint; message: L1ToL2Message }): Promise<SentTx> {
+  async enroll(args: { e3Id: bigint } & EnrolledMessage): Promise<SentTx> {
     return this.send(
-      this.contract.methods.enroll(this.roundIdFor(args.e3Id), BigInt(args.slot), args.weight, await this.messageLeafIndex(args.message)),
+      this.contract.methods.enroll(this.roundIdFor(args.e3Id), BigInt(args.slot), args.weight, await this.messageLeafIndex(args)),
     )
   }
 
@@ -140,43 +146,51 @@ export class CrispAztecVotes extends RoundClient {
 const ENROLLMENT_TIMEOUT_MS = 15 * 60_000
 const ENROLLMENT_POLL_MS = 5_000
 
-export type WaitForEnrollmentOptions = {
+/**
+ * Make sure every slot is in the round's census on Aztec, and return the census. A missing slot is enrolled: the CRISP server
+ * relays the permissionless L1 `enroll` (the voter pays nothing), the slot's ENROLL message is read from the `Enrolled` event, and
+ * Aztec `enroll` consumes it. Anyone may send that last step, so a keeper may get there first.
+ */
+export const ensureEnrolled = async (options: {
   votes: CrispAztecVotes
   l1: PublicClient
   /** The votes program on L1. */
   program: Address
   e3Id: bigint
   slots: readonly Address[]
-  /** The L1 `enroll` transaction (the server's `tx_hash` or your own): waited for before the messages are read. */
-  l1TxHash?: Hex
-}
+  serverUrl: string
+  /** Called with the slots that are about to be enrolled, which takes minutes. */
+  onEnrolling?: (slots: Address[]) => void
+}): Promise<Census> => {
+  const { votes, l1, program, e3Id } = options
+  const read = async () => {
+    const members = await votes.logs('MemberRegistered', { e3Id })
+    const enrolled = new Set(members.map((log) => log.slot.toLowerCase()))
 
-/**
- * Wait until every slot is enrolled on Aztec: L1 `enroll` mined → its ENROLL message is read from the `Enrolled` event → Aztec
- * `enroll` (anyone may send it; a keeper may beat this call to it) → the slot is in the census. Resolves with the census then.
- */
-export const waitForEnrollment = async (options: WaitForEnrollmentOptions): Promise<Census> => {
-  const { votes, l1, program, e3Id, slots } = options
+    return { members, missing: options.slots.filter((slot) => !enrolled.has(slot.toLowerCase())) }
+  }
+
+  let { members, missing } = await read()
+  if (missing.length === 0) return censusFromLogs(members)
+
+  options.onEnrolling?.(missing)
+  const { txHash, skipped } = await requestEnrollment(options.serverUrl, e3Id, missing)
+  // `enrolled` and `in_flight` mean the weight is already on its way to Aztec; only a slot without power is refused.
+  const refused = skipped.find(({ reason }) => reason === 'no_weight')
+  if (refused) throw new Error(`${refused.slot} has no voting power in this round`)
+  if (txHash) await l1.waitForTransactionReceipt({ hash: txHash })
+
   const deadline = Date.now() + ENROLLMENT_TIMEOUT_MS
-  if (options.l1TxHash) await l1.waitForTransactionReceipt({ hash: options.l1TxHash })
-
   let lastError: unknown
   for (;;) {
-    const missing: Address[] = []
-    for (const slot of slots) if (!(await votes.isSlotEnrolled(e3Id, slot))) missing.push(slot)
-    if (missing.length === 0) return votes.getCensus(e3Id)
-
-    for (const { slot, weight, message } of await getEnrolledMessages(l1, program, e3Id, { slots: missing })) {
-      try {
-        await votes.enroll({ e3Id, slot, weight, message })
-      } catch (error) {
-        // A keeper may have consumed the message first; the next pass checks the slot again.
-        lastError = error
-      }
+    for (const enrollment of await getEnrolledMessages(l1, program, e3Id, { slots: missing })) {
+      // A keeper may consume the message first; the next read of the census tells.
+      await votes.enroll({ e3Id, ...enrollment }).catch((error) => (lastError = error))
     }
-
+    ;({ members, missing } = await read())
+    if (missing.length === 0) return censusFromLogs(members)
     if (Date.now() > deadline) {
-      throw new Error(`Slots ${missing.join(', ')} are not enrolled on Aztec in time${lastError ? `: ${String((lastError as Error).message)}` : ''}`)
+      throw new Error(`Slots ${missing.join(', ')} were not enrolled on Aztec in time${lastError ? `: ${String((lastError as Error).message)}` : ''}`)
     }
     await new Promise((resolve) => setTimeout(resolve, ENROLLMENT_POLL_MS))
   }

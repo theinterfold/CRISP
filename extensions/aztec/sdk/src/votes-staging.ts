@@ -15,6 +15,7 @@ import stagingPassVotesCircuit from '../../../core/circuits/staging_pass_votes/c
 import { crispDomain, type TypedDataSigner } from './ballot'
 import type { Census } from './census'
 import { roundIdOf } from './messages'
+import type { InputAttestation } from './server'
 import { halves, stagingProver, stagingRequestDigest, type StagingPass, type StagingRequest } from './staging-pass'
 
 const circuit = stagingPassVotesCircuit as unknown as CompiledCircuit
@@ -84,9 +85,8 @@ export const stagingKeyBinding = async (args: {
 export const destroyVotesStagingPassProver = prover.destroy
 
 export type BuildVotesStagingPassInputs = {
-  /** The slot's staging secret (`bindStagingKey`): the voter's OWN, for a vote and a mask alike. */
+  /** The slot's staging secret and the round's staging tree (`CrispAztecVotes.stagingKey`): the voter's OWN, for a vote and a mask alike. */
   secret: bigint
-  /** The round's staging tree (`CrispAztecVotes.getStagingTree`); must hold the secret's commitment. */
   stagingTree: Census
   request: StagingRequest
   /** The server's `staging_max_requests`. */
@@ -132,28 +132,45 @@ export const buildVotesStagingPass = async (inputs: BuildVotesStagingPassInputs)
   return { proof: bytesToHex(bytes), publicInputs: publicInputs as Hex[] }
 }
 
-/** Where a client keeps a slot's staging secret between sessions (a caller-supplied `localStorage` wrapper, a file, …). */
+// The CRISP server's refusals (`staging_pass.rs`) that another attempt gets past.
+const TAG_USED = 'The staging pass was already used'
+const UNKNOWN_ROOT = 'The staging pass names a census root this round has not had'
+/** How long, and how often, a pass whose root the server has not read yet is sent again. The server reads new roots at most every 5 s. */
+const ROOT_WAIT_MS = 3 * 60_000
+const ROOT_RETRY_MS = 5_000
+
+/**
+ * Stage with the first unused pass of a staging key, from `counter` up, and report the counter that staged. The server keeps the
+ * tag of every pass it took: a used one costs a new pass with the next counter, not a new ballot. It checks the root before it takes
+ * the tag, so a pass whose root it has not read from Aztec yet (a staging key bound a moment ago) is sent again unchanged.
+ */
+export const stageWithNextPass = async (args: {
+  counter: number
+  maxRequests: number
+  prove: (counter: number) => Promise<StagingPass>
+  stage: (pass: StagingPass) => Promise<InputAttestation>
+  onWait?: () => void
+}): Promise<{ attestation: InputAttestation; counter: number }> => {
+  const deadline = Date.now() + ROOT_WAIT_MS
+  for (let counter = args.counter; counter < args.maxRequests; counter++) {
+    const pass = await args.prove(counter)
+    for (;;) {
+      try {
+        return { attestation: await args.stage(pass), counter }
+      } catch (error) {
+        const refusal = error instanceof Error ? error.message : ''
+        if (refusal.includes(TAG_USED)) break
+        if (!refusal.includes(UNKNOWN_ROOT) || Date.now() >= deadline) throw error
+        args.onWait?.()
+        await new Promise((resolve) => setTimeout(resolve, ROOT_RETRY_MS))
+      }
+    }
+  }
+  throw new Error(`This staging key has used all ${args.maxRequests} passes the CRISP server accepts from it in a round`)
+}
+
+/** Where a client keeps what it must not lose between sessions (a caller-supplied `localStorage` wrapper, a file, …). */
 export type SecretStorage = {
   get: (key: string) => Promise<string | null | undefined> | string | null | undefined
   set: (key: string, value: string) => Promise<void> | void
-}
-
-/**
- * Persist and restore staging secrets per `(program, e3Id, slot)`. The secret derives from a signature, so a deterministic signer
- * needs no store; a signer that signs differently each time (or a lost bind beyond the cap) does.
- */
-export const stagingSecretStore = (storage: SecretStorage) => {
-  const key = (program: Address, e3Id: bigint, slot: Address) =>
-    `crisp-aztec-votes:staging-secret:${program.toLowerCase()}:${e3Id}:${slot.toLowerCase()}`
-
-  return {
-    async get(program: Address, e3Id: bigint, slot: Address): Promise<bigint | undefined> {
-      const value = await storage.get(key(program, e3Id, slot))
-
-      return value ? BigInt(value) : undefined
-    },
-    async set(program: Address, e3Id: bigint, slot: Address, secret: bigint): Promise<void> {
-      await storage.set(key(program, e3Id, slot), toHex(secret))
-    },
-  }
 }

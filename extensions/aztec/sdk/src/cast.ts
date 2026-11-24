@@ -10,8 +10,8 @@ import { bytesToHex, hexToBytes, keccak256, recoverAddress, type Address, type H
 import { availabilityDigest, ballotDigest, ballotTypedData, inputId, type TypedDataSigner } from './ballot'
 import type { Census } from './census'
 import { stageInput, type InputAttestation } from './server'
-import { buildStagingPass, type DigestSigner } from './staging-pass'
-import { buildVotesStagingPass } from './votes-staging'
+import { buildStagingPass, type DigestSigner, type StagingPass } from './staging-pass'
+import { buildVotesStagingPass, stageWithNextPass } from './votes-staging'
 
 export type BuildCastInputs = {
   serverUrl: string
@@ -48,12 +48,11 @@ export type BuildCastInputs = {
         counter: number
       }
     | {
-        /** The slot's staging secret (`bindStagingKey`). */
+        /** The slot's staging secret and the round's staging tree (`CrispAztecVotes.stagingKey`). */
         secret: bigint
-        /** The round's staging tree, from its STAGING_KEY_BOUND logs (`CrispAztecVotes.getStagingTree`). */
         stagingTree: Census
         maxRequests: number
-        /** The next unused pass counter of the secret in this round. */
+        /** The first pass counter to try. A pass the server already holds moves on to the next one (`stagingCounter`). */
         counter: number
       }
   /**
@@ -61,8 +60,8 @@ export type BuildCastInputs = {
    * Omitted, the server's previous-ciphertext is used, which on Aztec lags by the ~1-2 h an epoch takes to be proven.
    */
   head?: SlotHead
-  /** The `fetch` used to stage the ciphertext with the server (default global `fetch`); lets a caller retry the same staging request. */
-  fetchImpl?: typeof fetch
+  /** Votes rounds: called each time staging waits for the server to read a staging key that was bound a moment ago. */
+  onStagingWait?: () => void
   onProgress?: ProofOptions['onProgress']
 }
 
@@ -93,6 +92,8 @@ export type CastArguments = {
   /** The ciphertext, staged with the server; kept for the caller's own bookkeeping. */
   encryptedVote: Uint8Array
   attestation: InputAttestation
+  /** The pass counter that staged the ciphertext. The next pass of the same key starts after it. */
+  stagingCounter: number
 }
 
 // Public inputs of the crisp ballot proof, in the order the circuit declares them (the first eight are the fold's too).
@@ -151,11 +152,17 @@ export const buildCast = async (inputs: BuildCastInputs): Promise<CastArguments>
     parentIndexPlusOne: result.parentIndexPlusOne,
   }
   const request = { l1ChainId, program, ...staged }
-  const stagingPass =
-    'secret' in inputs.staging
-      ? await buildVotesStagingPass({ ...inputs.staging, request })
-      : await buildStagingPass({ ...inputs.staging, census, credits: inputs.credits, request })
-  const attestation = await stageInput(serverUrl, { ...staged, stagingPass }, inputs.fetchImpl)
+  const stage = (stagingPass: StagingPass) => stageInput(serverUrl, { ...staged, stagingPass })
+  const { staging } = inputs
+  const { attestation, counter: stagingCounter } =
+    'secret' in staging
+      ? await stageWithNextPass({
+          ...staging,
+          prove: (counter) => buildVotesStagingPass({ ...staging, counter, request }),
+          stage,
+          onWait: inputs.onStagingWait,
+        })
+      : { attestation: await stage(await buildStagingPass({ ...staging, census, credits: inputs.credits, request })), counter: staging.counter }
 
   const id = inputId({
     program,
@@ -193,6 +200,7 @@ export const buildCast = async (inputs: BuildCastInputs): Promise<CastArguments>
     signature: attestation.signature,
     encryptedVote: result.encryptedVote,
     attestation,
+    stagingCounter,
   }
 }
 

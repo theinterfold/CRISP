@@ -1,4 +1,4 @@
-//! Contents of the L1 -> L2 messages of the votes program (`CRISPAztecVotesMessages`). KEY and ROOT are the shared
+//! Contents of the L1 -> L2 messages of the votes program (`CRISPAztecVotesProgram`). KEY and ROOT are the shared
 //! `key_content` / `root_content`.
 
 use aztec::protocol::hash::sha256_to_field;

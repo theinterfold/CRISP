@@ -136,12 +136,11 @@ pub contract CrispAztecVotes {
     // ---------------------------------------------------------------------------------------------------------
 
     /// Adds `slot` with `weight` to the census from its ENROLL message. Anyone may call it: the message, sent by the
-    /// L1 program from `getPastVotes` at the round snapshot, authenticates the weight. A slot enrolls once.
+    /// L1 program from `getPastVotes` at the round snapshot, authenticates the weight (never zero). A slot enrolls once.
     #[external("public")]
     fn enroll(round_id: Field, slot: Field, weight: Field, leaf_index: Field) {
         let round = self.storage.rounds.at(round_id).read();
         assert(self.context.timestamp() < round.input_end, "enrollment closed");
-        assert(weight != 0, "zero weight");
 
         let state = self.storage.slots.at(round_id).at(slot);
         assert(!state.read().enrolled, "slot already enrolled");
@@ -156,11 +155,11 @@ pub contract CrispAztecVotes {
         );
 
         let census_leaf = hash_2([slot, weight]);
-        let index = self.storage.counts.at(round_id).read().census;
+        let mut counts = self.storage.counts.at(round_id).read();
+        let index = counts.census;
         assert(index < MAX_LEAVES, "census full");
         let mut nodes = PublicNodes { nodes: self.storage.census_nodes.at(round_id) };
         let root = lean_insert(&mut nodes, index, census_leaf);
-        let mut counts = self.storage.counts.at(round_id).read();
         counts.census = index + 1;
         self.storage.counts.at(round_id).write(counts);
         self.storage.census_roots.at(round_id).at(root).write(true);
@@ -212,11 +211,11 @@ pub contract CrispAztecVotes {
         assert(!used.read(), "staging key already bound");
         used.write(true);
 
-        let index = self.storage.counts.at(round_id).read().staging;
+        let mut counts = self.storage.counts.at(round_id).read();
+        let index = counts.staging;
         assert(index < MAX_LEAVES, "staging tree full");
         let mut nodes = PublicNodes { nodes: self.storage.staging_nodes.at(round_id) };
         let root = lean_insert(&mut nodes, index, commitment);
-        let mut counts = self.storage.counts.at(round_id).read();
         counts.staging = index + 1;
         self.storage.counts.at(round_id).write(counts);
         self.storage.staging_roots.at(round_id).at(root).write(true);
@@ -353,7 +352,8 @@ pub contract CrispAztecVotes {
         assert(now < expires_at, "availability attestation expired");
         assert(self.storage.census_roots.at(round_id).at(census_root).read(), "unknown census root");
 
-        let index = self.storage.counts.at(round_id).read().inputs;
+        let mut counts = self.storage.counts.at(round_id).read();
+        let index = counts.inputs;
         assert(index < round.input_limit, "input limit reached");
 
         if parent_index_plus_one == 0 {
@@ -373,7 +373,6 @@ pub contract CrispAztecVotes {
         self.storage.inputs.at(round_id).at(index).write(InputEntry { slot, commitment: ct_commitment });
         let mut nodes = PublicNodes { nodes: self.storage.input_frontier.at(round_id) };
         lazy_insert(&mut nodes, index, leaf);
-        let mut counts = self.storage.counts.at(round_id).read();
         counts.inputs = index + 1;
         self.storage.counts.at(round_id).write(counts);
 

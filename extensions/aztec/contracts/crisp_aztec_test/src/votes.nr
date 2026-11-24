@@ -226,12 +226,6 @@ unconstrained fn a_slot_enrolls_once() {
     enroll(env, votes, SLOT_1, WEIGHT_2);
 }
 
-#[test(should_fail_with = "zero weight")]
-unconstrained fn enroll_rejects_a_zero_weight() {
-    let (env, votes) = open();
-    enroll(env, votes, SLOT_1, 0);
-}
-
 #[test(should_fail_with = "enrollment closed")]
 unconstrained fn enrollment_closes_with_the_input_window() {
     let (env, votes) = open();

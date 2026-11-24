@@ -5,24 +5,15 @@
 // or FITNESS FOR A PARTICULAR PURPOSE.
 pragma solidity >=0.8.27;
 
+import { IVotes } from "@openzeppelin/contracts/governance/utils/IVotes.sol";
+import { IERC6372 } from "@openzeppelin/contracts/interfaces/IERC6372.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import { IOpenVmReceiptVerifier } from "@interfold/contracts/contracts/interfaces/IOpenVmReceiptVerifier.sol";
 import { IDataAvailabilityVerifier } from "@interfold/contracts/contracts/interfaces/IDataAvailabilityVerifier.sol";
 import { E3 } from "@interfold/contracts/contracts/interfaces/IE3.sol";
+import { CRISPRemoteMessages } from "@crisp-e3/extension-core/contracts/CRISPRemoteMessages.sol";
 import { CRISPAztecTransport } from "./CRISPAztecTransport.sol";
-import { CRISPAztecVotesMessages } from "./CRISPAztecVotesMessages.sol";
 import { IAztecInbox, IAztecOutbox } from "./interfaces/IAztecMessageBridge.sol";
-
-/// @dev The ERC-6372 clock of a votes token.
-interface IVotesClock {
-  function clock() external view returns (uint48);
-}
-
-/// @dev The part of ERC20Votes this program reads.
-interface IPastVotes {
-  function getPastVotes(address account, uint256 timepoint) external view returns (uint256);
-  function getPastTotalSupply(uint256 timepoint) external view returns (uint256);
-}
 
 /// @title CRISPAztecVotesProgram
 /// @notice Token-weighted CRISP E3 program whose ballots are cast on Aztec (`crisp_aztec_votes`).
@@ -32,6 +23,8 @@ contract CRISPAztecVotesProgram is CRISPAztecTransport {
   /// @dev `CRISPProgram.CreditMode.CUSTOM` and `CensusMode.ONCHAIN`: the only combination this program runs.
   uint256 internal constant CREDIT_MODE_CUSTOM = 1;
   uint256 internal constant CENSUS_MODE_ONCHAIN = 2;
+  /// @dev First word of the ENROLL message; ROUND, KEY and ROOT are {CRISPRemoteMessages}'s kinds.
+  uint256 internal constant KIND_ENROLL = 4;
 
   /// @notice What a round reads its voting power from.
   struct Votes {
@@ -57,8 +50,8 @@ contract CRISPAztecVotesProgram is CRISPAztecTransport {
   error MinVotingPowerBelowScale();
   error InputWindowClosed(uint256 e3Id, uint256 inputEnd);
 
-  /// @notice A slot's weight was sent to Aztec. `index` is the Inbox leaf index the L2 `enroll` consumes it with.
-  event Enrolled(uint256 indexed e3Id, address indexed slot, uint256 weight, bytes32 content, uint256 index);
+  /// @notice A slot's weight was sent to Aztec. `leaf` is the Inbox leaf the L2 `enroll` consumes it with.
+  event Enrolled(uint256 indexed e3Id, address indexed slot, uint256 weight, bytes32 leaf);
 
   /// @dev Parameters: see {CRISPAztecTransport}.
   constructor(
@@ -100,8 +93,9 @@ contract CRISPAztecVotesProgram is CRISPAztecTransport {
       if (weight == 0) continue;
 
       isEnrolled[e3Id][slot] = true;
-      (bytes32 content, uint256 index) = _sendToInbox(e3Id, CRISPAztecVotesMessages.enroll(roundId, slot, weight));
-      emit Enrolled(e3Id, slot, weight, content, index);
+      // ENROLL: `abi.encode(4, roundId, uint256(uint160(slot)), weight)`; the Noir contract and the SDK mirror it.
+      (, bytes32 leaf) = _sendToInbox(e3Id, abi.encode(KIND_ENROLL, roundId, uint256(uint160(slot)), weight));
+      emit Enrolled(e3Id, slot, weight, leaf);
       enrolled++;
     }
   }
@@ -109,7 +103,7 @@ contract CRISPAztecVotesProgram is CRISPAztecTransport {
   /// @notice The weight a slot carries: its voting power at the snapshot over the divisor, zero below the floor.
   function weightOf(uint256 e3Id, address slot) public view returns (uint256) {
     Votes storage v = votes[e3Id];
-    uint256 raw = IPastVotes(v.token).getPastVotes(slot, v.snapshot);
+    uint256 raw = IVotes(v.token).getPastVotes(slot, v.snapshot);
     return raw < v.minVotingPower ? 0 : raw / v.divisor;
   }
 
@@ -124,14 +118,6 @@ contract CRISPAztecVotesProgram is CRISPAztecTransport {
 
   function snapshotOf(uint256 e3Id) external view returns (uint48) {
     return votes[e3Id].snapshot;
-  }
-
-  function tokenOf(uint256 e3Id) external view returns (address) {
-    return votes[e3Id].token;
-  }
-
-  function minVotingPowerOf(uint256 e3Id) external view returns (uint256) {
-    return votes[e3Id].minVotingPower;
   }
 
   /// @notice Informational scope: `crisp-aztec-votes:<chainId>:<lowercase program address>:<e3Id>`.
@@ -163,12 +149,12 @@ contract CRISPAztecVotesProgram is CRISPAztecTransport {
     address token = v.token;
     if (token.code.length == 0) revert CensusModeRequiresToken();
     uint48 snapshot = _previousTimepoint(token);
-    try IPastVotes(token).getPastVotes(address(0), snapshot) returns (uint256) {} catch {
+    try IVotes(token).getPastVotes(address(0), snapshot) returns (uint256) {} catch {
       revert CensusModeRequiresToken();
     }
 
     uint256 divisor;
-    try IPastVotes(token).getPastTotalSupply(snapshot) returns (uint256 supply) {
+    try IVotes(token).getPastTotalSupply(snapshot) returns (uint256 supply) {
       uint256 minimum = supply / plaintextModulus + 1;
       divisor = requestedDivisor == 0 ? minimum : requestedDivisor;
       if (divisor < minimum) revert VotingPowerDivisorBelowMinimum(divisor, minimum);
@@ -180,7 +166,8 @@ contract CRISPAztecVotesProgram is CRISPAztecTransport {
     v.snapshot = snapshot;
     v.divisor = divisor;
     inputLimit = MAX_INPUTS_PER_ROUND;
-    message = CRISPAztecVotesMessages.round(remoteRoundId(e3Id), numOptions, e3.inputWindow[0], e3.inputWindow[1], inputLimit);
+    // ROUND: `abi.encode(1, roundId, numOptions, inputStart, inputEnd, inputLimit)`; the Noir contract and the SDK mirror it.
+    message = abi.encode(CRISPRemoteMessages.KIND_ROUND, remoteRoundId(e3Id), numOptions, e3.inputWindow[0], e3.inputWindow[1], inputLimit);
   }
 
   /// @dev Decode `customParams` and refuse every mode but CUSTOM credits 0 with the ONCHAIN census.
@@ -202,7 +189,7 @@ contract CRISPAztecVotesProgram is CRISPAztecTransport {
 
   /// @dev The last finalized timepoint of a token in its ERC-6372 units; block numbers when it has no `clock()`.
   function _previousTimepoint(address token) internal view returns (uint48) {
-    try IVotesClock(token).clock() returns (uint48 current) {
+    try IERC6372(token).clock() returns (uint48 current) {
       return current == 0 ? 0 : current - 1;
     } catch {
       return uint48(block.number - 1);

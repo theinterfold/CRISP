@@ -520,14 +520,8 @@
       {
         "indexed": false,
         "internalType": "bytes32",
-        "name": "content",
+        "name": "leaf",
         "type": "bytes32"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "index",
-        "type": "uint256"
       }
     ],
     "name": "Enrolled",
@@ -1023,25 +1017,6 @@
     "type": "function"
   },
   {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "e3Id",
-        "type": "uint256"
-      }
-    ],
-    "name": "minVotingPowerOf",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
     "inputs": [],
     "name": "openVmVerifier",
     "outputs": [
@@ -1312,25 +1287,6 @@
       }
     ],
     "stateMutability": "pure",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "e3Id",
-        "type": "uint256"
-      }
-    ],
-    "name": "tokenOf",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "stateMutability": "view",
     "type": "function"
   },
   {

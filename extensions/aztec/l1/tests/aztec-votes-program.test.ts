@@ -76,12 +76,10 @@ describe('CRISPAztecVotesProgram', function () {
   })
 
   describe('customParams', function () {
-    it('accepts CUSTOM credits 0 with the ONCHAIN census and records the round', async function () {
+    it('accepts CUSTOM credits 0 with the ONCHAIN census, and reports no availability window', async function () {
       const token = await tokenWith({ [alice]: 1_000_000n, [bob]: 500_000n })
-      const { e3Id } = await request(f, votesParams({ token: await token.getAddress() }))
+      await request(f, votesParams({ token: await token.getAddress() }))
 
-      expect(await f.program.tokenOf(e3Id)).to.equal(await token.getAddress())
-      expect(await f.program.minVotingPowerOf(e3Id)).to.equal(1_000n)
       expect(await f.program.availabilityFinalizationWindow()).to.equal(0n)
     })
 
@@ -197,10 +195,12 @@ describe('CRISPAztecVotesProgram', function () {
       ;({ e3Id, inputWindow } = await request(f, votesParams({ token: await token.getAddress(), minVotingPower: 1_000_000n })))
     })
 
-    it('lets anyone send the ENROLL message of each eligible slot and reports the Inbox index', async function () {
+    it('lets anyone send the ENROLL message of each eligible slot and reports its Inbox leaf', async function () {
       const [, , , , stranger] = await ethers.getSigners()
       const receipt = await (await f.program.connect(stranger).enroll(e3Id, [alice, bob])).wait()
-      const events = await f.program.queryFilter(f.program.filters.Enrolled(e3Id), receipt.blockNumber, receipt.blockNumber)
+      const inBlock = [receipt.blockNumber, receipt.blockNumber] as const
+      const events = await f.program.queryFilter(f.program.filters.Enrolled(e3Id), ...inBlock)
+      const sent = await f.program.queryFilter(f.program.filters.L1ToL2MessageSent(e3Id), ...inBlock)
       expect(events).to.have.length(2)
 
       const inbox = inboxMessages(f, receipt)
@@ -214,9 +214,9 @@ describe('CRISPAztecVotesProgram', function () {
         )
         expect(events[i].args.slot).to.equal(slot)
         expect(events[i].args.weight).to.equal(weight)
-        expect(events[i].args.content).to.equal(content)
-        expect(events[i].args.index).to.equal(inbox[i].args.message.index)
         expect(inbox[i].args.message.content).to.equal(content)
+        expect(sent[i].args.content).to.equal(content)
+        expect(events[i].args.leaf).to.equal(sent[i].args.leaf)
         expect(await f.program.isEnrolled(e3Id, slot)).to.equal(true)
       }
     })

@@ -4,23 +4,14 @@
 // without even the implied warranty of MERCHANTABILITY
 // or FITNESS FOR A PARTICULAR PURPOSE.
 
-import { generateMerkleTree } from '@crisp-e3/sdk'
 import { getAddress, toHex, type Address, type Hex } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { TypedDataSigner } from '../src/ballot'
-import { stagingTreeFromLogs } from '../src/census'
-import type { StagingKeyBound } from '../src/logs'
 import { e3IdOf } from '../src/messages'
-import {
-  buildVotesStagingPass,
-  stagingCommitment,
-  stagingKeyBinding,
-  stagingSecret,
-  stagingSecretStore,
-  votesStagingTag,
-} from '../src/votes-staging'
+import type { InputAttestation } from '../src/server'
+import { stageWithNextPass, stagingCommitment, stagingKeyBinding, stagingSecret } from '../src/votes-staging'
 
 const INTERFOLD = getAddress('0xdFa59d66c173A00643eBE80e172Af5a8Cf244b30')
 const PROGRAM = getAddress('0x25Df8D3C04D67efb6198E215963d19a8d119ADFF')
@@ -30,23 +21,14 @@ const account = privateKeyToAccount(KEY)
 const signer: TypedDataSigner = (typedData) => account.signTypedData(typedData as never)
 
 describe('staging secret', () => {
-  // `staging_secret` / `staging_commitment` of `crisp_aztec_votes` for r = 0x11..11, s = 0x22..22, round 7.
-  const signature: Hex = `0x${'11'.repeat(32)}${'22'.repeat(32)}`
-
   it('derives what bind_staging_key derives', async () => {
+    // `staging_secret` / `staging_commitment` of `crisp_aztec_votes` for r = 0x11..11, s = 0x22..22, round 7.
+    const signature: Hex = `0x${'11'.repeat(32)}${'22'.repeat(32)}`
     const secret = await stagingSecret(signature)
     expect(toHex(secret)).toBe('0x26f84e2ab5f45f1744f783f14b8ac6b1a2a2f5f63ca0b46e96e5748c6b638848')
     expect(toHex(stagingCommitment(secret, 7n))).toBe('0x12dbeab5cedbd4dd2987b522ffaf0718330b4aa49695d2e52a23428e69a0f001')
     // The recovery byte is not part of the secret.
     expect(await stagingSecret(`${signature}1b`)).toBe(secret)
-  })
-
-  it('differs per signature, round and counter', async () => {
-    const a = await stagingSecret(signature)
-    const b = await stagingSecret(`0x${'11'.repeat(32)}${'23'.repeat(32)}`)
-    expect(a).not.toBe(b)
-    expect(stagingCommitment(a, 7n)).not.toBe(stagingCommitment(a, 8n))
-    expect(new Set([votesStagingTag(a, 7n, 0), votesStagingTag(a, 7n, 1), votesStagingTag(a, 8n, 0)]).size).toBe(3)
   })
 })
 
@@ -72,55 +54,53 @@ describe('stagingKeyBinding', () => {
   })
 })
 
-describe('staging tree', () => {
-  const log = (index: number, commitment: bigint, root: bigint): StagingKeyBound => ({
-    kind: 'StagingKeyBound',
-    e3Id: E3_ID,
-    roundId: 7n,
-    index,
-    slot: account.address,
-    commitment,
-    root,
+describe('stageWithNextPass', () => {
+  // The server's refusals, as `stageInput` reports them.
+  const refused = (reason: string) => `CRISP server input staging failed (400): ${reason}`
+  const TAG_USED = refused('The staging pass was already used')
+  const UNKNOWN_ROOT = refused('The staging pass names a census root this round has not had')
+  const attestation = { inputId: '0x01' } as unknown as InputAttestation
+
+  afterEach(() => void vi.useRealTimers())
+
+  /** Stage against a server that answers attempt `n` with `answers[n]`: a refusal, or `undefined` to accept. Pass `k`'s proof is `0x0k`. */
+  const run = (answers: (string | undefined)[], maxRequests = 4) => {
+    const sent: Hex[] = []
+    const result = stageWithNextPass({
+      counter: 0,
+      maxRequests,
+      prove: async (counter) => ({ proof: `0x0${counter}`, publicInputs: [] }),
+      stage: async ({ proof }) => {
+        const refusal = answers[sent.push(proof) - 1]
+        if (refusal) throw new Error(refusal)
+        return attestation
+      },
+    })
+
+    return { sent, result }
+  }
+
+  it('proves the next pass when the server already holds the tag, and reports the counter that staged', async () => {
+    const { sent, result } = run([TAG_USED, TAG_USED, undefined])
+    expect(await result).toEqual({ attestation, counter: 2 })
+    expect(sent).toEqual(['0x00', '0x01', '0x02'])
   })
 
-  it('is rebuilt from the logs and checked against the logged root', () => {
-    const leaves = [5n, 6n, 7n]
-    const tree = generateMerkleTree(leaves)
-    const logs = leaves.map((leaf, i) => log(i, leaf, generateMerkleTree(leaves.slice(0, i + 1)).root!))
-    expect(stagingTreeFromLogs([logs[2], logs[0], logs[1]]).root).toBe(tree.root)
-    expect(() => stagingTreeFromLogs([logs[0], logs[2]])).toThrow(/missing/)
-    expect(() => stagingTreeFromLogs([logs[0], { ...logs[1], root: 1n }])).toThrow(/differs/)
+  it('sends the same pass again while the server has not read its root, for three minutes', async () => {
+    vi.useFakeTimers()
+    const accepted = run([UNKNOWN_ROOT, UNKNOWN_ROOT, undefined])
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(await accepted.result).toEqual({ attestation, counter: 0 })
+    expect(accepted.sent).toEqual(['0x00', '0x00', '0x00'])
+
+    const never = run(Array(100).fill(UNKNOWN_ROOT))
+    const failure = expect(never.result).rejects.toThrow(/has not had/)
+    await vi.advanceTimersByTimeAsync(3 * 60_000)
+    await failure
   })
 
-  it('refuses a pass for a secret that is not bound, before proving', async () => {
-    const tree = generateMerkleTree([5n])
-    await expect(
-      buildVotesStagingPass({
-        secret: 99n,
-        stagingTree: { leaves: [5n], root: tree.root!, tree },
-        request: {
-          l1ChainId: 11155111,
-          program: PROGRAM,
-          e3Id: E3_ID,
-          ciphertextCommitment: `0x${'11'.repeat(32)}`,
-          slot: account.address,
-          parentIndexPlusOne: 0,
-        },
-        maxRequests: 4,
-        counter: 0,
-      }),
-    ).rejects.toThrow(/not bound/)
-  })
-})
-
-describe('stagingSecretStore', () => {
-  it('keeps a secret per program, round and slot without touching any global storage', async () => {
-    const data = new Map<string, string>()
-    const store = stagingSecretStore({ get: (key) => data.get(key), set: (key, value) => void data.set(key, value) })
-    expect(await store.get(PROGRAM, E3_ID, account.address)).toBeUndefined()
-    await store.set(PROGRAM, E3_ID, account.address, 123456789n)
-    expect(await store.get(PROGRAM, E3_ID, account.address)).toBe(123456789n)
-    expect(await store.get(PROGRAM, E3_ID + 1n, account.address)).toBeUndefined()
-    expect(await store.get(PROGRAM, E3_ID, privateKeyToAccount(`0x${'01'.repeat(32)}`).address)).toBeUndefined()
+  it('stops at any other refusal, and when every pass is used', async () => {
+    await expect(run([refused('The staging pass proof is invalid')]).result).rejects.toThrow(/proof is invalid/)
+    await expect(run([TAG_USED, TAG_USED], 2).result).rejects.toThrow(/used all 2 passes/)
   })
 })

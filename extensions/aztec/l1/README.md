@@ -49,11 +49,11 @@ runs the Interfold governance's token-weighted rounds against `crisp_aztec_votes
 - `customParams` are `CRISPProgram`'s seven fields; only `creditMode` CUSTOM (1), `credits` 0 and `censusMode` ONCHAIN (2) are
   accepted. Snapshot, divisor and floor rule are those of `CRISPProgram`; `weightOf(e3Id, slot)` is `getPastVotes / divisor`, zero
   below the floor.
-- Messages (`CRISPAztecVotesMessages`): ROUND `abi.encode(1, roundId, numOptions, inputStart, inputEnd, inputLimit)`;
+- Messages: ROUND `abi.encode(1, roundId, numOptions, inputStart, inputEnd, inputLimit)`;
   ENROLL `abi.encode(4, roundId, uint256(uint160(slot)), weight)`; KEY and ROOT as in `CRISPRemoteMessages`.
 - `enroll(e3Id, slots)` is permissionless: it reads each slot's weight from the token itself, skips enrolled and below-floor slots,
-  sends ENROLL and emits `Enrolled(e3Id, slot, weight, content, index)`, where `index` is the Inbox leaf index the Aztec `enroll`
-  consumes. It reverts for an unknown E3 and once the input window ended.
+  sends ENROLL and emits `Enrolled(e3Id, slot, weight, leaf)`, where `leaf` is the Inbox leaf the Aztec `enroll` consumes. It
+  reverts for an unknown E3 and once the input window ended.
 
 Deploy it with `CRISP_AZTEC_KIND=votes pnpm deploy:localhost` (or `deploy:sepolia`); the deployment is recorded as
 `CRISPAztecVotesProgram`.

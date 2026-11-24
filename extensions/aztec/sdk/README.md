@@ -69,7 +69,7 @@ contract (`aztec compile` in `../contracts`): regenerate it with `pnpm codegen` 
   proof's size (4 to 6).
 - **Ballots and staging keys are signed as EIP-712 typed data.** `TypedDataSigner` is `(typedData) => Promise<Hex>` returning the
   65-byte signature, so `walletClient.signTypedData` (account bound) and a local `account.signTypedData` both work. `buildCast`'s
-  `ballot.sign` and `bindStagingKey`'s `signer` are one. The ZKPassport staging pass (`buildStagingPass`) still signs the raw
+  `ballot.sign` and `CrispAztecVotes.stagingKey`'s `signer` are one. The ZKPassport staging pass (`buildStagingPass`) still signs the raw
   `stagingRequestDigest` (`DigestSigner`).
 
 - **A re-vote or a mask needs the slot's current head.** The server reads Aztec only once an epoch is proven (~1-2 h), so a stale head
@@ -80,39 +80,37 @@ contract (`aztec compile` in `../contracts`): regenerate it with `pnpm codegen` 
 
 ## Votes rounds (token-weighted, `CRISPAztecVotesProgram`)
 
-A votes round has no registration. A slot's weight is `getPastVotes(slot, snapshot) / divisor`, bridged from L1 by a permissionless
-`enroll` and recorded on Aztec by `CrispAztecVotes.enroll`. Enrollment is **lazy**: enroll a slot the first time it is needed, which
-is **your own slot before any staging pass** and **the target slot before a mask**.
+A votes round has no registration. The weight of a slot is `getPastVotes(slot, snapshot) / divisor`. The permissionless L1 `enroll`
+sends it to Aztec, and `CrispAztecVotes.enroll` records it. Enrollment is **lazy**: a ballot needs **your own slot** (the staging
+pass proves it) and, for a mask, **the target slot**.
 
 ```ts
-import { CrispAztecVotes, buildCast, requestEnrollment, stagingSecretStore, waitForEnrollment, weightOf } from '@crisp-e3/aztec'
+import { CrispAztecVotes, buildCast, ensureEnrolled } from '@crisp-e3/aztec'
 
 const votes = await CrispAztecVotes.connect(session, contractAddress)
-const missing = []
-for (const slot of [own, target]) if (!(await votes.isSlotEnrolled(e3Id, slot))) missing.push(slot)
-if (missing.length) {
-  const { txHash } = await requestEnrollment(serverUrl, e3Id, missing) // the server relays L1 `enroll`
-  await waitForEnrollment({ votes, l1, program, e3Id, slots: missing, l1TxHash: txHash })
-}
-// Once per slot and round: no transaction when this signature's commitment is already bound.
-const { secret } = await votes.bindStagingKey({ e3Id, slot: own, signer: sign, program, l1ChainId })
-await stagingSecretStore(storage).set(program, e3Id, own, secret) // `storage` = { get, set } over localStorage, a file, …
+// Returns the census. The server relays L1 `enroll` for the slots that are missing.
+const census = await ensureEnrolled({ votes, l1, program, e3Id, serverUrl, slots: [own, target] })
+// `storage` = { get, set } over localStorage, a file, … It keeps the staging secret between sessions.
+const { secret, stagingTree } = await votes.stagingKey({ e3Id, slot: own, signer: sign, program, l1ChainId, storage })
 const cast = await buildCast({
-  serverUrl, program, l1ChainId, e3Id, slot: own, census: await votes.getCensus(e3Id), ballot: { vote, sign },
-  credits: await weightOf(l1, program, e3Id, own), // the slot's weight
-  staging: { secret, stagingTree: await votes.getStagingTree(e3Id), maxRequests, counter } /* … */,
+  serverUrl, program, l1ChainId, e3Id, slot: own, census, ballot: { vote, sign },
+  credits, // the slot's weight: `weightOf(e3Id, slot)` of the L1 program
+  staging: { secret, stagingTree, maxRequests, counter } /* … */,
 })
-await votes.cast(cast)
+await votes.cast(cast) // the next `counter` is `cast.stagingCounter + 1`
 ```
 
 - **Staging passes of a votes round prove a secret, not a key.** A governance slot's public key is public, so the ZKPassport pass's
-  key-based tag would link requests to slots. The slot's wallet signs `StagingKey(uint256 e3Id)`; the secret is
-  `stagingSecret(signature)` (exactly `bind_staging_key`'s) and `bindStagingKey` publishes only `stagingCommitment(secret, roundId)`.
-  `buildVotesStagingPass` proves `extensions/core/circuits/staging_pass_votes` against the staging tree (`getStagingTree`, from
-  STAGING_KEY_BOUND logs, tag 6). A slot may bind 3 secrets per round: a deterministic signer re-derives the same one, a
-  non-deterministic one needs `stagingSecretStore`. A mask is staged with the masker's own secret. Call
-  `destroyVotesStagingPassProver()` at shutdown, like `destroyStagingPassProver()`.
-- `getVotesRound`, `weightOf`, `isEnrolled` and `getEnrolledMessages` (the `Enrolled` events with the Inbox message each sent) are
-  the L1 side; `encodeVotesRoundMessage` mirrors `CRISPAztecVotesMessages.round`.
-- `waitForEnrollment` sends Aztec `enroll` for every ENROLL message not yet consumed (a keeper may do it first) until each slot
-  is in the census. A staging pass needs a census root the server already knows, so wait for it before staging.
+  key-based tag would link requests to slots. The slot's wallet signs `StagingKey(uint256 e3Id)`. The secret is
+  `stagingSecret(signature)` (exactly `bind_staging_key`'s), and only `stagingCommitment(secret, roundId)` is published.
+  `buildVotesStagingPass` proves `extensions/core/circuits/staging_pass_votes` against the staging tree (the STAGING_KEY_BOUND logs,
+  tag 6). A mask is staged with the masker's own secret.
+- **`stagingKey` signs and binds only when it must.** It uses the stored secret when the commitment of that secret is bound. A slot
+  can bind 3 secrets per round. A deterministic signer derives the same secret again. Other signers need the stored secret.
+- **`buildCast` finds the next unused pass.** When the server already holds the tag of a pass, `buildCast` proves the next pass and
+  does not prove the ballot again. When the server has not read a new staging key yet, `buildCast` sends the same pass again for up
+  to 3 minutes (`onStagingWait`). Call `destroyVotesStagingPassProver()` at shutdown, like `destroyStagingPassProver()`.
+- **`ensureEnrolled` also consumes the ENROLL messages.** It sends Aztec `enroll` for each message that is not consumed, until each
+  slot is in the census. A keeper can send it first.
+- `getVotesRound` and `getEnrolledMessages` (the `Enrolled` events with the Inbox message each sent) are the L1 side.
+  `encodeVotesRoundMessage` mirrors the ROUND message of `CRISPAztecVotesProgram`.
