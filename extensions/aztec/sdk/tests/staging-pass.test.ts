@@ -58,9 +58,30 @@ const request: StagingRequest = {
 
 /** The bb binary the CRISP server runs (6.0.0); `BB_BINARY` overrides the one on the PATH. */
 const BB = process.env.BB_BINARY ?? 'bb'
-const FIXTURE = join(__dirname, '../../../../server/tests/fixtures/staging_pass.json')
+const FIXTURES = join(__dirname, '../../../../server/tests/fixtures')
 const VK = join(__dirname, '../../../core/circuits/staging_pass/compiled/staging_pass.vk')
 const VOTES_VK = join(__dirname, '../../../core/circuits/staging_pass_votes/compiled/staging_pass_votes.vk')
+
+/** `WRITE_STAGING_FIXTURE=1` refreshes the passes the server's Rust tests check (`server/tests/fixtures/<name>.json`). */
+const writeFixture = (name: string, pass: StagingPass): void => {
+  if (!process.env.WRITE_STAGING_FIXTURE) return
+  writeFileSync(
+    join(FIXTURES, `${name}.json`),
+    `${JSON.stringify(
+      {
+        chain_id: Number(request.l1ChainId),
+        program: request.program,
+        e3_id: request.e3Id.toString(),
+        slot: request.slot,
+        ciphertext_commitment: request.ciphertextCommitment,
+        parent_index_plus_one: request.parentIndexPlusOne,
+        staging_pass: { proof: pass.proof, public_inputs: pass.publicInputs },
+      },
+      null,
+      2,
+    )}\n`,
+  )
+}
 
 /** The same call the server makes: `bb verify` of the default target (`evm`) over raw proof and public-input files. */
 const bbVerifies = (pass: StagingPass, vk = VK): boolean => {
@@ -105,25 +126,7 @@ describe('staging pass', () => {
 
     expect(bbVerifies(pass)).toBe(true)
 
-    // `WRITE_STAGING_FIXTURE=1` refreshes the pass the server's Rust tests verify (`server/tests/fixtures/staging_pass.json`).
-    if (process.env.WRITE_STAGING_FIXTURE) {
-      writeFileSync(
-        FIXTURE,
-        `${JSON.stringify(
-          {
-            chain_id: Number(request.l1ChainId),
-            program: request.program,
-            e3_id: request.e3Id.toString(),
-            slot: request.slot,
-            ciphertext_commitment: request.ciphertextCommitment,
-            parent_index_plus_one: request.parentIndexPlusOne,
-            staging_pass: { proof: pass.proof, public_inputs: pass.publicInputs },
-          },
-          null,
-          2,
-        )}\n`,
-      )
-    }
+    writeFixture('staging_pass', pass)
 
     // A flipped proof byte.
     const bytes = hexToBytes(pass.proof)
@@ -164,6 +167,7 @@ describe('staging pass', () => {
     expect(max).toBe(BigInt(MAX_REQUESTS))
     expect(tag).toBe(votesStagingTag(secret, 7n, 3))
     expect(bbVerifies(pass, VOTES_VK)).toBe(true)
+    writeFixture('staging_pass_votes', pass)
   }, 300_000)
 
   it('keeps the tags of one key apart per counter and per round', () => {

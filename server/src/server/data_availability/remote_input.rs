@@ -76,16 +76,21 @@ impl RemoteInputs {
             )?,
             config.bb_crs_path.as_deref(),
         )?;
+        let passes = StagingPasses::new(
+            Arc::new(verifier),
+            config.staging_max_requests_per_slot,
+            config.chain_id,
+            program,
+        );
         Ok(Some(Self {
             attester: AvailabilityAttester::new(signer, config.chain_id, program),
             source: Arc::new(source),
             ttl_seconds: config.aztec_attestation_ttl_seconds,
-            passes: Arc::new(StagingPasses::new(
-                Arc::new(verifier),
-                config.staging_max_requests_per_slot,
-                config.chain_id,
-                program,
-            )),
+            passes: Arc::new(if config.is_aztec_votes() {
+                passes.for_votes()
+            } else {
+                passes
+            }),
         }))
     }
 }
