@@ -1,6 +1,8 @@
 # Releasing the CRISP packages
 
 `@crisp-e3/sdk` and `@crisp-e3/contracts` are published as a matched pair on two channels.
+`@crisp-e3/zk-inputs` and `@crisp-e3/aztec` are published with them, at the same version and under
+the same tag.
 
 | channel    | tag       | preset        | who it is for                      |
 | ---------- | --------- | ------------- | ---------------------------------- |
@@ -104,8 +106,25 @@ pnpm publish:packages --channel prod 0.20.0
 ```
 
 Add `--dry-run` to print the exact steps for a channel without changing anything. The script bumps
-all three packages, builds the SDK against the channel's preset set, and publishes in dependency
-order (`zk-inputs`, `sdk`, `contracts`). It never tags and never pushes.
+all four packages, builds the SDK against the channel's preset set, and publishes in dependency
+order (`zk-inputs`, `sdk`, `contracts`, `aztec`). It never tags and never pushes.
+
+### The Aztec SDK
+
+`@crisp-e3/aztec` inlines the compiled Aztec contracts, and git does not track them. Compile them
+before you publish:
+
+```sh
+cd extensions/aztec/contracts
+aztec compile   # aztec CLI 6.0.0, from this directory
+```
+
+A client can only use a deployed contract whose class is the class of the inlined artifact. Thus,
+publish from the sources that the deployed contracts were compiled from. The build has no preset: it
+takes the base circuits from `@crisp-e3/sdk` at run time.
+
+`check-dist.mjs` (`prepublishOnly`) imports both entries of the build. It refuses a build whose
+artifact is not transpiled.
 
 What it leaves behind differs by channel. Production commits the bump so the tree and client stay on
 the production version. Testing restores the version bump because the deployable client does not
