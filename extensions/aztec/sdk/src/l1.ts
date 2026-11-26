@@ -142,6 +142,7 @@ export const submitInputRoot = async (
   wallet: WalletClient,
   client: PublicClient,
   program: Address,
+  args: { e3Id: bigint; inputRoot: bigint; numInputs: bigint; witness: RootWitness },
 ): Promise<Hex> => {
   const { witness } = args
   const call = {
