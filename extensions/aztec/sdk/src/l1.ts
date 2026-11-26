@@ -119,17 +119,19 @@ export const getSentMessages = async (client: PublicClient, program: Address, e3
   return logs.map(({ args }) => ({ content: args.content as Hex, leaf: args.leaf as Hex, index: args.index as bigint }))
 }
 
+/**
+ * The gas limit for an estimate: the estimate plus a quarter. These calls write to Aztec's Inbox or Outbox, whose cost
+ * depends on tree state that can move between the estimate and inclusion. A limit of exactly the estimate can then run
+ * a sub-call out of gas. Unused gas is refunded.
+ */
+const withHeadroom = (estimate: bigint): bigint => estimate + estimate / 4n
+
 /** Relay the committee key to Aztec. Permissionless; the key is read from Interfold. */
 export const publishCommitteeKey = async (wallet: WalletClient, client: PublicClient, program: Address, e3Id: bigint): Promise<Hex> => {
-  const { request } = await client.simulateContract({
-    address: program,
-    abi: programAbi,
-    functionName: 'publishCommitteeKey',
-    args: [e3Id],
-    account: wallet.account,
-  })
+  const call = { address: program, abi: programAbi, functionName: 'publishCommitteeKey', args: [e3Id], account: wallet.account } as const
+  const { request } = await client.simulateContract(call)
 
-  return wallet.writeContract(request)
+  return wallet.writeContract({ ...request, gas: withHeadroom(await client.estimateContractGas(call)) })
 }
 
 /** The Outbox witness of the ROOT message, as `getL2ToL1MembershipWitness` reports it. */
@@ -143,15 +145,16 @@ export const submitInputRoot = async (
   args: { e3Id: bigint; inputRoot: bigint; numInputs: bigint; witness: RootWitness },
 ): Promise<Hex> => {
   const { witness } = args
-  const { request } = await client.simulateContract({
+  const call = {
     address: program,
     abi: programAbi,
     functionName: 'submitInputRoot',
     args: [args.e3Id, args.inputRoot, args.numInputs, witness.epoch, witness.numCheckpointsInEpoch, witness.leafIndex, witness.path],
     account: wallet.account,
-  })
+  } as const
+  const { request } = await client.simulateContract(call)
 
-  return wallet.writeContract(request)
+  return wallet.writeContract({ ...request, gas: withHeadroom(await client.estimateContractGas(call)) })
 }
 
 // ---------------------------------------------------------------------------------------------------------
