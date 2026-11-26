@@ -1115,8 +1115,8 @@ dependencies = [
  "e3-fhe-params",
  "e3-zk-config",
  "e3-zk-witness",
- "fhe 0.6.0",
- "fhe-traits 0.6.0",
+ "fhe",
+ "fhe-traits",
  "rand 0.9.5",
  "thiserror 1.0.69",
 ]
@@ -1139,7 +1139,7 @@ dependencies = [
  "ark-ff 0.4.2",
  "e3-bfv-client",
  "e3-fhe-params",
- "fhe 0.6.0",
+ "fhe",
  "hex",
  "lean-imt",
  "light-poseidon",
@@ -1163,8 +1163,8 @@ dependencies = [
  "anyhow",
  "clap",
  "e3-committee",
- "fhe 0.6.0",
- "fhe-math 0.6.0",
+ "fhe",
+ "fhe-math",
  "num-bigint 0.5.1",
  "num-integer",
  "num-traits",
@@ -1216,7 +1216,7 @@ version = "0.20.0"
 source = "git+https://github.com/theinterfold/interfold?tag=v0.20.0#a2d7e854570e45655111a879179e3813c0202ba5"
 dependencies = [
  "e3-polynomial",
- "fhe-math 0.6.0",
+ "fhe-math",
  "num-bigint 0.5.1",
 ]
 
@@ -1242,8 +1242,8 @@ version = "0.1.0"
 dependencies = [
  "e3-compute-provider",
  "e3-fhe-params",
- "fhe 0.4.1",
- "fhe-traits 0.4.1",
+ "fhe",
+ "fhe-traits",
  "openvm-sha2",
  "sha2",
  "sha3 0.10.8",
@@ -1260,7 +1260,7 @@ dependencies = [
  "e3-fhe-params",
  "e3-polynomial",
  "e3-polynomial-fhe",
- "fhe 0.6.0",
+ "fhe",
  "num-bigint 0.5.1",
  "num-integer",
  "num-traits",
@@ -1282,9 +1282,9 @@ dependencies = [
  "e3-polynomial-fhe",
  "e3-safe",
  "e3-zk-config",
- "fhe 0.6.0",
- "fhe-math 0.6.0",
- "fhe-traits 0.6.0",
+ "fhe",
+ "fhe-math",
+ "fhe-traits",
  "hex",
  "itertools 0.14.0",
  "ndarray",
@@ -1444,40 +1444,14 @@ dependencies = [
 
 [[package]]
 name = "fhe"
-version = "0.4.1"
-source = "git+https://github.com/gnosisguild/fhe.rs?tag=v0.4.2#873dc69c07eae251f88c4b5cacf6c4453e2c365a"
-dependencies = [
- "bincode",
- "doc-comment",
- "fhe-math 0.4.1",
- "fhe-traits 0.4.1",
- "fhe-util 0.4.1",
- "itertools 0.15.0",
- "ndarray",
- "num-bigint 0.5.1",
- "num-traits",
- "prost",
- "prost-build",
- "rand 0.9.5",
- "rand_chacha 0.9.0",
- "rand_distr",
- "rayon",
- "serde",
- "thiserror 2.0.20",
- "zeroize",
- "zeroize_derive",
-]
-
-[[package]]
-name = "fhe"
 version = "0.6.0"
 source = "git+https://github.com/gnosisguild/fhe.rs?tag=v0.6.0#30cce84140a0fa7ce7a39e40f4882dc0fef81820"
 dependencies = [
  "bincode",
  "doc-comment",
- "fhe-math 0.6.0",
- "fhe-traits 0.6.0",
- "fhe-util 0.6.0",
+ "fhe-math",
+ "fhe-traits",
+ "fhe-util",
  "itertools 0.15.0",
  "ndarray",
  "num-bigint 0.5.1",
@@ -1496,36 +1470,12 @@ dependencies = [
 
 [[package]]
 name = "fhe-math"
-version = "0.4.1"
-source = "git+https://github.com/gnosisguild/fhe.rs?tag=v0.4.2#873dc69c07eae251f88c4b5cacf6c4453e2c365a"
-dependencies = [
- "ethnum",
- "fhe-traits 0.4.1",
- "fhe-util 0.4.1",
- "itertools 0.15.0",
- "ndarray",
- "num-bigint 0.5.1",
- "num-bigint-dig",
- "num-traits",
- "prost",
- "prost-build",
- "pulp",
- "rand 0.9.5",
- "rand_chacha 0.9.0",
- "serde",
- "sha2",
- "thiserror 2.0.20",
- "zeroize",
-]
-
-[[package]]
-name = "fhe-math"
 version = "0.6.0"
 source = "git+https://github.com/gnosisguild/fhe.rs?tag=v0.6.0#30cce84140a0fa7ce7a39e40f4882dc0fef81820"
 dependencies = [
  "ethnum",
- "fhe-traits 0.6.0",
- "fhe-util 0.6.0",
+ "fhe-traits",
+ "fhe-util",
  "itertools 0.15.0",
  "ndarray",
  "num-bigint 0.5.1",
@@ -1544,31 +1494,10 @@ dependencies = [
 
 [[package]]
 name = "fhe-traits"
-version = "0.4.1"
-source = "git+https://github.com/gnosisguild/fhe.rs?tag=v0.4.2#873dc69c07eae251f88c4b5cacf6c4453e2c365a"
-dependencies = [
- "rand 0.9.5",
-]
-
-[[package]]
-name = "fhe-traits"
 version = "0.6.0"
 source = "git+https://github.com/gnosisguild/fhe.rs?tag=v0.6.0#30cce84140a0fa7ce7a39e40f4882dc0fef81820"
 dependencies = [
  "rand 0.9.5",
-]
-
-[[package]]
-name = "fhe-util"
-version = "0.4.1"
-source = "git+https://github.com/gnosisguild/fhe.rs?tag=v0.4.2#873dc69c07eae251f88c4b5cacf6c4453e2c365a"
-dependencies = [
- "num-bigint-dig",
- "num-traits",
- "prime_factorization",
- "rand 0.9.5",
- "rand_distr",
- "rayon",
 ]
 
 [[package]]
