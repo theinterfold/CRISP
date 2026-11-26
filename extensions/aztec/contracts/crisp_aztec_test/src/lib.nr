@@ -2,7 +2,7 @@
 //
 // TXE does not execute proof verification (`verify_honk_proof_non_zk` and the ZKPassport outer proof are no-ops), so
 // these tests cover everything around the verifications: message consumption, the registry and capsule plumbing, the
-// verification-key hash checks and the links between the three base proofs, the attestation signature, the parent /
+// verification-key hash checks and the links between the two base proofs, the attestation signature, the parent /
 // window / limit / replay rules, and the two trees against Solidity-produced roots. Real proof verification is
 // exercised against a local network (see the README).
 
@@ -12,12 +12,12 @@ mod votes;
 
 use crisp_aztec::{CrispAztec, messages::round_content, types::{Config, RoundConfig}};
 use crisp_aztec_lib::{
-    ballot::{pk_commitment, CT0_PUBLIC_INPUTS, CT1_PUBLIC_INPUTS},
+    ballot::ENCRYPTION_PUBLIC_INPUTS,
     constants::{NATIONALITY_IN, NATIONALITY_NONE, NATIONALITY_OUT},
     hashing::key_content,
     types::InputEntry,
 };
-use crate::base_fixture::{CRISP_VK, CRISP_VK_HASH, CT0_VK, CT0_VK_HASH, CT1_VK, CT1_VK_HASH};
+use crate::base_fixture::{CRISP_VK, CRISP_VK_HASH, ENCRYPTION_VK, ENCRYPTION_VK_HASH};
 use crate::vectors::{
     APPEND_INPUT_ROOT, CENSUS_LEAVES, CENSUS_ROOTS, Cast, DOMAIN_SEPARATOR, FIRST_BALLOT, OTHER_SLOT_REVOTE, REVOTE,
     SECOND_REVOTE, SHORT_LIVED, SIGNER_X, SIGNER_Y, SLOT_1, SLOT_2, SLOT_3, WRONG_SIGNER,
@@ -87,8 +87,7 @@ unconstrained fn deploy() -> (TestEnvironment, AztecAddress) {
             DOMAIN_SEPARATOR,
             SIGNER_X,
             SIGNER_Y,
-            CT0_VK_HASH,
-            CT1_VK_HASH,
+            ENCRYPTION_VK_HASH,
             CRISP_VK_HASH,
             scope_hash("example.com"),
             ZKPASSPORT_VERSION,
@@ -196,20 +195,16 @@ unconstrained fn open(limit: u32) -> (TestEnvironment, AztecAddress) {
     (env, crisp)
 }
 
-/// The base proofs' public inputs of an honest ballot. The commitments are arbitrary: TXE does not check the proofs,
-/// and `cast` only links the values.
-fn ct0_inputs() -> [Field; CT0_PUBLIC_INPUTS] {
-    [0x1001, 0x1002, 0x1003, 0x1004] // pk0, ct0, k1, u
+/// The `user_data_encryption` proof's public inputs of an honest ballot. The commitments are arbitrary: TXE does not
+/// check the proofs, and `cast` only links the values.
+fn encryption_inputs() -> [Field; ENCRYPTION_PUBLIC_INPUTS] {
+    [0x1001, 0x1002, 0x1003] // pk, ct, k1
 }
 
-fn ct1_inputs() -> [Field; CT1_PUBLIC_INPUTS] {
-    [0x2001, 0x2002, 0x1004] // pk1, ct1, u
-}
-
-/// The committee key of the test rounds, and the one an honest ballot is encrypted to: the commitment of its two
-/// public-key halves.
+/// The committee key of the test rounds, and the one an honest ballot is encrypted to: the encryption proof's
+/// `pk_commitment`.
 fn committee_key() -> Field {
-    pk_commitment(ct0_inputs(), ct1_inputs())
+    encryption_inputs()[0]
 }
 
 /// The ZKPassport age fixture (`outer_count_5`: `age(18)` and a bind) re-bound to `user`, with its unique identifier
@@ -339,17 +334,16 @@ unconstrained fn register(
     env.call_private(user, CrispAztec::at(crisp).register(ROUND_ID, slot));
 }
 
-/// The three base proofs `cast` takes: verification keys, proofs (zeros: TXE does not check them) and public inputs.
+/// The two base proofs `cast` takes: verification keys, proofs (zeros: TXE does not check them) and the encryption
+/// proof's public inputs.
 struct BaseProofs {
-    ct0_vk: [Field; 115],
-    ct1_vk: [Field; 115],
+    encryption_vk: [Field; 115],
     crisp_vk: [Field; 115],
-    ct0_inputs: [Field; CT0_PUBLIC_INPUTS],
-    ct1_inputs: [Field; CT1_PUBLIC_INPUTS],
+    encryption_inputs: [Field; ENCRYPTION_PUBLIC_INPUTS],
 }
 
 fn honest_proofs() -> BaseProofs {
-    BaseProofs { ct0_vk: CT0_VK, ct1_vk: CT1_VK, crisp_vk: CRISP_VK, ct0_inputs: ct0_inputs(), ct1_inputs: ct1_inputs() }
+    BaseProofs { encryption_vk: ENCRYPTION_VK, crisp_vk: CRISP_VK, encryption_inputs: encryption_inputs() }
 }
 
 unconstrained fn cast_with(
@@ -364,12 +358,9 @@ unconstrained fn cast_with(
         from,
         CrispAztec::at(crisp).cast(
             ROUND_ID,
-            base.ct0_vk,
+            base.encryption_vk,
             [0; 410],
-            base.ct0_inputs,
-            base.ct1_vk,
-            [0; 410],
-            base.ct1_inputs,
+            base.encryption_inputs,
             base.crisp_vk,
             [0; 410],
             c.slot,
@@ -410,8 +401,7 @@ unconstrained fn constructor_stores_the_configuration() {
     let config: Config = env.execute_utility(CrispAztec::at(crisp).get_config());
     assert_eq(config.l1_program, L1_PROGRAM);
     assert_eq(config.interfold, INTERFOLD);
-    assert_eq(config.ct0_vk_hash, CT0_VK_HASH);
-    assert_eq(config.ct1_vk_hash, CT1_VK_HASH);
+    assert_eq(config.encryption_vk_hash, ENCRYPTION_VK_HASH);
     assert_eq(config.crisp_vk_hash, CRISP_VK_HASH);
     assert_eq(config.zkpassport_registry, LOCAL_NETWORK_REGISTRY_ADDRESS);
     assert_eq(config.zkpassport_domain, scope_hash("example.com"));
@@ -854,19 +844,11 @@ unconstrained fn casts_build_the_input_tree_the_l1_program_builds() {
     assert_eq(root, APPEND_INPUT_ROOT);
 }
 
-#[test(should_fail_with = "unexpected ct0 verification key")]
-unconstrained fn cast_rejects_another_ct0_verification_key() {
+#[test(should_fail_with = "unexpected encryption verification key")]
+unconstrained fn cast_rejects_another_encryption_verification_key() {
     let (env, crisp, voter, census_root) = open_for_casting(LIMIT);
     let mut base = honest_proofs();
-    base.ct0_vk[3] += 1;
-    cast_with(env, crisp, voter, base, FIRST_BALLOT, census_root);
-}
-
-#[test(should_fail_with = "unexpected ct1 verification key")]
-unconstrained fn cast_rejects_another_ct1_verification_key() {
-    let (env, crisp, voter, census_root) = open_for_casting(LIMIT);
-    let mut base = honest_proofs();
-    base.ct1_vk[3] += 1;
+    base.encryption_vk[3] += 1;
     cast_with(env, crisp, voter, base, FIRST_BALLOT, census_root);
 }
 
@@ -879,53 +861,27 @@ unconstrained fn cast_rejects_another_crisp_verification_key() {
 }
 
 // A proof passed in another proof's place carries that circuit's key, which the position pins.
-#[test(should_fail_with = "unexpected ct0 verification key")]
-unconstrained fn cast_rejects_the_ct1_proof_in_the_ct0_place() {
+#[test(should_fail_with = "unexpected encryption verification key")]
+unconstrained fn cast_rejects_the_crisp_proof_in_the_encryption_place() {
     let (env, crisp, voter, census_root) = open_for_casting(LIMIT);
     let mut base = honest_proofs();
-    base.ct0_vk = CT1_VK;
+    base.encryption_vk = CRISP_VK;
     cast_with(env, crisp, voter, base, FIRST_BALLOT, census_root);
 }
 
 #[test(should_fail_with = "unexpected crisp verification key")]
-unconstrained fn cast_rejects_the_ct0_proof_in_the_crisp_place() {
+unconstrained fn cast_rejects_the_encryption_proof_in_the_crisp_place() {
     let (env, crisp, voter, census_root) = open_for_casting(LIMIT);
     let mut base = honest_proofs();
-    base.crisp_vk = CT0_VK;
-    cast_with(env, crisp, voter, base, FIRST_BALLOT, census_root);
-}
-
-#[test(should_fail_with = "ct0 and ct1 commit to different u")]
-unconstrained fn cast_rejects_encryption_proofs_made_with_different_randomness() {
-    let (env, crisp, voter, census_root) = open_for_casting(LIMIT);
-    let mut base = honest_proofs();
-    base.ct1_inputs[2] += 1;
+    base.crisp_vk = ENCRYPTION_VK;
     cast_with(env, crisp, voter, base, FIRST_BALLOT, census_root);
 }
 
 #[test(should_fail_with = "ballot is encrypted to another committee key")]
-unconstrained fn cast_rejects_a_ballot_encrypted_to_another_pk0() {
+unconstrained fn cast_rejects_a_ballot_encrypted_to_another_committee_key() {
     let (env, crisp, voter, census_root) = open_for_casting(LIMIT);
     let mut base = honest_proofs();
-    base.ct0_inputs[0] += 1;
-    cast_with(env, crisp, voter, base, FIRST_BALLOT, census_root);
-}
-
-#[test(should_fail_with = "ballot is encrypted to another committee key")]
-unconstrained fn cast_rejects_a_ballot_encrypted_to_another_pk1() {
-    let (env, crisp, voter, census_root) = open_for_casting(LIMIT);
-    let mut base = honest_proofs();
-    base.ct1_inputs[0] += 1;
-    cast_with(env, crisp, voter, base, FIRST_BALLOT, census_root);
-}
-
-#[test(should_fail_with = "ballot is encrypted to another committee key")]
-unconstrained fn cast_rejects_the_pk_commitment_of_the_halves_swapped() {
-    let (env, crisp, voter, census_root) = open_for_casting(LIMIT);
-    let mut base = honest_proofs();
-    let pk0 = base.ct0_inputs[0];
-    base.ct0_inputs[0] = base.ct1_inputs[0];
-    base.ct1_inputs[0] = pk0;
+    base.encryption_inputs[0] += 1;
     cast_with(env, crisp, voter, base, FIRST_BALLOT, census_root);
 }
 

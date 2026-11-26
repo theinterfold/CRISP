@@ -23,10 +23,10 @@ load_crisp_dev_config() {
 
   case "$CRISP_BFV_PRESET" in
     insecure-64)
-      CRISP_E3_PARAM_SET=0
+      CRISP_E3_PARAM_SET=4
       ;;
     secure-8192)
-      CRISP_E3_PARAM_SET=2
+      CRISP_E3_PARAM_SET=3
       ;;
     *)
       echo "Invalid CRISP_BFV_PRESET='${CRISP_BFV_PRESET}' (use insecure-64 or secure-8192)" >&2

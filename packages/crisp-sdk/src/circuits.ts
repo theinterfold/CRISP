@@ -12,18 +12,17 @@ export type CircuitPreset = 'insecure-64' | 'secure-8192'
 /**
  * The circuits whose ABI is shaped by the BFV degree, and which therefore exist once per preset.
  *
- * The aggregation circuits — `crisp_fold`, `crisp_onchain_fold` and `user_data_encryption` — are
- * deliberately absent. Their parameters are proof and verification-key shaped (410/115 fields), not
- * polynomial shaped, so one compiled artifact serves both presets; the fold circuits assert
- * `chain_key_hash` against the insecure *or* the secure constant for exactly that reason. They ship
- * in the main entry point, which is why `verifyProof` works without a preset loaded.
+ * The fold circuits — `crisp_fold` and `crisp_onchain_fold` — are deliberately absent. Their
+ * parameters are proof and verification-key shaped (410/115 fields), not polynomial shaped, so one
+ * compiled artifact serves both presets; the fold circuits assert `chain_key_hash` against the
+ * insecure *or* the secure constant for exactly that reason. They ship in the main entry point,
+ * which is why `verifyProof` works without a preset loaded.
  */
 export type CircuitBundle = {
   readonly preset: CircuitPreset
   readonly crisp: CompiledCircuit
   readonly crispOnchain: CompiledCircuit
-  readonly userDataEncryptionCt0: CompiledCircuit
-  readonly userDataEncryptionCt1: CompiledCircuit
+  readonly userDataEncryption: CompiledCircuit
 }
 
 let registered: CircuitBundle | null = null

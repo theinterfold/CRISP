@@ -16,10 +16,8 @@
 //
 // `circuits` writes circuits/interfold/:
 //
-//   user_data_encryption.json                   one artifact serves both presets
-//   user_data_encryption.vk_recursive_hash
-//   <preset>/user_data_encryption_ct{0,1}.json  shaped by the BFV degree, so one per preset
-//   <preset>/user_data_encryption_ct{0,1}.vk_recursive_hash
+//   <preset>/user_data_encryption.json          shaped by the BFV degree, so one per preset
+//   <preset>/user_data_encryption.vk_recursive_hash
 //   release/<preset>/minimum/default/...        the BFV aggregation VK anchors, in the release
 //                                               layout that INTERFOLD_CIRCUITS_DIR names for a
 //                                               deploy with ZK verification
@@ -71,7 +69,7 @@ const BFV_VK_ANCHORS = [
 const PRESETS = ['insecure-64', 'secure-8192']
 
 /**
- * The committee directory to read from. The user_data_encryption circuits do not depend on the
+ * The committee directory to read from. The user_data_encryption circuit does not depend on the
  * committee size, so every committee directory of the archive holds the same artifacts.
  */
 const COMMITTEE = 'minimum'
@@ -122,14 +120,10 @@ export const extractCircuits = async () => {
   // The `default` variant carries the compiled circuit and its noir-recursive-no-zk key hash.
   const member = (preset, circuit, extension) => `circuits/${preset}/${COMMITTEE}/default/threshold/${circuit}/${circuit}.${extension}`
   const members = [
-    [member(PRESETS[0], 'user_data_encryption', 'json'), 'user_data_encryption.json'],
-    [member(PRESETS[0], 'user_data_encryption', 'vk_hash'), 'user_data_encryption.vk_recursive_hash'],
-    ...PRESETS.flatMap((preset) =>
-      ['user_data_encryption_ct0', 'user_data_encryption_ct1'].flatMap((circuit) => [
-        [member(preset, circuit, 'json'), `${preset}/${circuit}.json`],
-        [member(preset, circuit, 'vk_hash'), `${preset}/${circuit}.vk_recursive_hash`],
-      ]),
-    ),
+    ...PRESETS.flatMap((preset) => [
+      [member(preset, 'user_data_encryption', 'json'), `${preset}/user_data_encryption.json`],
+      [member(preset, 'user_data_encryption', 'vk_hash'), `${preset}/user_data_encryption.vk_recursive_hash`],
+    ]),
     ...PRESETS.flatMap((preset) =>
       BFV_VK_ANCHORS.map((anchor) => {
         const from = `circuits/${preset}/${COMMITTEE}/default/${anchor}`

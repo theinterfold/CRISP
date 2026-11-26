@@ -147,20 +147,18 @@ const proof = await finishBallotProof(prepared, digest, signature, {
 })
 ```
 
-| Stage            | Circuit                    | What it proves                                                                                                                       |
-| ---------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `encryption_ct0` | `user_data_encryption_ct0` | The ciphertext half that carries the ballot is a well-formed encryption of it                                                        |
-| `encryption_ct1` | `user_data_encryption_ct1` | The other ciphertext half is well formed                                                                                             |
-| `ballot`         | `crisp` / `crisp_onchain`  | A vote is signed by the slot owner and within voting power, or a mask is zero; the new slot ciphertext is the ballot plus the addend |
-| `encryption`     | `user_data_encryption`     | Both halves verify and share the same encryption randomness                                                                          |
-| `fold`           | `fold` / `fold_onchain`    | Encryption and ballot proofs cover the same ciphertext; outputs the key commitment the contract checks against the committee key     |
+| Stage        | Circuit                   | What it proves                                                                                                                       |
+| ------------ | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `encryption` | `user_data_encryption`    | Both ciphertext halves are a well-formed encryption of the ballot under the committee key, with the same randomness                  |
+| `ballot`     | `crisp` / `crisp_onchain` | A vote is signed by the slot owner and within voting power, or a mask is zero; the new slot ciphertext is the ballot plus the addend |
+| `fold`       | `fold` / `fold_onchain`   | Encryption and ballot proofs cover the same ciphertext; outputs the key commitment the contract checks against the committee key     |
 
 #### Base Proofs Without Aggregation (Aztec)
 
-A verifier that checks the proofs itself, such as the Aztec `CrispAztec.cast`, does not need the `encryption` and `fold` proofs.
-`finishBallotBaseProofs`, `finishMaskBaseProofs` and `CrispSDK.finishBallotBase` prove only the first three stages and return
-the three proofs with their public inputs and verification keys (`noir-recursive-no-zk`, 410 fields); `onProgress` reports them
-with `total` 3. `getBaseVerificationKeys()` gives the keys and the hashes a contract pins, `verifyBaseProofs` checks them locally.
+A verifier that checks the proofs itself, such as the Aztec `CrispAztec.cast`, does not need the `fold` proof.
+`finishBallotBaseProofs`, `finishMaskBaseProofs` and `CrispSDK.finishBallotBase` prove only the first two stages and return
+the two proofs with their public inputs and verification keys (`noir-recursive-no-zk`, 410 fields); `onProgress` reports them
+with `total` 2. `getBaseVerificationKeys()` gives the keys and the hashes a contract pins, `verifyBaseProofs` checks them locally.
 
 ```typescript
 const base = await sdk.finishBallotBase(prepared, digest, signature)

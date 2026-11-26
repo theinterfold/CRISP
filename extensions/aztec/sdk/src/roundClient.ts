@@ -36,11 +36,11 @@ export type SharedDeployParams = {
   /** The availability signer's secp256k1 public key: 64 bytes `x ‖ y`, or the 65-byte uncompressed form with its `04` prefix. */
   availabilitySignerPublicKey: Hex
   /**
-   * Hashes of the verification keys of the three base circuits of the BFV preset the deployment serves
-   * (`getBaseVerificationKeys` of `@crisp-e3/sdk`, with the preset registered): a ballot is proven with exactly these.
+   * Hashes of the verification keys of the two base circuits of the BFV preset the deployment serves
+   * (`getBaseVerificationKeys` of `@crisp-e3/sdk`, with the preset registered, or `pnpm base-vk-hashes`): a ballot is
+   * proven with exactly these.
    */
-  ct0VkHash: bigint
-  ct1VkHash: bigint
+  encryptionVkHash: bigint
   crispVkHash: bigint
 }
 
@@ -59,8 +59,7 @@ export const sharedDeployArguments = (params: SharedDeployParams) => {
     separator,
     Array.from(key.slice(0, 32)),
     Array.from(key.slice(32, 64)),
-    new Fr(params.ct0VkHash),
-    new Fr(params.ct1VkHash),
+    new Fr(params.encryptionVkHash),
     new Fr(params.crispVkHash),
   ] as const
 }
@@ -69,12 +68,9 @@ export const sharedDeployArguments = (params: SharedDeployParams) => {
 export const castCallArguments = (roundId: bigint, args: CastArguments) =>
   [
     roundId,
-    args.ct0Vk,
-    args.ct0Proof,
-    args.ct0PublicInputs,
-    args.ct1Vk,
-    args.ct1Proof,
-    args.ct1PublicInputs,
+    args.encryptionVk,
+    args.encryptionProof,
+    args.encryptionPublicInputs,
     args.crispVk,
     args.crispProof,
     BigInt(args.slot),

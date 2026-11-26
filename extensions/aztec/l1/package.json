@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@crisp-e3/extension-core": "workspace:^",
-    "@interfold/contracts": "0.20.0-dev.3",
+    "@interfold/contracts": "0.20.0",
     "@openzeppelin/contracts": "^5.0.2"
   },
   "devDependencies": {

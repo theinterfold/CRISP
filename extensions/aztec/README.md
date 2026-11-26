@@ -36,7 +36,7 @@ See `contracts/README.md` for the entry points and the nationality commitment.
   field); the contract rebuilds the full e3Id for the EIP-712 digests and `inputId`, which equal the L1 CRISP ones.
 - **Trees.** The input tree is byte-identical to `CRISPProgram`'s, so the OpenVM guest and program server are unchanged. circom
   Poseidon costs ~271k L2 gas per hash, which caps both trees at 65,536 leaves.
-- **Ballot proof.** The voter proves only the three base circuits and `cast` verifies them (`contracts/README.md`). They are
+- **Ballot proof.** The voter proves only the two base circuits and `cast` verifies them (`contracts/README.md`). They are
   private arguments of `cast`, must be proved client-side and **must never leave the voter's device**.
 - **Identity.** ZKPassport `compressed` outer proofs (bb 6.0.0, circuits release 0.23.0) are verified in the private `register*`
   functions, bound to the caller and scoped per round: one registration per document per round, so a person with two documents

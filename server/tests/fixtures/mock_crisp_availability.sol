@@ -33,6 +33,7 @@ contract MockCrispAvailability {
   uint64 public constant INPUT_AVAILABILITY_ATTESTATION_TTL = 10 minutes;
   address public immutable inputAvailabilitySigner = msg.sender;
   bytes32 public immutable cryptoConfigId;
+  uint8 public immutable paramSet;
   bool public committed;
   bool public published;
   uint256 public commitmentDeadline;
@@ -41,8 +42,9 @@ contract MockCrispAvailability {
   /// Every `publishInput` and `finalizeInput` transaction.
   uint256 public sends;
 
-  constructor(bytes32 configId) {
+  constructor(bytes32 configId, uint8 requestParamSet) {
     cryptoConfigId = configId;
+    paramSet = requestParamSet;
   }
 
   function set(bool isCommitted, bool isPublished, uint256 deadline) external {
@@ -55,8 +57,10 @@ contract MockCrispAvailability {
     computeDeadline = deadline;
   }
 
-  /// An insecure-64 round.
-  function getE3(uint256) external pure returns (E3 memory e3) {}
+  /// A round of `paramSet` with the Minimum committee.
+  function getE3(uint256) external view returns (E3 memory e3) {
+    e3.paramSet = paramSet;
+  }
 
   function getDeadlines(uint256) external view returns (uint256, uint256, uint256) {
     return (0, computeDeadline, 0);

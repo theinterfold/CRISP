@@ -7,19 +7,19 @@
 use bb_proof_verification::{UltraHonkProof, UltraHonkVerificationKey, verify_honk_proof_non_zk};
 use interfold_lib::math::commitments::compute_vk_hash;
 
-/// Binds the four inner `vk_hash` witnesses, one constant per BFV preset. Regenerate with
+/// Binds the two inner `vk_hash` witnesses, one constant per BFV preset. Regenerate with
 /// `pnpm compute:vk-hash <preset>` in the repository root after changing crisp, `crisp_lib`, or the
-/// Interfold release that supplies user_data_encryption / ct0 / ct1.
+/// Interfold release that supplies user_data_encryption.
 pub global CRISP_FOLD_EXPECTED_KEY_HASH_INSECURE: Field =
-    0x0325fc5eef938885b730eecc24570fa58dd2b1edcdce7ef75d7ee75ba7b3e9c2;
+    0x1405a69b8e30e80f812910b38f4691a2d6774dfb6a490788917fc4ccf03caa94;
 pub global CRISP_FOLD_EXPECTED_KEY_HASH_SECURE: Field =
-    0x0ede998b63e6e94e2f067cfffb4d26ec492f45e19b480eec14580a1913fd3bc7;
+    0x02c7d85207464d06fba91bf23832ae3897f397caf1fe4617afa31a389eb79c06;
 
 fn main(
     // User Data Encryption Section.
     user_data_encryption_verification_key: UltraHonkVerificationKey,
     user_data_encryption_proof: UltraHonkProof,
-    user_data_encryption_public_inputs: [Field; 5], // ct0_key_hash, ct1_key_hash, pk_commitment, ct_commitment, k1_commitment
+    user_data_encryption_public_inputs: [Field; 3], // pk_commitment, ct_commitment, k1_commitment
     user_data_encryption_key_hash: Field,
     // Crisp Section.
     crisp_verification_key: UltraHonkVerificationKey,
@@ -61,18 +61,12 @@ fn main(
     );
 
     // Verify that the ct_commitment from the crisp proof matches the one computed from user data encryption.
-    assert(ct_commitment == user_data_encryption_public_inputs[3]);
+    assert(ct_commitment == user_data_encryption_public_inputs[1]);
 
     // Verify that the k1_commitment from the crisp proof matches the one computed from user data encryption.
-    assert(k1_commitment == user_data_encryption_public_inputs[4]);
+    assert(k1_commitment == user_data_encryption_public_inputs[2]);
 
-    let vk_hashes = [
-        user_data_encryption_key_hash,
-        crisp_key_hash,
-        user_data_encryption_public_inputs[0], // ct0_key_hash
-        user_data_encryption_public_inputs[1], // ct1_key_hash
-    ]
-        .as_vector();
+    let vk_hashes = [user_data_encryption_key_hash, crisp_key_hash].as_vector();
 
     let chain_key_hash = compute_vk_hash(vk_hashes);
     assert(
@@ -80,5 +74,5 @@ fn main(
             | (chain_key_hash == CRISP_FOLD_EXPECTED_KEY_HASH_SECURE),
     );
 
-    user_data_encryption_public_inputs[2]
+    user_data_encryption_public_inputs[0]
 }

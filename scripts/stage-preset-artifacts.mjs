@@ -10,9 +10,9 @@
 // `nargo compile` always writes to <circuit>/target/, and the preset is chosen globally in
 // circuits/lib/src/preset.nr, so the working tree only ever holds one preset at a time. The SDK
 // needs both side by side to publish both, so each compile pass is archived here. The
-// user_data_encryption_ct0/ct1 circuits come from the pinned Interfold release, one copy per preset.
+// user_data_encryption circuit comes from the pinned Interfold release, one copy per preset.
 //
-// Only the four circuits whose ABI is shaped by the BFV degree are staged. The aggregation
+// Only the three circuits whose ABI is shaped by the BFV degree are staged. The aggregation
 // circuits are proof-shaped and preset-independent — see src/circuits.ts.
 
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -54,8 +54,7 @@ const interfold = join(await extractCircuits(), preset)
 const ARTIFACTS = [
   { name: 'crisp', from: join(CRISP, 'circuits/bin/crisp/target/crisp.json') },
   { name: 'crisp_onchain', from: join(CRISP, 'circuits/bin/crisp_onchain/target/crisp_onchain.json') },
-  { name: 'user_data_encryption_ct0', from: join(interfold, 'user_data_encryption_ct0.json') },
-  { name: 'user_data_encryption_ct1', from: join(interfold, 'user_data_encryption_ct1.json') },
+  { name: 'user_data_encryption', from: join(interfold, 'user_data_encryption.json') },
 ]
 
 const staged = []
@@ -65,7 +64,7 @@ for (const { name, from } of ARTIFACTS) {
     process.exit(1)
   }
 
-  // A circuit compiled at 64 carries 127-length arrays too (the ct0/ct1 witnesses), so compare
+  // A circuit compiled at 64 carries 127-length arrays too (the ciphertext witnesses), so compare
   // against the maximum rather than looking the degree up by name.
   const degree = degreeOf(from)
   const expected = EXPECTED_DEGREE[preset]

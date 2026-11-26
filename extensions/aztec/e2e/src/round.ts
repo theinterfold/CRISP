@@ -398,8 +398,8 @@ const runRound = async (): Promise<void> => {
       }
       throw new Error(`The control "${label}" was accepted: cast does not verify what it must`)
     }
-    await control('the ct1 ciphertext commitment altered', (args) => ({ ...args, ct1PublicInputs: args.ct1PublicInputs.map((v, i) => (i === 1 ? v + 1n : v)) }))
-    await control('the ct0 and ct1 proofs swapped', (args) => ({ ...args, ct0Proof: args.ct1Proof, ct1Proof: args.ct0Proof }))
+    await control('the encryption ciphertext commitment altered', (args) => ({ ...args, encryptionPublicInputs: args.encryptionPublicInputs.map((v, i) => (i === 1 ? v + 1n : v)) }))
+    await control('the encryption and crisp proofs swapped', (args) => ({ ...args, encryptionProof: args.crispProof, crispProof: args.encryptionProof }))
     for (const [index, voter] of voters.entries()) await castOne(index, voter.ballot, `cast [${voter.ballot}]`)
     for (const [index, voter] of voters.entries()) {
       if (!voter.mask) continue

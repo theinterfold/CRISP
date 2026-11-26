@@ -47,13 +47,13 @@ export class CrispAztecVotesContract extends ContractBase {
    * @param instantiation - Optional address-affecting parameters (salt, deployer / universalDeploy, publicKeys).
    *                       Salt defaults to a random value; the deployer is locked lazily from the first send-time `from`.
    */
-  public static deploy(wallet: Wallet, l1_program: EthAddressLike, interfold: EthAddressLike, ballot_domain_separator: (bigint | number)[], availability_domain_separator: (bigint | number)[], availability_signer_pubkey_x: (bigint | number)[], availability_signer_pubkey_y: (bigint | number)[], ct0_vk_hash: FieldLike, ct1_vk_hash: FieldLike, crisp_vk_hash: FieldLike, instantiation?: DeployInstantiationOptions) {
+  public static deploy(wallet: Wallet, l1_program: EthAddressLike, interfold: EthAddressLike, ballot_domain_separator: (bigint | number)[], availability_domain_separator: (bigint | number)[], availability_signer_pubkey_x: (bigint | number)[], availability_signer_pubkey_y: (bigint | number)[], encryption_vk_hash: FieldLike, crisp_vk_hash: FieldLike, instantiation?: DeployInstantiationOptions) {
     return DeployMethod.create<CrispAztecVotesContract>(
       wallet,
       {
         artifact: CrispAztecVotesContractArtifact,
         postDeployCtor: (instance, wallet) => CrispAztecVotesContract.at(instance.address, wallet),
-        args: [l1_program, interfold, ballot_domain_separator, availability_domain_separator, availability_signer_pubkey_x, availability_signer_pubkey_y, ct0_vk_hash, ct1_vk_hash, crisp_vk_hash],
+        args: [l1_program, interfold, ballot_domain_separator, availability_domain_separator, availability_signer_pubkey_x, availability_signer_pubkey_y, encryption_vk_hash, crisp_vk_hash],
       },
       instantiation,
     );
@@ -101,43 +101,43 @@ export class CrispAztecVotesContract extends ContractBase {
       slot: new Fr(1n),
     },
 rounds: {
-      slot: new Fr(15n),
+      slot: new Fr(14n),
     },
 committee_keys: {
-      slot: new Fr(16n),
+      slot: new Fr(15n),
     },
 closed: {
-      slot: new Fr(17n),
+      slot: new Fr(16n),
     },
 counts: {
-      slot: new Fr(18n),
+      slot: new Fr(17n),
     },
 census_nodes: {
-      slot: new Fr(19n),
+      slot: new Fr(18n),
     },
 census_roots: {
-      slot: new Fr(20n),
+      slot: new Fr(19n),
     },
 slots: {
-      slot: new Fr(21n),
+      slot: new Fr(20n),
     },
 staging_nodes: {
-      slot: new Fr(22n),
+      slot: new Fr(21n),
     },
 staging_roots: {
-      slot: new Fr(23n),
+      slot: new Fr(22n),
     },
 staging_commitments: {
-      slot: new Fr(24n),
+      slot: new Fr(23n),
     },
 input_frontier: {
-      slot: new Fr(25n),
+      slot: new Fr(24n),
     },
 inputs: {
-      slot: new Fr(26n),
+      slot: new Fr(25n),
     },
 input_ids: {
-      slot: new Fr(27n),
+      slot: new Fr(26n),
     }
       } as ContractStorageLayout<'config' | 'rounds' | 'committee_keys' | 'closed' | 'counts' | 'census_nodes' | 'census_roots' | 'slots' | 'staging_nodes' | 'staging_roots' | 'staging_commitments' | 'input_frontier' | 'inputs' | 'input_ids'>;
     }
@@ -149,14 +149,14 @@ input_ids: {
     /** bind_staging_key(round_id: field, slot: field, public_key_x: array, public_key_y: array, signature: array) */
     bind_staging_key: ((round_id: FieldLike, slot: FieldLike, public_key_x: (bigint | number)[], public_key_y: (bigint | number)[], signature: (bigint | number)[]) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
-    /** cast(round_id: field, ct0_vk: array, ct0_proof: array, ct0_public_inputs: array, ct1_vk: array, ct1_proof: array, ct1_public_inputs: array, crisp_vk: array, crisp_proof: array, slot: field, ct_commitment: field, encrypted_vote_hash: array, parent_index_plus_one: integer, prev_commitment: field, census_root: field, expires_at: integer, signature: array) */
-    cast: ((round_id: FieldLike, ct0_vk: FieldLike[], ct0_proof: FieldLike[], ct0_public_inputs: FieldLike[], ct1_vk: FieldLike[], ct1_proof: FieldLike[], ct1_public_inputs: FieldLike[], crisp_vk: FieldLike[], crisp_proof: FieldLike[], slot: FieldLike, ct_commitment: FieldLike, encrypted_vote_hash: (bigint | number)[], parent_index_plus_one: (bigint | number), prev_commitment: FieldLike, census_root: FieldLike, expires_at: (bigint | number), signature: (bigint | number)[]) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+    /** cast(round_id: field, encryption_vk: array, encryption_proof: array, encryption_public_inputs: array, crisp_vk: array, crisp_proof: array, slot: field, ct_commitment: field, encrypted_vote_hash: array, parent_index_plus_one: integer, prev_commitment: field, census_root: field, expires_at: integer, signature: array) */
+    cast: ((round_id: FieldLike, encryption_vk: FieldLike[], encryption_proof: FieldLike[], encryption_public_inputs: FieldLike[], crisp_vk: FieldLike[], crisp_proof: FieldLike[], slot: FieldLike, ct_commitment: FieldLike, encrypted_vote_hash: (bigint | number)[], parent_index_plus_one: (bigint | number), prev_commitment: FieldLike, census_root: FieldLike, expires_at: (bigint | number), signature: (bigint | number)[]) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** close_round(round_id: field) */
     close_round: ((round_id: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
-    /** constructor(l1_program: struct, interfold: struct, ballot_domain_separator: array, availability_domain_separator: array, availability_signer_pubkey_x: array, availability_signer_pubkey_y: array, ct0_vk_hash: field, ct1_vk_hash: field, crisp_vk_hash: field) */
-    constructor: ((l1_program: EthAddressLike, interfold: EthAddressLike, ballot_domain_separator: (bigint | number)[], availability_domain_separator: (bigint | number)[], availability_signer_pubkey_x: (bigint | number)[], availability_signer_pubkey_y: (bigint | number)[], ct0_vk_hash: FieldLike, ct1_vk_hash: FieldLike, crisp_vk_hash: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+    /** constructor(l1_program: struct, interfold: struct, ballot_domain_separator: array, availability_domain_separator: array, availability_signer_pubkey_x: array, availability_signer_pubkey_y: array, encryption_vk_hash: field, crisp_vk_hash: field) */
+    constructor: ((l1_program: EthAddressLike, interfold: EthAddressLike, ballot_domain_separator: (bigint | number)[], availability_domain_separator: (bigint | number)[], availability_signer_pubkey_x: (bigint | number)[], availability_signer_pubkey_y: (bigint | number)[], encryption_vk_hash: FieldLike, crisp_vk_hash: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** enroll(round_id: field, slot: field, weight: field, leaf_index: field) */
     enroll: ((round_id: FieldLike, slot: FieldLike, weight: FieldLike, leaf_index: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;

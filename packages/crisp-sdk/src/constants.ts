@@ -8,7 +8,7 @@ import { hashMessage } from 'viem'
 import type { ProofStage } from './types'
 
 /** The proofs `finishBallotProof` produces, in order. See {@link ProofStage}. */
-export const PROOF_STAGES: readonly ProofStage[] = ['encryption_ct0', 'encryption_ct1', 'ballot', 'encryption', 'fold']
+export const PROOF_STAGES: readonly ProofStage[] = ['encryption', 'ballot', 'fold']
 
 export const CRISP_SERVER_TOKEN_TREE_ENDPOINT = 'state/token-holders'
 export const CRISP_SERVER_STATE_LITE_ENDPOINT = 'state/lite'

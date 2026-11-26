@@ -4,7 +4,7 @@
 // The message contents are `sha256ToField(abi.encode(...))` of `CRISPAztecVotesMessages.round` / `.enroll`, computed
 // here from the same word layout (sha256 of the words, first 31 bytes as the field).
 
-use crate::base_fixture::{CRISP_VK, CRISP_VK_HASH, CT0_VK, CT0_VK_HASH, CT1_VK, CT1_VK_HASH};
+use crate::base_fixture::{CRISP_VK, CRISP_VK_HASH, ENCRYPTION_VK, ENCRYPTION_VK_HASH};
 use crate::vectors::{
     APPEND_INPUT_ROOT, DOMAIN_SEPARATOR, FIRST_BALLOT, REVOTE, SECOND_REVOTE, SIGNER_X, SIGNER_Y, SLOT_1, SLOT_2,
 };
@@ -13,7 +13,7 @@ use aztec::{
     test::helpers::test_environment::TestEnvironment,
 };
 use crisp_aztec_lib::{
-    ballot::{pk_commitment, CT0_PUBLIC_INPUTS, CT1_PUBLIC_INPUTS},
+    ballot::ENCRYPTION_PUBLIC_INPUTS,
     hashing::{full_e3_id, key_content},
     types::InputEntry,
 };
@@ -47,8 +47,7 @@ unconstrained fn deploy() -> (TestEnvironment, AztecAddress) {
             DOMAIN_SEPARATOR,
             SIGNER_X,
             SIGNER_Y,
-            CT0_VK_HASH,
-            CT1_VK_HASH,
+            ENCRYPTION_VK_HASH,
             CRISP_VK_HASH,
         ),
     );
@@ -70,16 +69,12 @@ unconstrained fn open_round(env: TestEnvironment, votes: AztecAddress) {
     );
 }
 
-fn ct0_inputs() -> [Field; CT0_PUBLIC_INPUTS] {
-    [0x1001, 0x1002, 0x1003, 0x1004]
-}
-
-fn ct1_inputs() -> [Field; CT1_PUBLIC_INPUTS] {
-    [0x2001, 0x2002, 0x1004]
+fn encryption_inputs() -> [Field; ENCRYPTION_PUBLIC_INPUTS] {
+    [0x1001, 0x1002, 0x1003]
 }
 
 unconstrained fn publish_key(env: TestEnvironment, votes: AztecAddress) {
-    let key = pk_commitment(ct0_inputs(), ct1_inputs());
+    let key = encryption_inputs()[0];
     let leaf_index = env.send_l1_to_l2_message(key_content(ROUND_ID, key), 0, L1_PROGRAM, votes);
     let keeper = KEEPER;
     let _ = env.call_public(keeper, CrispAztecVotes::at(votes).publish_key(ROUND_ID, key, leaf_index));
@@ -130,8 +125,7 @@ unconstrained fn constructor_stores_the_configuration() {
     let config: Config = env.execute_utility(CrispAztecVotes::at(votes).get_config());
     assert_eq(config.l1_program, L1_PROGRAM);
     assert_eq(config.interfold, INTERFOLD);
-    assert_eq(config.ct0_vk_hash, CT0_VK_HASH);
-    assert_eq(config.ct1_vk_hash, CT1_VK_HASH);
+    assert_eq(config.encryption_vk_hash, ENCRYPTION_VK_HASH);
     assert_eq(config.crisp_vk_hash, CRISP_VK_HASH);
 }
 
@@ -192,7 +186,7 @@ unconstrained fn publish_key_stores_the_committee_key() {
     let (env, votes) = open();
     publish_key(env, votes);
     let key: Field = env.execute_utility(CrispAztecVotes::at(votes).get_committee_key(ROUND_ID));
-    assert_eq(key, pk_commitment(ct0_inputs(), ct1_inputs()));
+    assert_eq(key, encryption_inputs()[0]);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -284,12 +278,9 @@ unconstrained fn cast(
         from,
         CrispAztecVotes::at(votes).cast(
             ROUND_ID,
-            CT0_VK,
+            ENCRYPTION_VK,
             [0; 410],
-            ct0_inputs(),
-            CT1_VK,
-            [0; 410],
-            ct1_inputs(),
+            encryption_inputs(),
             CRISP_VK,
             [0; 410],
             c.slot,

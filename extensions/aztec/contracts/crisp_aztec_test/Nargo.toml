@@ -12,4 +12,3 @@ zkpassport_registry_contract = { path = "../vendor/zkpassport/registry_contract"
 zkpassport = { path = "../vendor/zkpassport/core" }
 zkpassport_aztec_verifier = { path = "../vendor/zkpassport/verifier" }
 poseidon = { tag = "v0.3.0", git = "https://github.com/noir-lang/poseidon" }
-interfold_lib = { git = "https://github.com/theinterfold/interfold", tag = "v0.20.0-dev.3", directory = "circuits/lib" }

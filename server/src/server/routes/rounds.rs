@@ -384,7 +384,7 @@ async fn initialize_crisp_round(
         &crisp_program,
         committee,
         e3_program,
-        CONFIG.e3_param_set,
+        CONFIG.e3_profile(),
         &compute_provider_params,
         &custom_params,
     )

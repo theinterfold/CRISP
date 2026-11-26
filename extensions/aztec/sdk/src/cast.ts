@@ -69,15 +69,13 @@ export type BuildCastInputs = {
 export type CastArguments = {
   e3Id: bigint
   /**
-   * The three base proofs of the ballot, which `cast` verifies in place of L1's fold: each a 115-field verification
-   * key and a 410-field `noir-recursive-no-zk` proof, with the public inputs of the two encryption proofs.
+   * The two base proofs of the ballot, which `cast` verifies in place of L1's fold: each a 115-field verification
+   * key and a 410-field `noir-recursive-no-zk` proof, with the public inputs of the encryption proof
+   * (`pk_commitment, ct_commitment, k1_commitment`).
    */
-  ct0Vk: bigint[]
-  ct0Proof: bigint[]
-  ct0PublicInputs: bigint[]
-  ct1Vk: bigint[]
-  ct1Proof: bigint[]
-  ct1PublicInputs: bigint[]
+  encryptionVk: bigint[]
+  encryptionProof: bigint[]
+  encryptionPublicInputs: bigint[]
   crispVk: bigint[]
   crispProof: bigint[]
   slot: Address
@@ -100,7 +98,7 @@ export type CastArguments = {
 const PI = { PREV_COMMITMENT: 0, SLOT: 3, CENSUS_ROOT: 4, NUM_OPTIONS: 6, CT_COMMITMENT: 7 } as const
 
 /**
- * Build the arguments of one `cast` call: encrypt, sign, prove the three base circuits (no aggregation: the contract
+ * Build the arguments of one `cast` call: encrypt, sign, prove the two base circuits (no aggregation: the contract
  * verifies them itself), stage the ciphertext with the server, and check each value the contract will check so a mistake
  * fails here, not in a rejected transaction. The proofs stay on this device: only the ciphertext and its commitment go
  * to the server, and the proofs are arguments of a private function, hidden by the Aztec transaction proof.
@@ -135,8 +133,8 @@ export const buildCast = async (inputs: BuildCastInputs): Promise<CastArguments>
 
   const pi = result.crisp.publicInputs.map((value) => BigInt(value))
   if (pi.length !== 10) throw new Error(`The crisp proof has ${pi.length} public inputs, expected 10`)
-  if (result.ct0.publicInputs.length !== 4 || result.ct1.publicInputs.length !== 3) {
-    throw new Error('The encryption proofs have an unexpected number of public inputs')
+  if (result.encryption.publicInputs.length !== 3) {
+    throw new Error('The encryption proof has an unexpected number of public inputs')
   }
   if (pi[PI.CENSUS_ROOT] !== census.root)
     throw new Error('The proof was made against a different census root than the one rebuilt from the logs')
@@ -182,12 +180,9 @@ export const buildCast = async (inputs: BuildCastInputs): Promise<CastArguments>
 
   return {
     e3Id,
-    ct0Vk: toBigints(result.ct0.vkFields),
-    ct0Proof: toBigints(result.ct0.proofFields),
-    ct0PublicInputs: toBigints(result.ct0.publicInputs),
-    ct1Vk: toBigints(result.ct1.vkFields),
-    ct1Proof: toBigints(result.ct1.proofFields),
-    ct1PublicInputs: toBigints(result.ct1.publicInputs),
+    encryptionVk: toBigints(result.encryption.vkFields),
+    encryptionProof: toBigints(result.encryption.proofFields),
+    encryptionPublicInputs: toBigints(result.encryption.publicInputs),
     crispVk: toBigints(result.crisp.vkFields),
     crispProof: toBigints(result.crisp.proofFields),
     slot,

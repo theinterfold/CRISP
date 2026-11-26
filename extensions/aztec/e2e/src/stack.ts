@@ -64,8 +64,8 @@ export type Deployment = {
   program: Address
   programBlock: number
   aztecContract: string
-  /** Hashes of the verification keys of the three base circuits the contract pins. */
-  baseVkHashes: { ct0: string; ct1: string; crisp: string }
+  /** Hashes of the verification keys of the two base circuits the contract pins. */
+  baseVkHashes: { encryption: string; crisp: string }
   rollupVersion: number
   inbox: Address
   outbox: Address
@@ -228,7 +228,7 @@ const deployAztecSide = async (program: Address, interfold: Address): Promise<{ 
     await registryContext.stop()
   }
 
-  // The contract pins the verification keys of the three base circuits of the preset the round runs with.
+  // The contract pins the verification keys of the two base circuits of the preset the round runs with.
   setCircuits(await loadCircuits())
   const keys = await getBaseVerificationKeys()
   destroyBBApi()
@@ -239,15 +239,14 @@ const deployAztecSide = async (program: Address, interfold: Address): Promise<{ 
       interfold,
       domainSeparator: domainSeparator(L1_CHAIN_ID, program),
       availabilitySignerPublicKey: accounts.server.account.publicKey,
-      ct0VkHash: BigInt(keys.ct0.vkHash),
-      ct1VkHash: BigInt(keys.ct1.vkHash),
+      encryptionVkHash: BigInt(keys.encryption.vkHash),
       crispVkHash: BigInt(keys.crisp.vkHash),
       zkpassportDomainHash: domainHash(ZKPASSPORT_DOMAIN),
       zkpassportCircuitVersion: circuitsVersionField(CIRCUITS_VERSION),
       zkpassportValiditySeconds: ZKPASSPORT_VALIDITY_SECONDS,
       zkpassportRegistry: LOCAL_NETWORK_REGISTRY_ADDRESS,
     })
-    const baseVkHashes = { ct0: keys.ct0.vkHash, ct1: keys.ct1.vkHash, crisp: keys.crisp.vkHash }
+    const baseVkHashes = { encryption: keys.encryption.vkHash, crisp: keys.crisp.vkHash }
     return { contract: contract.address.toString(), baseVkHashes, rollupVersion: session.rollupVersion }
   } finally {
     await session.stop()

@@ -7,7 +7,7 @@
 
 use crate::messages::round_content;
 use crisp_aztec_lib::{
-    ballot::{ciphertext_commitment, crisp_public_inputs, pk_commitment},
+    ballot::crisp_public_inputs,
     constants::{BALLOT_TYPEHASH, INPUT_AVAILABILITY_TYPEHASH, LAZY_ZEROS},
     hashing::{
         availability_digest, ballot_digest, from_halves, full_e3_id, input_id, input_leaf, key_content, root_content,
@@ -387,69 +387,23 @@ fn root_content_matches_l1() {
     );
 }
 
-// The base proofs of one real ballot (`insecure-64`, a first vote of [10, 0, 0] by the SDK test address), made by
-// `generateBaseProofs`. `FOLD_PK_COMMITMENT` is the last public input of the fold proof of the same inputs, and
-// `CRISP_CT_COMMITMENT` the ninth of the crisp proof: what the `user_data_encryption` circuit computed from the same
-// ct0 / ct1 / pk public inputs, which `ballot.nr` recomputes.
-global CT0_INPUTS: [Field; 4] = [
-    0x0a8e57038582d49c9a8480fdfa6fb47a373f25d12dffaca2e9ff8276871c772a,
-    0x05e8a490346c66de997174c41f96d60c41db9d4f075c285a9b3bb4a2efd706a6,
-    0x2480818a61756c2a9022473471281d77b54a894bd0b50af0bb1586e797bd6654,
-    0x247f53f7bc7a8ffe216bcc938f7f4bf2950c5d53b15a731fe7d8148f8458c1f1,
-];
-global CT1_INPUTS: [Field; 3] = [
-    0x1c13635babefcf5bc4c7dd64d8bf715460e1b45be0071f62664b525f3ff8eeda,
-    0x27c72312acdb991d858c89daddf092c12dd18b218add90767d664de079b3fe01,
-    0x247f53f7bc7a8ffe216bcc938f7f4bf2950c5d53b15a731fe7d8148f8458c1f1,
-];
-global FOLD_PK_COMMITMENT: Field = 0x0d13e9ea621560435aa5c76febdb456982c5b714ba0043d10939f2166bbb509f;
-global CRISP_CT_COMMITMENT: Field = 0x28038614f51913942602348e52269ad926d400835cb73c8a3679d7b3d1eed070;
+// What `crisp_public_inputs` leaves of the `user_data_encryption` proof's public inputs `[pk, ct, k1]`: the committee
+// key check, and the ciphertext and k1 commitments the crisp proof must carry.
+global ENCRYPTION_INPUTS: [Field; 3] = [0x1001, 0x1002, 0x1003];
 
 #[test]
-fn pk_commitment_matches_the_user_data_encryption_circuit() {
-    assert_eq(pk_commitment(CT0_INPUTS, CT1_INPUTS), FOLD_PK_COMMITMENT);
-}
-
-#[test]
-fn ciphertext_commitment_matches_the_user_data_encryption_circuit() {
-    assert_eq(ciphertext_commitment(CT0_INPUTS, CT1_INPUTS), CRISP_CT_COMMITMENT);
-}
-
-#[test]
-fn crisp_public_inputs_link_the_encryption_proofs() {
-    let values = [0, 1, 2, 3, 4, 1, 3, CRISP_CT_COMMITMENT];
-    let inputs = crisp_public_inputs(CT0_INPUTS, CT1_INPUTS, FOLD_PK_COMMITMENT, values);
+fn crisp_public_inputs_link_the_encryption_proof() {
+    let values = [0, 1, 2, 3, 4, 1, 3, ENCRYPTION_INPUTS[1]];
+    let inputs = crisp_public_inputs(ENCRYPTION_INPUTS, ENCRYPTION_INPUTS[0], values);
     for i in 0..8 {
         assert_eq(inputs[i], values[i]);
     }
-    // The ciphertext commitment and the k1 commitment come from the encryption proofs, not from the caller.
-    assert_eq(inputs[8], CRISP_CT_COMMITMENT);
-    assert_eq(inputs[9], CT0_INPUTS[2]);
-}
-
-#[test(should_fail_with = "ct0 and ct1 commit to different u")]
-fn crisp_public_inputs_need_the_same_u() {
-    let mut ct1 = CT1_INPUTS;
-    ct1[2] += 1;
-    let _ = crisp_public_inputs(CT0_INPUTS, ct1, FOLD_PK_COMMITMENT, [0; 8]);
+    // The ciphertext commitment and the k1 commitment come from the encryption proof, not from the caller.
+    assert_eq(inputs[8], ENCRYPTION_INPUTS[1]);
+    assert_eq(inputs[9], ENCRYPTION_INPUTS[2]);
 }
 
 #[test(should_fail_with = "ballot is encrypted to another committee key")]
 fn crisp_public_inputs_need_the_committee_key() {
-    let _ = crisp_public_inputs(CT0_INPUTS, CT1_INPUTS, FOLD_PK_COMMITMENT + 1, [0; 8]);
-}
-
-#[test]
-fn a_changed_ciphertext_half_changes_the_ciphertext_commitment() {
-    // Whichever half is swapped for another proof's, crisp's `ct_commitment` input changes, so its proof stops verifying.
-    let base = ciphertext_commitment(CT0_INPUTS, CT1_INPUTS);
-    let mut ct0 = CT0_INPUTS;
-    ct0[1] += 1;
-    assert(ciphertext_commitment(ct0, CT1_INPUTS) != base);
-    let mut ct1 = CT1_INPUTS;
-    ct1[1] += 1;
-    assert(ciphertext_commitment(CT0_INPUTS, ct1) != base);
-    // And the halves are not interchangeable.
-    let swapped = ciphertext_commitment([0, CT1_INPUTS[1], 0, 0], [0, CT0_INPUTS[1], 0]);
-    assert(swapped != base);
+    let _ = crisp_public_inputs(ENCRYPTION_INPUTS, ENCRYPTION_INPUTS[0] + 1, [0; 8]);
 }
