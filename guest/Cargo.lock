@@ -1108,8 +1108,8 @@ checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
 name = "e3-bfv-client"
-version = "0.20.0-dev.3"
-source = "git+https://github.com/theinterfold/interfold?tag=v0.20.0-dev.3#bb27cacc91c1775d32f897095d35b8eacfa89d2b"
+version = "0.20.0"
+source = "git+https://github.com/theinterfold/interfold?tag=v0.20.0#a2d7e854570e45655111a879179e3813c0202ba5"
 dependencies = [
  "anyhow",
  "e3-fhe-params",
@@ -1123,8 +1123,8 @@ dependencies = [
 
 [[package]]
 name = "e3-committee"
-version = "0.20.0-dev.3"
-source = "git+https://github.com/theinterfold/interfold?tag=v0.20.0-dev.3#bb27cacc91c1775d32f897095d35b8eacfa89d2b"
+version = "0.20.0"
+source = "git+https://github.com/theinterfold/interfold?tag=v0.20.0#a2d7e854570e45655111a879179e3813c0202ba5"
 dependencies = [
  "anyhow",
  "serde",
@@ -1132,8 +1132,8 @@ dependencies = [
 
 [[package]]
 name = "e3-compute-provider"
-version = "0.20.0-dev.3"
-source = "git+https://github.com/theinterfold/interfold?tag=v0.20.0-dev.3#bb27cacc91c1775d32f897095d35b8eacfa89d2b"
+version = "0.20.0"
+source = "git+https://github.com/theinterfold/interfold?tag=v0.20.0#a2d7e854570e45655111a879179e3813c0202ba5"
 dependencies = [
  "ark-bn254 0.4.0",
  "ark-ff 0.4.2",
@@ -1155,13 +1155,14 @@ dependencies = [
 
 [[package]]
 name = "e3-fhe-params"
-version = "0.20.0-dev.3"
-source = "git+https://github.com/theinterfold/interfold?tag=v0.20.0-dev.3#bb27cacc91c1775d32f897095d35b8eacfa89d2b"
+version = "0.20.0"
+source = "git+https://github.com/theinterfold/interfold?tag=v0.20.0#a2d7e854570e45655111a879179e3813c0202ba5"
 dependencies = [
  "alloy-dyn-abi",
  "alloy-primitives",
  "anyhow",
  "clap",
+ "e3-committee",
  "fhe",
  "fhe-math",
  "num-bigint 0.5.1",
@@ -1189,8 +1190,8 @@ dependencies = [
 
 [[package]]
 name = "e3-openvm-types"
-version = "0.20.0-dev.3"
-source = "git+https://github.com/theinterfold/interfold?tag=v0.20.0-dev.3#bb27cacc91c1775d32f897095d35b8eacfa89d2b"
+version = "0.20.0"
+source = "git+https://github.com/theinterfold/interfold?tag=v0.20.0#a2d7e854570e45655111a879179e3813c0202ba5"
 dependencies = [
  "bincode",
  "e3-compute-provider",
@@ -1198,20 +1199,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "e3-parity-matrix"
-version = "0.20.0-dev.3"
-source = "git+https://github.com/theinterfold/interfold?tag=v0.20.0-dev.3#bb27cacc91c1775d32f897095d35b8eacfa89d2b"
-dependencies = [
- "num-bigint 0.5.1",
- "num-traits",
- "serde",
- "thiserror 1.0.69",
-]
-
-[[package]]
 name = "e3-polynomial"
-version = "0.20.0-dev.3"
-source = "git+https://github.com/theinterfold/interfold?tag=v0.20.0-dev.3#bb27cacc91c1775d32f897095d35b8eacfa89d2b"
+version = "0.20.0"
+source = "git+https://github.com/theinterfold/interfold?tag=v0.20.0#a2d7e854570e45655111a879179e3813c0202ba5"
 dependencies = [
  "num-bigint 0.5.1",
  "num-integer",
@@ -1222,8 +1212,8 @@ dependencies = [
 
 [[package]]
 name = "e3-polynomial-fhe"
-version = "0.20.0-dev.3"
-source = "git+https://github.com/theinterfold/interfold?tag=v0.20.0-dev.3#bb27cacc91c1775d32f897095d35b8eacfa89d2b"
+version = "0.20.0"
+source = "git+https://github.com/theinterfold/interfold?tag=v0.20.0#a2d7e854570e45655111a879179e3813c0202ba5"
 dependencies = [
  "e3-polynomial",
  "fhe-math",
@@ -1232,8 +1222,8 @@ dependencies = [
 
 [[package]]
 name = "e3-safe"
-version = "0.20.0-dev.3"
-source = "git+https://github.com/theinterfold/interfold?tag=v0.20.0-dev.3#bb27cacc91c1775d32f897095d35b8eacfa89d2b"
+version = "0.20.0"
+source = "git+https://github.com/theinterfold/interfold?tag=v0.20.0#a2d7e854570e45655111a879179e3813c0202ba5"
 dependencies = [
  "ark-bn254 0.5.0",
  "ark-ff 0.5.0",
@@ -1261,14 +1251,13 @@ dependencies = [
 
 [[package]]
 name = "e3-zk-config"
-version = "0.20.0-dev.3"
-source = "git+https://github.com/theinterfold/interfold?tag=v0.20.0-dev.3#bb27cacc91c1775d32f897095d35b8eacfa89d2b"
+version = "0.20.0"
+source = "git+https://github.com/theinterfold/interfold?tag=v0.20.0#a2d7e854570e45655111a879179e3813c0202ba5"
 dependencies = [
  "ark-bn254 0.5.0",
  "ark-ff 0.5.0",
  "e3-committee",
  "e3-fhe-params",
- "e3-parity-matrix",
  "e3-polynomial",
  "e3-polynomial-fhe",
  "fhe",
@@ -1281,8 +1270,8 @@ dependencies = [
 
 [[package]]
 name = "e3-zk-witness"
-version = "0.20.0-dev.3"
-source = "git+https://github.com/theinterfold/interfold?tag=v0.20.0-dev.3#bb27cacc91c1775d32f897095d35b8eacfa89d2b"
+version = "0.20.0"
+source = "git+https://github.com/theinterfold/interfold?tag=v0.20.0#a2d7e854570e45655111a879179e3813c0202ba5"
 dependencies = [
  "anyhow",
  "ark-bn254 0.5.0",
@@ -1307,6 +1296,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 1.0.69",
+ "zeroize",
 ]
 
 [[package]]
@@ -1454,8 +1444,8 @@ dependencies = [
 
 [[package]]
 name = "fhe"
-version = "0.4.1"
-source = "git+https://github.com/gnosisguild/fhe.rs?tag=v0.4.2#873dc69c07eae251f88c4b5cacf6c4453e2c365a"
+version = "0.6.0"
+source = "git+https://github.com/gnosisguild/fhe.rs?tag=v0.6.0#30cce84140a0fa7ce7a39e40f4882dc0fef81820"
 dependencies = [
  "bincode",
  "doc-comment",
@@ -1480,8 +1470,8 @@ dependencies = [
 
 [[package]]
 name = "fhe-math"
-version = "0.4.1"
-source = "git+https://github.com/gnosisguild/fhe.rs?tag=v0.4.2#873dc69c07eae251f88c4b5cacf6c4453e2c365a"
+version = "0.6.0"
+source = "git+https://github.com/gnosisguild/fhe.rs?tag=v0.6.0#30cce84140a0fa7ce7a39e40f4882dc0fef81820"
 dependencies = [
  "ethnum",
  "fhe-traits",
@@ -1504,16 +1494,16 @@ dependencies = [
 
 [[package]]
 name = "fhe-traits"
-version = "0.4.1"
-source = "git+https://github.com/gnosisguild/fhe.rs?tag=v0.4.2#873dc69c07eae251f88c4b5cacf6c4453e2c365a"
+version = "0.6.0"
+source = "git+https://github.com/gnosisguild/fhe.rs?tag=v0.6.0#30cce84140a0fa7ce7a39e40f4882dc0fef81820"
 dependencies = [
  "rand 0.9.5",
 ]
 
 [[package]]
 name = "fhe-util"
-version = "0.4.1"
-source = "git+https://github.com/gnosisguild/fhe.rs?tag=v0.4.2#873dc69c07eae251f88c4b5cacf6c4453e2c365a"
+version = "0.6.0"
+source = "git+https://github.com/gnosisguild/fhe.rs?tag=v0.6.0#30cce84140a0fa7ce7a39e40f4882dc0fef81820"
 dependencies = [
  "num-bigint-dig",
  "num-traits",

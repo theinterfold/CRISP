@@ -42,11 +42,11 @@ contract (`aztec compile` in `../contracts`): regenerate it with `pnpm codegen` 
   (`encodeRoundMessage`, `roundContent`, …) take `roundId`.
 - **The circuit preset is the caller's job.** `buildCast` proves with whatever `setCircuits` registered; call
   `setCircuits(await loadCircuits())` from the `@crisp-e3/sdk/<preset>` subpath that matches the round first.
-- **Ballots are proven by the three base circuits, not the fold.** `buildCast` asks `finishBallotBase` for the base proofs only.
+- **Ballots are proven by the two base circuits, not the fold.** `buildCast` asks `finishBallotBase` for the base proofs only.
   They are `noir-recursive-no-zk` proofs private to `cast` and must never be sent anywhere else (`buildCast` stages only the
-  ciphertext with the server). The contract is deployed with the hashes of the three verification keys of the round's BFV
-  preset; `pnpm base-vk-hashes <preset>` prints them (`getBaseVerificationKeys` after `setCircuits`), so a deployment serves one
-  preset.
+  ciphertext with the server). The contract is deployed with the hashes of the two verification keys of the round's BFV
+  preset (`encryptionVkHash`, `crispVkHash`); `pnpm base-vk-hashes <preset>` prints them (`getBaseVerificationKeys` after
+  `setCircuits` gives the same), so a deployment serves one preset.
 - **A session is disposable** (a random initializerless Schnorr account, nothing stored). A ZKPassport proof is bound to its
   address, so register and cast from the same session you proved for.
 - **Sessions must prove client-side.** `connectAztec(url, { prove })` defaults to `true`. The embedded wallet's simulation skips

@@ -50,7 +50,7 @@
     "openvm": "bash scripts/openvm.sh"
   },
   "devDependencies": {
-    "@interfold/config": "0.20.0-dev.3",
+    "@interfold/config": "0.20.0",
     "eslint": "^9.39.1",
     "@playwright/test": "1.64.1",
     "@types/node": "^22.18.0",

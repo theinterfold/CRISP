@@ -243,9 +243,9 @@ export class CrispSDK {
   }
 
   /**
-   * Phase two without the aggregation, for a verifier that checks the three base proofs itself (the Aztec contract):
-   * the `user_data_encryption` and fold proofs are not made, which is most of the proving time. See
-   * `generateBaseProofs`. {@link finishBallot} stays the path whose fold L1 verifies.
+   * Phase two without the fold, for a verifier that checks the two base proofs itself (the Aztec contract): the
+   * fold proof is not made, which is most of the proving time. See `generateBaseProofs`. {@link finishBallot} stays
+   * the path whose fold L1 verifies.
    *
    * @param prepared - The output of {@link prepareBallot}.
    * @param digest - The digest the voter signs.

@@ -20,9 +20,10 @@ const LOADERS: Record<CircuitPreset, () => Promise<{ loadCircuits: () => Promise
 
 let pending: Partial<Record<CircuitPreset, Promise<void>>> = {}
 
+// Interfold registers parameter sets append-only: 0 to 2 hold the tuples of earlier releases.
 const presetForParamSet = (paramSet: number): CircuitPreset | null => {
-  if (paramSet === 0) return 'insecure-64'
-  if (paramSet === 2) return 'secure-8192'
+  if (paramSet === 4) return 'insecure-64'
+  if (paramSet === 3) return 'secure-8192'
   return null
 }
 

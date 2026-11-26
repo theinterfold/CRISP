@@ -83,11 +83,14 @@ export const ciphernodes = [
   { name: 'cn5', address: '0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc', key: '0x8b3a350cf5c34c9194ca85829a2df0ec3153be0318b5e2d3348e872092edffba', quic: 9205, ctrl: 50505 },
 ] as const
 
-/** The BFV preset of the round: `insecure-64` is the dev preset (`E3_PARAM_SET=0`). */
+/** The BFV preset of the round: `insecure-64` is the dev preset (`E3_PARAM_SET=4`, `BfvProtocol.INSECURE_PARAM_SET`; secure-8192 is 3). */
 export const BFV_PRESET = 'insecure-64'
-export const E3_PARAM_SET = 0
-/** `ActiveCryptoConfig.INSECURE_CONFIG_ID` (BfvProtocol.sol): what `request` expects for param set 0. `activeCryptoConfigId()` names the secure one. */
-export const INSECURE_CONFIG_ID = '0x92c8b373eb72cc3600a5a818cf8599db16e618ee3ece2dadd14f8608c1a43ac9'
+export const E3_PARAM_SET = 4
+/**
+ * `BfvProtocol.SS_INSECURE_64_MINIMUM_CONFIG_ID` (`@interfold/contracts` 0.20.0, `contracts/lib/BfvProtocol.sol`): the
+ * committee-bound id `request` expects for an insecure-64 round with a Minimum committee.
+ */
+export const INSECURE_CONFIG_ID = '0xd76c4f521394e6cbe1df28036cc5dd5590c6630a403525b5c2b052f9b91507f4'
 /** `E3_COMMITTEE_SIZE` 0 = Minimum (3 members). */
 export const COMMITTEE_SIZE = 0
 

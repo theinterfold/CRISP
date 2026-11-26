@@ -253,7 +253,7 @@ describe('Vote', () => {
       expect(proof.recursive?.vkHash).toBe((await getFoldRecursiveVerificationKey()).vkHash)
     })
 
-    it('Should generate the three base proofs without aggregating', { timeout: 300000 }, async () => {
+    it('Should generate the two base proofs without folding', { timeout: 300000 }, async () => {
       vi.spyOn(global, 'fetch').mockResolvedValueOnce(mockPreviousCiphertextNotFoundResponse())
 
       const prepared = await sdk.prepareBallot({
@@ -273,26 +273,24 @@ describe('Vote', () => {
       const stages: string[] = []
       const base = await sdk.finishBallotBase(prepared, digest, ballotSignature, { onProgress: ({ stage }) => stages.push(stage) })
 
-      expect(stages).toEqual(['encryption_ct0', 'encryption_ct1', 'ballot'])
+      expect(stages).toEqual(['encryption', 'ballot'])
       // The shapes `verify_honk_proof_non_zk` takes in-circuit: 410 proof fields and a 115-field key each.
-      for (const part of [base.ct0, base.ct1, base.crisp]) {
+      for (const part of [base.encryption, base.crisp]) {
         expect(part.proofFields).toHaveLength(410)
         expect(part.vkFields).toHaveLength(115)
       }
-      expect(base.ct0.publicInputs).toHaveLength(4) // pk0, ct0, k1, u commitments
-      expect(base.ct1.publicInputs).toHaveLength(3) // pk1, ct1, u commitments
+      expect(base.encryption.publicInputs).toHaveLength(3) // pk, ct and k1 commitments
       expect(base.crisp.publicInputs).toHaveLength(10)
-      // The links the Aztec contract checks in place of the aggregation circuits.
-      expect(base.ct0.publicInputs[3]).toBe(base.ct1.publicInputs[2]) // u
-      expect(base.ct0.publicInputs[2]).toBe(base.crisp.publicInputs[9]) // k1
+      // The links the Aztec contract checks in place of the fold circuit.
+      expect(base.encryption.publicInputs[1]).toBe(base.crisp.publicInputs[8]) // ct
+      expect(base.encryption.publicInputs[2]).toBe(base.crisp.publicInputs[9]) // k1
       expect(BigInt(base.crisp.publicInputs[7])).toBe(BigInt(prepared.ctCommitment))
       expect(base.encryptedVote).toEqual(prepared.encryptedVote)
 
       expect(await verifyBaseProofs(base)).toBe(true)
       // The keys a verifier pins come from the circuits alone, not from any proof.
       const keys = await getBaseVerificationKeys()
-      expect(base.ct0.vkHash).toBe(keys.ct0.vkHash)
-      expect(base.ct1.vkHash).toBe(keys.ct1.vkHash)
+      expect(base.encryption.vkHash).toBe(keys.encryption.vkHash)
       expect(base.crisp.vkHash).toBe(keys.crisp.vkHash)
     })
   })

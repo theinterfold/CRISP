@@ -11,8 +11,8 @@ L1 program ──KEY────▶ publish_key                 cast ───�
 close_round ──ROOT──▶ L1 program         (input root and count, through the Outbox)
 ```
 
-Voters register a slot (an Ethereum address) with a ZKPassport proof, then cast ballots with the three base proofs of
-the ballot (`user_data_encryption_ct0`, `user_data_encryption_ct1` and the CRISP ballot circuit, no aggregation) plus an
+Voters register a slot (an Ethereum address) with a ZKPassport proof, then cast ballots with the two base proofs of
+the ballot (`user_data_encryption` and the CRISP ballot circuit, no aggregation) plus an
 attestation from the availability service. The contract checks the proofs, builds both Merkle trees with the same hashing as
 the Solidity code and the circuits, and sends the final input root to L1.
 
@@ -56,7 +56,7 @@ All maps are keyed by `round_id` first, so rounds never share state. `Interfold.
 which does not fit a field, so the contract names a round by `round_id = uint96(e3Id)` (one L1 program serves one Interfold, so this
 is injective); `Config.interfold` plus `full_e3_id` rebuild the full id wherever it is hashed or signed. Messages and logs carry the
 round id. `Config` (constructor) holds the L1 program and Interfold, both EIP-712 domain separators, the availability signer's
-secp256k1 key, the three base circuits' verification-key hashes and the ZKPassport settings; `RoundConfig` (`open_round`) the round's
+secp256k1 key, the two base circuits' verification-key hashes and the ZKPassport settings; `RoundConfig` (`open_round`) the round's
 window, limit, credits, scope hash and age and nationality rules.
 
 Both trees take at most `MAX_LEAVES = 65536` leaves (depth 16), matching the cap L1 puts on `inputLimit`, hashed with circom
@@ -72,7 +72,7 @@ root after an insert is kept, so a ballot proved against an earlier census still
 | `publish_key`           | public                  | Same for the KEY message; stores the committee public key.                                                                                   |
 | `register`, `register_with_age`, `register_with_nationality`, `register_with_age_and_nationality` | private | Verify a ZKPassport proof bound to the caller and the round scope, spend the uniqueness nullifier, enqueue `_add_member`. One entry point per rule combination because a ZKPassport query's size is a compile-time constant. |
 | `_add_member`           | public, `#[only_self]`  | Registration window, slot uniqueness, census capacity, LeanIMT insert, new root, log.                                                        |
-| `cast`                  | private                 | Verifies the three base proofs, their verification-key hashes, the links between them and the availability attestation (ECDSA); enqueues `_append_input`. |
+| `cast`                  | private                 | Verifies the two base proofs, their verification-key hashes, the links between them and the availability attestation (ECDSA); enqueues `_append_input`. |
 | `_append_input`         | public, `#[only_self]`  | Window, attestation expiry, known census root, input limit, parent rule, replay (`inputId`), LazyIMT insert.                                |
 | `close_round`           | public                  | After `input_end`, once: folds the root, sends `(roundId, inputRoot, numInputs)` to L1.                                                      |
 | views                   | utility                 | `get_config`, `get_round`, `get_committee_key`, `is_closed`, `get_input_count`, `get_census_*`, `is_slot_registered`, `get_input`. |
@@ -97,17 +97,18 @@ Non-obvious points:
 
 ## The ballot proofs
 
-On L1 a voter's proof is a stack of five: the three base circuits, then the Interfold `user_data_encryption` aggregation and
-`crisp_fold` (2^21 gates each). On Aztec the voter proves only the three base circuits and `cast` verifies all three
-(`verify_honk_proof_non_zk`), making in Noir every check the two aggregation circuits make (`crisp_aztec_lib/src/ballot.nr`): each
-verification key's Poseidon2 hash equals `Config.{ct0,ct1,crisp}_vk_hash`; ct0 and ct1 commit to the same `u`; the ciphertext and
-`k1` commitments are derived from the encryption proofs' public inputs and placed in the crisp proof's public inputs; the
-public-key commitment equals the round's committee key. The circuits are unchanged and L1 still uses the full stack.
+On L1 a voter's proof is a stack of three: the two base circuits (`user_data_encryption` and the CRISP ballot circuit), then
+`crisp_fold` (2^21 gates). On Aztec the voter proves only the two base circuits and `cast` verifies both
+(`verify_honk_proof_non_zk`), making in Noir every check the fold circuit makes (`crisp_aztec_lib/src/ballot.nr`): each
+verification key's Poseidon2 hash equals `Config.{encryption,crisp}_vk_hash`; the `user_data_encryption` proof's public inputs are
+exactly `[pk_commitment, ct_commitment, k1_commitment]`; its ciphertext and `k1` commitments are placed in the crisp proof's public
+inputs; its public-key commitment equals the round's committee key. That both ciphertext halves share one `u` is constrained inside
+`user_data_encryption` itself. The circuits are unchanged and L1 still uses the fold.
 
 - **The proofs must never leave the device.** They are `noir-recursive-no-zk` (410 fields): zero knowledge is not needed because
   they are private arguments of `cast`, hidden inside the zero-knowledge transaction proof. A verifier that publishes them needs
   the ZK flavour or the fold.
-- **One preset per deployment.** The three key hashes are fixed by the BFV preset (`insecure-64`, `secure-8192`);
+- **One preset per deployment.** The two key hashes are fixed by the BFV preset (`insecure-64`, `secure-8192`);
   `pnpm base-vk-hashes <preset>` in `../sdk` prints them.
 
 ## Public logs

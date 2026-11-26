@@ -41,9 +41,9 @@ afterEach(() => {
 
 describe('client ensureCircuits', () => {
   it('reloads a completed preset when switching back to it', async () => {
-    await ensureCircuits(0)
-    await ensureCircuits(2)
-    await ensureCircuits(0)
+    await ensureCircuits(4)
+    await ensureCircuits(3)
+    await ensureCircuits(4)
 
     expect(sdkState.current).toBe('insecure-64')
     expect(sdkState.loads).toEqual(['insecure-64', 'secure-8192', 'insecure-64'])

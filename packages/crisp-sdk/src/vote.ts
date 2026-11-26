@@ -26,15 +26,14 @@ export { encodeVote, encryptVote, decodeTally, decryptVote, generateBFVKeys } fr
 export { splitDigest } from './circuitInputs'
 import { Noir, type CompiledCircuit } from '@noir-lang/noir_js'
 import { Barretenberg, BackendType, Crs, GrumpkinCrs, UltraHonkBackend } from '@aztec-foundation/bb.js'
-// Only the aggregation circuits are imported here. Their ABI is proof and verification-key shaped
-// rather than polynomial shaped, so one artifact serves every preset and inlining them costs ~0.3MB.
+// Only the fold circuits are imported here. Their ABI is proof and verification-key shaped rather
+// than polynomial shaped, so one artifact serves every preset and inlining them costs ~0.3MB.
 // The BFV-shaped circuits arrive through `setCircuits()` — see ./circuits.
 import foldCircuit from '../../../circuits/bin/fold/target/crisp_fold.json'
 import foldOnchainCircuit from '../../../circuits/bin/fold_onchain/target/crisp_onchain_fold.json'
-import userDataEncryptionCircuit from '../../../circuits/interfold/user_data_encryption.json'
 import { requireCircuits } from './circuits'
 
-// The fold and user-data-encryption circuits are 2^21 gates (dyadic), so proving needs 2^21 points.
+// The fold circuits are 2^21 gates (dyadic), so proving needs 2^21 points.
 const SRS_SIZE = 2 ** 21
 // The Grumpkin size `Barretenberg.new` loads.
 const GRUMPKIN_SRS_SIZE = 2 ** 16
@@ -146,25 +145,21 @@ export const executeCircuit = async (circuit: CompiledCircuit, inputs: any): Pro
 type BallotCircuits = ReturnType<typeof requireCircuits>
 
 /**
- * Execute the three base circuits of a ballot: `user_data_encryption_ct0`, `user_data_encryption_ct1` and the crisp
- * ballot circuit. Witness generation for all three runs ahead of any proving; it is short and is counted as part of
- * the first stage.
+ * Execute the two base circuits of a ballot: `user_data_encryption` and the crisp ballot circuit. Witness
+ * generation for both runs ahead of any proving; it is short and is counted as part of the first stage.
  */
 const executeBaseCircuits = async (circuitInputs: any, censusMode: CensusVariant, circuits: BallotCircuits) => {
   const ballotCircuit = censusMode === 'onchain' ? circuits.crispOnchain : circuits.crisp
-  const { witness: ct0Witness } = await executeCircuit(circuits.userDataEncryptionCt0 as CompiledCircuit, {
+  // The circuit hard-codes the key's second component as the protocol CRS, so `pk1is` is not an input.
+  const { witness: encryptionWitness } = await executeCircuit(circuits.userDataEncryption as CompiledCircuit, {
     pk0is: circuitInputs.pk0is,
     ct0is: circuitInputs.ct0is,
-    u: circuitInputs.u,
-    e0: circuitInputs.e0,
-    k1: circuitInputs.k1,
-    r: circuitInputs.r,
-  })
-  const { witness: ct1Witness } = await executeCircuit(circuits.userDataEncryptionCt1 as CompiledCircuit, {
-    pk1is: circuitInputs.pk1is,
     ct1is: circuitInputs.ct1is,
     u: circuitInputs.u,
+    e0: circuitInputs.e0,
     e1: circuitInputs.e1,
+    k1: circuitInputs.k1,
+    r: circuitInputs.r,
     r_ct1: circuitInputs.r_ct1,
   })
   // The two stacks share every input except how eligibility reaches the circuit: a census round
@@ -203,7 +198,7 @@ const executeBaseCircuits = async (circuitInputs: any, censusMode: CensusVariant
     num_options: circuitInputs.num_options,
   })
 
-  return { ballotCircuit, ct0Witness, ct1Witness, crispWitness, crispReturnValue }
+  return { ballotCircuit, encryptionWitness, crispWitness, crispReturnValue }
 }
 
 /**
@@ -224,47 +219,33 @@ export const generateProof = async (
   const circuits = requireCircuits()
   const foldCircuitForMode = censusMode === 'onchain' ? foldOnchainCircuit : foldCircuit
 
-  report('encryption_ct0')
-  const {
-    ballotCircuit,
-    ct0Witness: userDataEncryptionCt0Witness,
-    ct1Witness: userDataEncryptionCt1Witness,
-    crispWitness,
-    crispReturnValue,
-  } = await executeBaseCircuits(circuitInputs, censusMode, circuits)
+  report('encryption')
+  const { ballotCircuit, encryptionWitness, crispWitness, crispReturnValue } = await executeBaseCircuits(
+    circuitInputs,
+    censusMode,
+    circuits,
+  )
 
-  const userDataEncryptionCt0Backend = new UltraHonkBackend((circuits.userDataEncryptionCt0 as CompiledCircuit).bytecode, api)
-  const userDataEncryptionCt1Backend = new UltraHonkBackend((circuits.userDataEncryptionCt1 as CompiledCircuit).bytecode, api)
-  const userDataEncryptionBackend = new UltraHonkBackend((userDataEncryptionCircuit as CompiledCircuit).bytecode, api)
+  const userDataEncryptionBackend = new UltraHonkBackend((circuits.userDataEncryption as CompiledCircuit).bytecode, api)
   const crispBackend = new UltraHonkBackend((ballotCircuit as CompiledCircuit).bytecode, api)
   const foldBackend = new UltraHonkBackend((foldCircuitForMode as CompiledCircuit).bytecode, api)
 
-  const { proof: userDataEncryptionCt0Proof, publicInputs: userDataEncryptionCt0PublicInputs } =
-    await userDataEncryptionCt0Backend.generateProof(userDataEncryptionCt0Witness, {
+  const { proof: userDataEncryptionProof, publicInputs: userDataEncryptionPublicInputs } = await userDataEncryptionBackend.generateProof(
+    encryptionWitness,
+    {
       verifierTarget: 'noir-recursive-no-zk',
-    })
-  report('encryption_ct1')
-  const { proof: userDataEncryptionCt1Proof, publicInputs: userDataEncryptionCt1PublicInputs } =
-    await userDataEncryptionCt1Backend.generateProof(userDataEncryptionCt1Witness, {
-      verifierTarget: 'noir-recursive-no-zk',
-    })
+    },
+  )
   report('ballot')
   const { proof: crispProof, publicInputs: crispPublicInputs } = await crispBackend.generateProof(crispWitness, {
     verifierTarget: 'noir-recursive-no-zk',
   })
 
-  // The recursive artifacts of the three inner proofs feed the two verifying circuits that follow.
-  report('encryption')
-  const userDataEncryptionCt0Artifacts = await userDataEncryptionCt0Backend.generateRecursiveProofArtifacts(
-    userDataEncryptionCt0Proof,
-    userDataEncryptionCt0PublicInputs.length,
-    {
-      verifierTarget: 'noir-recursive-no-zk',
-    },
-  )
-  const userDataEncryptionCt1Artifacts = await userDataEncryptionCt1Backend.generateRecursiveProofArtifacts(
-    userDataEncryptionCt1Proof,
-    userDataEncryptionCt1PublicInputs.length,
+  // The recursive artifacts of the two inner proofs feed the fold.
+  report('fold')
+  const userDataEncryptionArtifacts = await userDataEncryptionBackend.generateRecursiveProofArtifacts(
+    userDataEncryptionProof,
+    userDataEncryptionPublicInputs.length,
     {
       verifierTarget: 'noir-recursive-no-zk',
     },
@@ -273,32 +254,6 @@ export const generateProof = async (
     verifierTarget: 'noir-recursive-no-zk',
   })
 
-  const { witness: userDataEncryptionWitness } = await executeCircuit(userDataEncryptionCircuit as CompiledCircuit, {
-    ct0_verification_key: userDataEncryptionCt0Artifacts.vkAsFields,
-    ct0_proof: proofToFields(userDataEncryptionCt0Proof),
-    ct0_public_inputs: userDataEncryptionCt0PublicInputs,
-    ct0_key_hash: userDataEncryptionCt0Artifacts.vkHash,
-    ct1_verification_key: userDataEncryptionCt1Artifacts.vkAsFields,
-    ct1_proof: proofToFields(userDataEncryptionCt1Proof),
-    ct1_public_inputs: userDataEncryptionCt1PublicInputs,
-    ct1_key_hash: userDataEncryptionCt1Artifacts.vkHash,
-  })
-
-  const { proof: userDataEncryptionProof, publicInputs: userDataEncryptionPublicInputs } = await userDataEncryptionBackend.generateProof(
-    userDataEncryptionWitness,
-    {
-      verifierTarget: 'noir-recursive-no-zk',
-    },
-  )
-  const userDataEncryptionArtifacts = await userDataEncryptionBackend.generateRecursiveProofArtifacts(
-    userDataEncryptionProof,
-    userDataEncryptionPublicInputs.length,
-    {
-      verifierTarget: 'noir-recursive-no-zk',
-    },
-  )
-
-  report('fold')
   const { witness: foldWitness } = await executeCircuit(foldCircuitForMode as CompiledCircuit, {
     user_data_encryption_verification_key: userDataEncryptionArtifacts.vkAsFields,
     user_data_encryption_proof: proofToFields(userDataEncryptionProof),
@@ -334,30 +289,30 @@ export const generateProof = async (
 
 
 /**
- * Prove the three base circuits of a ballot and stop: no `user_data_encryption` aggregation and no fold.
+ * Prove the two base circuits of a ballot and stop: no fold.
  *
- * For a verifier that checks the three proofs itself, as the Aztec `cast` does: it saves the two 2^21-gate
- * proofs the fold stack adds. Every proof is a `noir-recursive-no-zk` proof, the flavour Aztec's
- * `verify_honk_proof_non_zk` checks in a private function. Skipping zero-knowledge is safe there because the
- * proofs are private inputs of the function and never leave the voter's device; the transaction proof hides them.
- * A verifier that publishes the proofs needs the fold ({@link generateProof}) instead.
+ * For a verifier that checks both proofs itself, as the Aztec `cast` does: it saves the 2^21-gate fold proof.
+ * Every proof is a `noir-recursive-no-zk` proof, the flavour Aztec's `verify_honk_proof_non_zk` checks in a
+ * private function. Skipping zero-knowledge is safe there because the proofs are private inputs of the function
+ * and never leave the voter's device; the transaction proof hides them. A verifier that publishes the proofs
+ * needs the fold ({@link generateProof}) instead.
  *
  * @param circuitInputs - The inputs of {@link prepareBallot}, with the signature attached.
  * @param censusMode - Which ballot circuit to prove with.
- * @param options - `onProgress` is called as each of the three stages starts (`total` is 3).
+ * @param options - `onProgress` is called as each of the two stages starts (`total` is 2).
  */
 export const generateBaseProofs = async (
   circuitInputs: any,
   censusMode: CensusVariant = 'merkle',
   { onProgress }: Pick<ProofOptions, 'onProgress'> = {},
 ): Promise<BaseProofs> => {
-  const stages: ProofStage[] = ['encryption_ct0', 'encryption_ct1', 'ballot']
+  const stages: ProofStage[] = ['encryption', 'ballot']
   const report = (stage: ProofStage) => onProgress?.({ stage, index: stages.indexOf(stage), total: stages.length })
   const api = await getBBApi()
   const circuits = requireCircuits()
 
-  report('encryption_ct0')
-  const { ballotCircuit, ct0Witness, ct1Witness, crispWitness } = await executeBaseCircuits(circuitInputs, censusMode, circuits)
+  report('encryption')
+  const { ballotCircuit, encryptionWitness, crispWitness } = await executeBaseCircuits(circuitInputs, censusMode, circuits)
 
   const prove = async (circuit: unknown, witness: Uint8Array): Promise<BaseProof> => {
     const backend = new UltraHonkBackend((circuit as CompiledCircuit).bytecode, api)
@@ -369,13 +324,11 @@ export const generateBaseProofs = async (
     return { proof, proofFields: proofToFields(proof), vkFields: vkAsFields, vkHash, publicInputs }
   }
 
-  const ct0 = await prove(circuits.userDataEncryptionCt0, ct0Witness)
-  report('encryption_ct1')
-  const ct1 = await prove(circuits.userDataEncryptionCt1, ct1Witness)
+  const encryption = await prove(circuits.userDataEncryption, encryptionWitness)
   report('ballot')
   const crisp = await prove(ballotCircuit, crispWitness)
 
-  return { ct0, ct1, crisp }
+  return { encryption, crisp }
 }
 
 /**
@@ -474,7 +427,7 @@ export const finishMaskProof = async (prepared: PreparedBallot, digest: `0x${str
 }
 
 /**
- * Phase two without the aggregation: the three base proofs of a prepared ballot, for a verifier that checks them
+ * Phase two without the fold: the two base proofs of a prepared ballot, for a verifier that checks them
  * itself (see {@link generateBaseProofs}). {@link finishBallotProof} stays the way to get the fold L1 verifies.
  *
  * @param prepared The output of `prepareBallot`.
@@ -541,7 +494,7 @@ export const getFoldRecursiveVerificationKey = async (
 }
 
 /**
- * The verification keys of the three base circuits of the registered preset for the `noir-recursive-no-zk` target,
+ * The verification keys of the two base circuits of the registered preset for the `noir-recursive-no-zk` target,
  * which a contract that verifies the base proofs in-circuit pins by `vkHash`. Unlike the fold's, they depend on the
  * preset: register it first (`setCircuits`).
  */
@@ -559,13 +512,12 @@ export const getBaseVerificationKeys = async (censusMode: CensusVariant = 'merkl
   }
 
   return {
-    ct0: await keyOf(circuits.userDataEncryptionCt0),
-    ct1: await keyOf(circuits.userDataEncryptionCt1),
+    encryption: await keyOf(circuits.userDataEncryption),
     crisp: await keyOf(censusMode === 'onchain' ? circuits.crispOnchain : circuits.crisp),
   }
 }
 
-/** Locally verify the three base proofs, each against its own circuit. */
+/** Locally verify the two base proofs, each against its own circuit. */
 export const verifyBaseProofs = async (proofs: BaseProofs, censusMode: CensusVariant = 'merkle'): Promise<boolean> => {
   const api = await getBBApi()
   const circuits = requireCircuits()
@@ -573,8 +525,7 @@ export const verifyBaseProofs = async (proofs: BaseProofs, censusMode: CensusVar
     new UltraHonkBackend((circuit as CompiledCircuit).bytecode, api).verifyProof({ proof, publicInputs }, { verifierTarget: 'noir-recursive-no-zk' })
 
   return (
-    (await check(circuits.userDataEncryptionCt0, proofs.ct0)) &&
-    (await check(circuits.userDataEncryptionCt1, proofs.ct1)) &&
+    (await check(circuits.userDataEncryption, proofs.encryption)) &&
     (await check(censusMode === 'onchain' ? circuits.crispOnchain : circuits.crisp, proofs.crisp))
   )
 }

@@ -4,8 +4,8 @@ One full round of the Aztec program on a local Aztec v6 network, with real compo
 stack, `CRISPAztecProgram` (L1) and `CrispAztec` (L2, with the vendored ZKPassport registry); starts five ciphernodes, the program
 server, the CRISP server (`PROGRAM_KIND=aztec`) and the keeper; runs `Interfold.request` and the DKG; registers four voters with real
 mock-document ZKPassport proofs (age 18+, nationality in `[ZKR, DEU]`: `outer_count_6`); casts four votes and one mask (a zero ballot on
-a slot that already voted, which must not change the tally) and checks that two tampered ballots (an altered ct1 commitment, the ct0 and
-ct1 proofs swapped) are refused where the transaction is proven; warps the clock past the input window, lets the keeper close the round
+a slot that already voted, which must not change the tally) and checks that two tampered ballots (an altered encryption ciphertext commitment, the encryption and
+crisp proofs swapped) are refused where the transaction is proven; warps the clock past the input window, lets the keeper close the round
 and submit the root, and checks that the decoded tally equals `[20, 20]` (voters 1-2 pick option 0, voters 3-4 option 1, ten credits
 each).
 
@@ -50,7 +50,7 @@ winner thank yellow` (override with `CRISP_E2E_MNEMONIC`), funded through `anvil
 - **Repo files are snapshotted and restored.** The deploy scripts rewrite `interfold.config.yaml`,
   `packages/crisp-contracts/deployed_contracts.json`, `extensions/aztec/l1/deployed_contracts.json`, `server/.env` and
   `client/.env`; `down` puts them back.
-- `E3_PARAM_SET=0` (insecure-64 BFV) and a 3-member committee (`E3_COMMITTEE_SIZE=0`): the dev preset.
+- `E3_PARAM_SET=4` (insecure-64 BFV) and a 3-member committee (`E3_COMMITTEE_SIZE=0`): the dev preset.
 
 ## Knobs
 

@@ -59,7 +59,9 @@ To move to release `<version>`:
 1. Set `version` in `interfold-release.json`, and set each digest to the SHA-256 of the asset in the
    release `v<version>`.
 2. Set `tag = "v<version>"` on every `e3-*` dependency in `Cargo.toml` and `guest/Cargo.toml`, and
-   on every `interfold_lib` dependency in the `Nargo.toml` files.
+   on every `interfold_lib` dependency in the `Nargo.toml` files. Set the `fhe*` dependencies in
+   `Cargo.toml` to the fhe.rs tag that the release's own `Cargo.toml` pins: their types cross the
+   `e3-*` APIs.
 3. Set the `@interfold/*` versions to `<version>`, and move the toolchain pins above when the
    release moved them.
 4. Update the lockfiles:
@@ -102,7 +104,7 @@ Before getting started, ensure you have installed:
   since other versions may not compile the circuits:
   - `nargo`: `noirup -v v1.0.0-rc.3` (`NOIR_TOOLCHAIN` in `.github/workflows/ci.yml`)
   - `bb`: version and per-platform checksums live in Interfold's
-    [`crates/zk/prover/versions.json`](https://github.com/theinterfold/interfold/blob/v0.20.0-dev.3/crates/zk/prover/versions.json)
+    [`crates/zk/prover/versions.json`](https://github.com/theinterfold/interfold/blob/v0.20.0/crates/zk/prover/versions.json)
 
 Local development runs the unproved development runner unless `CRISP_REAL_PROOFS=1` (see
 `crisp.dev.env.example`). Real proofs use OpenVM: build the workers, configure `program.openvm` in

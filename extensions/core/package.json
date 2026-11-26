@@ -11,7 +11,7 @@
     "./contracts/*": "./contracts/*"
   },
   "peerDependencies": {
-    "@interfold/contracts": "0.20.0-dev.3",
+    "@interfold/contracts": "0.20.0",
     "@openzeppelin/contracts": "^5.0.2"
   }
 }

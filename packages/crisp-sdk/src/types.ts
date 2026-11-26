@@ -153,7 +153,7 @@ export type RecursiveFoldArtifacts = {
 }
 
 /**
- * One of the three base proofs of a ballot, in the `noir-recursive-no-zk` flavour: what Aztec's
+ * One of the two base proofs of a ballot, in the `noir-recursive-no-zk` flavour: what Aztec's
  * `verify_honk_proof_non_zk` takes in a private function. The 410 proof fields exclude the public inputs.
  */
 export type BaseProof = {
@@ -165,11 +165,11 @@ export type BaseProof = {
 }
 
 /**
- * The base proofs, which carry the ballot's encryption and rules without the two aggregation layers:
- * `ct0` and `ct1` (`user_data_encryption_ct0` / `_ct1`, public inputs `pk0, ct0, k1, u` and `pk1, ct1, u`) and
- * `crisp` (ten public inputs, the last two being its return values).
+ * The base proofs, which carry the ballot's encryption and rules without the fold: `encryption`
+ * (`user_data_encryption`, public inputs `pk_commitment, ct_commitment, k1_commitment`) and `crisp`
+ * (ten public inputs, the last two being its return values).
  */
-export type BaseProofs = { ct0: BaseProof; ct1: BaseProof; crisp: BaseProof }
+export type BaseProofs = { encryption: BaseProof; crisp: BaseProof }
 
 /** {@link BaseProofs} with what {@link ProofData} carries beside the proof. */
 export type BallotBaseProofs = BaseProofs & {
@@ -192,21 +192,18 @@ export type FoldVerifierTarget = 'evm' | 'noir-recursive'
 /**
  * One proof in the ballot pipeline, in the order {@link finishBallotProof} produces them.
  *
- * - `encryption_ct0` (`user_data_encryption_ct0`) - `ct0 = pk0·u + e0 + k0·k1` with every term
- *   bounded: the half of the ciphertext that carries the ballot plaintext `k1` is well formed.
- * - `encryption_ct1` (`user_data_encryption_ct1`) - `ct1 = pk1·u + e1`: the other half is well
- *   formed. It does not compare `u` with ct0's.
+ * - `encryption` (`user_data_encryption`) - `ct0 = pk0·u + e0 + k0·k1` and `ct1 = pk1·u + e1`
+ *   with the same randomness `u` and every term bounded, where `pk1` is the protocol CRS; then
+ *   commits to the key, the ciphertext and the plaintext `k1`.
  * - `ballot` (`crisp` / `crisp_onchain`) - the ballot rules. A vote is signed over the digest by the
  *   slot owner and is within the voting power; a mask is zero everywhere. Either way the new slot
  *   ciphertext is the ballot ciphertext plus the addend (the slot's current ciphertext for a mask,
  *   zero otherwise).
- * - `encryption` (`user_data_encryption`) - verifies both halves and asserts they share the same
- *   randomness `u`, then commits to the key and the ciphertext.
  * - `fold` (`fold` / `fold_onchain`) - verifies the encryption and ballot proofs, asserts they cover
  *   the same ciphertext and plaintext, and outputs the key commitment, which the contract checks
  *   against the round's committee key.
  */
-export type ProofStage = 'encryption_ct0' | 'encryption_ct1' | 'ballot' | 'encryption' | 'fold'
+export type ProofStage = 'encryption' | 'ballot' | 'fold'
 
 /** Reported when a proof stage starts. The proof is complete when the promise resolves. */
 export type ProofProgress = {

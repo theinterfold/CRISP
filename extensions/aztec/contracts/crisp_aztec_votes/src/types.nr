@@ -14,9 +14,8 @@ pub struct Config {
     /// secp256k1 public key (x, y) of the availability signer.
     pub signer_x: [Field; 2],
     pub signer_y: [Field; 2],
-    /// Poseidon2 hashes of the verification keys of the three base circuits a ballot is proven with.
-    pub ct0_vk_hash: Field,
-    pub ct1_vk_hash: Field,
+    /// Poseidon2 hashes of the verification keys of the two base circuits a ballot is proven with.
+    pub encryption_vk_hash: Field,
     pub crisp_vk_hash: Field,
 }
 

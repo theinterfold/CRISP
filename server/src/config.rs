@@ -13,6 +13,7 @@ use alloy::primitives::{
 };
 use alloy::providers::Provider;
 use config::{Config as ConfigManager, ConfigError, Environment};
+use e3_fhe_params::{BfvPreset, BfvProfile};
 use log::warn;
 use serde::Deserialize;
 
@@ -94,7 +95,8 @@ pub struct Config {
     #[serde(default)]
     pub cron_api_key: Option<String>,
     // E3 parameters
-    pub e3_param_set: u8,      // 0=InsecureThreshold64, 2=SecureThreshold8192
+    /// The registry index of the BFV parameter set new rounds use. See `e3_profile`.
+    pub e3_param_set: u8,
     pub e3_committee_size: u8, // 0=Minimum, 1=Micro, 2=Small
     pub e3_duration: u64,
     /// Time allowed for the E3 request transaction to be mined before voting can start.
@@ -500,19 +502,36 @@ impl Config {
         Ok(())
     }
 
+    /// The profile that new rounds request: the enabled one whose threshold tuple Interfold
+    /// registers at `E3_PARAM_SET`. The release decides which profiles are enabled.
+    pub fn e3_profile(&self) -> BfvProfile {
+        profile_for_param_set(self.e3_param_set).expect("E3_PARAM_SET is validated at load")
+    }
+
     fn validate_e3_param_set(chain_id: u64, param_set: u8) -> Result<(), ConfigError> {
-        if param_set != 0 && param_set != 2 {
+        let set = |preset: BfvPreset| preset.on_chain_param_set().unwrap_or_default();
+        let (insecure, secure) = (
+            set(BfvPreset::InsecureThreshold64),
+            set(BfvPreset::SecureThreshold8192),
+        );
+        let Some(profile) = profile_for_param_set(param_set) else {
             return Err(invalid(format!(
-                "E3_PARAM_SET must be 0 (insecure-64) or 2 (secure-8192), got {param_set}"
+                "E3_PARAM_SET must be {insecure} (insecure-64) or {secure} (secure-8192), got {param_set}"
             )));
-        }
-        if chain_id == 1 && param_set != 2 {
-            return Err(invalid(
-                "Ethereum mainnet requires E3_PARAM_SET=2 (secure-8192)",
-            ));
+        };
+        if chain_id == 1 && profile.threshold_preset() != BfvPreset::SecureThreshold8192 {
+            return Err(invalid(format!(
+                "Ethereum mainnet requires E3_PARAM_SET={secure} (secure-8192)"
+            )));
         }
         Ok(())
     }
+}
+
+fn profile_for_param_set(param_set: u8) -> Option<BfvProfile> {
+    BfvProfile::ALL
+        .into_iter()
+        .find(|profile| profile.admission_enabled() && profile.param_set() == param_set)
 }
 
 const SEPOLIA_CHAIN_ID: u64 = 11_155_111;
@@ -569,7 +588,7 @@ pub static CONFIG: LazyLock<Config> =
 
 #[cfg(test)]
 mod tests {
-    use super::Config;
+    use super::{profile_for_param_set, BfvPreset, BfvProfile, Config};
     use config::{Config as ConfigManager, Environment};
     use std::collections::HashMap;
 
@@ -580,12 +599,24 @@ mod tests {
 
     #[test]
     fn param_sets_are_limited_and_mainnet_requires_the_secure_one() {
-        assert!(Config::validate_e3_param_set(11_155_111, 0).is_ok());
-        assert!(Config::validate_e3_param_set(11_155_111, 2).is_ok());
-        assert!(Config::validate_e3_param_set(1, 2).is_ok());
-        assert!(Config::validate_e3_param_set(1, 0).is_err());
-        assert!(Config::validate_e3_param_set(31_337, 1).is_err());
-        assert!(Config::validate_e3_param_set(31_337, 3).is_err());
+        let insecure = BfvPreset::InsecureThreshold64.on_chain_param_set().unwrap();
+        let secure = BfvPreset::SecureThreshold8192.on_chain_param_set().unwrap();
+        assert!(Config::validate_e3_param_set(11_155_111, insecure).is_ok());
+        assert!(Config::validate_e3_param_set(11_155_111, secure).is_ok());
+        assert!(Config::validate_e3_param_set(1, secure).is_ok());
+        assert!(Config::validate_e3_param_set(1, insecure).is_err());
+        // Indices 0 to 2 hold the tuples of earlier releases.
+        for historical in 0..=2 {
+            assert!(Config::validate_e3_param_set(31_337, historical).is_err());
+        }
+        assert_eq!(
+            profile_for_param_set(secure),
+            Some(BfvProfile::SsSecure8192)
+        );
+        assert_eq!(
+            profile_for_param_set(insecure),
+            Some(BfvProfile::SsInsecure64)
+        );
     }
 
     #[test]

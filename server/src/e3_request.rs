@@ -13,6 +13,7 @@ use alloy::primitives::{Address, Bytes, U256};
 use alloy::rpc::types::TransactionReceipt;
 use alloy::sol;
 use alloy::sol_types::SolValue;
+use e3_fhe_params::BfvProfile;
 use e3_sdk::evm::contracts::{
     CommitteeSize, Interfold, InterfoldContract, InterfoldRead, InterfoldWrite, ReadWrite,
 };
@@ -114,7 +115,7 @@ pub async fn approve_e3_fee(
     committee: Committee,
     input_window: [U256; 2],
     e3_program: Address,
-    param_set: u8,
+    profile: BfvProfile,
     compute_provider_params: &Bytes,
 ) -> eyre::Result<FeeApproval> {
     let fee = contract
@@ -122,7 +123,7 @@ pub async fn approve_e3_fee(
             committee.size,
             input_window,
             e3_program,
-            param_set,
+            profile,
             compute_provider_params.clone(),
         )
         .await?;
@@ -175,7 +176,7 @@ async fn settle_fee_and_window(
     program: &CRISPContract,
     committee: Committee,
     e3_program: Address,
-    param_set: u8,
+    profile: BfvProfile,
     compute_provider_params: &Bytes,
 ) -> eyre::Result<[U256; 2]> {
     settle_window(
@@ -186,7 +187,7 @@ async fn settle_fee_and_window(
                 committee,
                 window,
                 e3_program,
-                param_set,
+                profile,
                 compute_provider_params,
             )
         },
@@ -239,7 +240,7 @@ pub async fn request_round(
     program: &CRISPContract,
     committee: Committee,
     e3_program: Address,
-    param_set: u8,
+    profile: BfvProfile,
     compute_provider_params: &Bytes,
     custom_params: &Bytes,
 ) -> eyre::Result<(TransactionReceipt, U256)> {
@@ -249,7 +250,7 @@ pub async fn request_round(
             program,
             committee,
             e3_program,
-            param_set,
+            profile,
             compute_provider_params,
         )
         .await
@@ -263,7 +264,7 @@ pub async fn request_round(
                 committee.size,
                 window,
                 e3_program,
-                param_set,
+                profile,
                 compute_provider_params.clone(),
                 custom_params.clone(),
             )
@@ -453,7 +454,7 @@ mod tests {
             committee(committee_size).unwrap(),
             window.map(U256::from),
             Address::ZERO,
-            0,
+            BfvProfile::SsInsecure64,
             &Bytes::new(),
         )
         .await

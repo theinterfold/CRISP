@@ -38,7 +38,7 @@ sequenceDiagram
 ## Adding an L2
 
 A new chain adds a sibling `extensions/<l2>/` with: an **L1 adapter** extending `CRISPRemoteProgram` (see `core/README.md`); an **L2
-contract** that reproduces `CRISPProgram`'s input tree byte for byte, verifies the three base ballot proofs (no fold) and the server's
+contract** that reproduces `CRISPProgram`'s input tree byte for byte, verifies the two base ballot proofs (no fold) and the server's
 availability attestation, enforces the slot parent chain, window, limit and replay rules, and emits inputs and the census root after
 each registration in a form the server can index; a **server ingest** crate implementing `crisp_remote_input::RemoteInputSource`
 (`fetch_inputs`, `census_roots`, `latest_timestamp`) plus a `ProgramKind` variant, after which the server reuses the shared

@@ -6,9 +6,9 @@
 
 //! Prints the key hash that a CRISP fold circuit binds.
 //!
-//! Usage: `fold_key_hash <user_data_encryption> <ballot> <ct0> <ct1>`. Each argument is a
+//! Usage: `fold_key_hash <user_data_encryption> <ballot>`. Each argument is a
 //! `noir-recursive-no-zk` verification key hash file: 32 big-endian bytes, as `bb write_vk`
-//! writes it. The fold circuit hashes the four keys in this order with `compute_vk_hash`.
+//! writes it. The fold circuit hashes the two keys in this order with `compute_vk_hash`.
 
 use ark_bn254::Fr;
 use ark_ff::{BigInteger, PrimeField};
@@ -34,8 +34,8 @@ fn field_from_file(path: &Path) -> Result<Fr> {
 
 fn main() -> Result<()> {
     let paths: Vec<String> = std::env::args().skip(1).collect();
-    if paths.len() != 4 {
-        bail!("usage: fold_key_hash <user_data_encryption> <ballot> <ct0> <ct1>");
+    if paths.len() != 2 {
+        bail!("usage: fold_key_hash <user_data_encryption> <ballot>");
     }
     let fields = paths
         .iter()

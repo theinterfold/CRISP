@@ -4,7 +4,7 @@
 # Prints the key hash that each fold circuit binds for one BFV preset:
 # `compute_vk_hash.sh [insecure-64|secure-8192]`, insecure-64 by default.
 #
-#   compute_vk_hash(user_data_encryption, ballot, user_data_encryption_ct0, user_data_encryption_ct1)
+#   compute_vk_hash(user_data_encryption, ballot)
 #
 # Each hash belongs in the matching fold circuit, under the constant of the preset:
 #   crisp         -> circuits/bin/fold/src/main.nr         CRISP_FOLD_EXPECTED_KEY_HASH_*
@@ -24,8 +24,6 @@ INTERFOLD="$(node scripts/interfold-release.mjs circuits)"
 for ballot in crisp crisp_onchain; do
   printf '%s %s: ' "$PRESET" "$ballot"
   cargo run --quiet --locked --release -p zk-inputs --bin fold_key_hash -- \
-    "$INTERFOLD/user_data_encryption.vk_recursive_hash" \
-    "circuits/bin/${ballot}/target/${ballot}.vk_recursive_hash" \
-    "$INTERFOLD/${PRESET}/user_data_encryption_ct0.vk_recursive_hash" \
-    "$INTERFOLD/${PRESET}/user_data_encryption_ct1.vk_recursive_hash"
+    "$INTERFOLD/${PRESET}/user_data_encryption.vk_recursive_hash" \
+    "circuits/bin/${ballot}/target/${ballot}.vk_recursive_hash"
 done

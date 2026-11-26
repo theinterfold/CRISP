@@ -41,8 +41,7 @@ try {
     interfold,
     domainSeparator: domainSeparator(session.l1ChainId, program),
     availabilitySignerPublicKey: signerKey,
-    ct0VkHash: BigInt(keys.ct0.vkHash),
-    ct1VkHash: BigInt(keys.ct1.vkHash),
+    encryptionVkHash: BigInt(keys.encryption.vkHash),
     crispVkHash: BigInt(keys.crisp.vkHash),
   })
   console.log(`CRISP_AZTEC_L2_ADDRESS=${contract.address.toString()}`)
