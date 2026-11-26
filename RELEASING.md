@@ -161,16 +161,18 @@ Generated aggregator verifiers are preset-specific and committee-specific. The p
 concrete PK and decryption verifier for each supported pair. A router selects the concrete verifier
 from the proof's public-input length and VK hash anchors.
 
-The SDK must also match the round. A `latest` SDK can load either supported preset and should select
-from the E3's on-chain `paramSet`. Pair a `testing` SDK only with `insecure-64` deployments.
+The SDK must also match the round. A `latest` SDK can load either supported preset. It selects the
+preset from the E3's on-chain `paramSet`: `3` is `secure-8192` and `4` is `insecure-64`. Indices `0`
+to `2` hold the tuples of earlier Interfold releases. Pair a `testing` SDK only with `insecure-64`
+deployments.
 
-For the v0.19 mainnet cutover, pause requests and release every ended committee first. Deploy the
-OpenVM CRISP program from the qualified release source. Record the new program and verifiers in
+For the v0.20.0 cutover, pause requests and wait until no E3 is active and every ended committee is
+released. Deploy the OpenVM CRISP program from this release. Record the new program and verifiers in
 `packages/crisp-contracts/deployed_contracts.json`.
 
-The protocol commands run in `packages/interfold-contracts` of an Interfold checkout at the release
-tag, after `pnpm install` in that checkout. `CRISP` is the path of the CRISP repository. Prepare the
-core activation batch with:
+The protocol commands run in `packages/interfold-contracts` of an Interfold checkout at tag
+`v0.20.0`, after `pnpm install` in that checkout. The v0.20.0 release keeps the `upgrade:v19`
+command names. `CRISP` is the path of the CRISP repository. Prepare the core activation batch with:
 
 ```sh
 pnpm upgrade:v19 -- --network mainnet \
@@ -184,18 +186,24 @@ values against the compiled guest and the deployed Halo2 verifier. Use `--config
 `--deployment` when the operation uses separate protocol deployment records.
 
 The script requires no active E3s or unreleased committees. It deploys the new Interfold
-implementation, all three secure BFV routes and both routers. The unsigned batch installs the v5
-crypto configuration, registers parameter set `2`, connects the OpenVM program and raises the
-release policy to protocol `8` and generation `2`. Requests stay paused.
+implementation and the BFV routes. The unsigned batch upgrades Interfold and registers the parameter
+sets that the chain does not have: `3` on Mainnet, `3` and `4` on Sepolia. It also connects the
+OpenVM program and raises the release policy to the protocol version and node generation of the
+release (protocol `10`, generation `2`). Requests stay paused. Before resume, make sure that
+`keccak256(paramSetRegistry(3))` is `BfvProtocol.SECURE_PARAM_SET_HASH` and that indices `0` to `2`
+still hold their earlier bytes.
 
-Publish stable v0.19.0 before governance executes the contract switch. This core batch does not
-replace the DAO's CRISP voting body. Rehearse the complete governance batch, including that body
-replacement and its SPP pointer, before signing.
+Publish this CRISP release before governance executes the contract switch. The core batch does not
+replace the DAO's CRISP voting body. Requests now carry a committee-bound configuration identity, so
+the governance voting plugin needs a build that computes that identity and points at the new CRISP
+program. Install it with the complete governance batch, and rehearse that batch before signing.
 
-After execution, run `upgrade:v19:validate -- --network mainnet`. Upgrade the ciphernodes and
-production services. Reset only incompatible node data with the new binary. Refresh all remaining
-operators with `upgrade:v19:refresh -- --network mainnet`, then wait for a later block. Confirm at
-least 19 distinct eligible bond owners and healthy stable-release nodes before preparing resume:
+After execution, run `upgrade:v19:validate -- --network mainnet`. Upgrade the ciphernodes. The node
+storage schema changes from 8 to 9, so reset the node state with the new binary before the first
+start. Upgrade the production services and set `E3_PARAM_SET` to `3` on Mainnet (`4` on Sepolia).
+Refresh all remaining operators with `upgrade:v19:refresh -- --network mainnet`, then wait for a
+later block. Confirm at least 19 distinct eligible bond owners and healthy release nodes before you
+prepare resume:
 
 ```sh
 pnpm upgrade:v19:resume -- --network mainnet --ciphernodes-restarted
@@ -203,5 +211,7 @@ pnpm upgrade:v19:resume -- --network mainnet --ciphernodes-restarted
 
 The resume command validates the planned cutover and checks refreshed committee capacity before it
 writes the separate DAO/Safe unpause transaction. It does not verify running process versions;
-operators must check those separately. The historical `upgrade:secure-crisp` commands use RISC Zero
-and cannot prepare this OpenVM cutover.
+operators must check those separately.
+
+An Aztec deployment pins the verification-key hashes of the base circuits. Deploy new Aztec
+contracts for this release, and give their clients `@crisp-e3/aztec` at the same version.

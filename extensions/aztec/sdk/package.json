@@ -1,6 +1,6 @@
 {
   "name": "@crisp-e3/aztec",
-  "version": "0.28.1",
+  "version": "0.29.0",
   "type": "module",
   "description": "Client for CRISP rounds that collect ballots on Aztec: voter flows, keeper operations and L1 helpers",
   "license": "LGPL-3.0-only",
