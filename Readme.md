@@ -227,9 +227,9 @@ model VectorX latency or Avail fees.
 
 Ethereum mainnet uses Avail. On Sepolia, CRISP and the protocol ciphertext verifier use
 `MockOpenVmReceiptVerifier`, which accepts every OpenVM receipt. Ethereum mainnet uses real RISC
-Zero verification. CRISPProgram on Sepolia is `0x25Df8D3C04D67efb6198E215963d19a8d119ADFF`. While
-Avail Turing is unavailable, it uses `MockCrispDataAvailabilityVerifier`
-(`0xB5cDE772357C9dB2d2515Cf94Daa0696c9a2FB17`): run its server with `DATA_AVAILABILITY_MODE=mock`
+Zero verification. CRISPProgram on Sepolia is `0xeCA6589a150905E7a52111b18610cb098159bc22`, on the
+Interfold v0.20.0 stack. While Avail Turing is unavailable, it uses `MockCrispDataAvailabilityVerifier`
+(`0x258EE786Cf73565eac606e09Ed93D40E349481BC`): run its server with `DATA_AVAILABILITY_MODE=mock`
 and `ALLOW_SEPOLIA_MOCK_DATA_AVAILABILITY=true`, and point the ciphernodes at the server's
 `/availability` route with `mode: mock_http`. Its two Noir verifiers come from the circuits in this
 directory, built with Noir `v1.0.0-rc.3` and bb `6.0.0`.
