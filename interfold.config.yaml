@@ -37,8 +37,8 @@ chains:
       rpc_url: "https://avail-rpc.publicnode.com/"
     contracts:
       e3_program:
-        address: "0x53FCdb21E73A461CfE6c64B19855204384B91BA3"
-        deploy_block: 25998868
+        address: "0xa14F6b7FA442844cC2A914e68F1fa6Da98AEF9e9"
+        deploy_block: 26507643
       interfold:
         address: "0x28cF63B459e6218C69EA97ea7D90541cf648c715"
         deploy_block: 25786382
