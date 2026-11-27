@@ -1,13 +1,13 @@
 {
   "sepolia": {
     "CRISPAztecProgram": {
-      "address": "0x81D62b7E8F046953eA77378aC027f2ece3044307",
-      "blockNumber": 12164457,
+      "address": "0x3eCFB1F15FB66C524E6c93Da427bD42066FBE9c8",
+      "blockNumber": 12222196,
       "constructorArgs": {
         "initialOwner": "0x8837e47c4Bb520ADE83AAB761C3B60679443af1B",
-        "openVmVerifier": "0x226436d8A72357c7992896B37f0A2E00dCb6A341",
+        "openVmVerifier": "0xA3E42546Bc343ef68dd9DB78798D87861BE8e1A5",
         "imageId": "0x8f89dce6af1131013a8606177f2d2ba3ca7c4c1a61b1b094cd3228c2896355e6",
-        "dataAvailabilityVerifier": "0xB5cDE772357C9dB2d2515Cf94Daa0696c9a2FB17",
+        "dataAvailabilityVerifier": "0x258EE786Cf73565eac606e09Ed93D40E349481BC",
         "minVotingDuration": "3600",
         "remoteFinalityWindow": "10800",
         "inbox": "0x7cdC32Dd7d008870A95f1837Ffd7229ef676EF8A",
